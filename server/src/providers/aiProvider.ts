@@ -35,8 +35,8 @@ export class HttpAIProvider implements AIProvider {
   async chat(messages: AIProviderMessage[], options: AIProviderOptions): Promise<string> {
     if (!this.apiKey) throw new Error('AI provider is missing API key');
     const ctrl = new AbortController();
+    const signal = options.signal ? AbortSignal.any([ctrl.signal, options.signal]) : ctrl.signal;
     const timer = setTimeout(() => ctrl.abort(), config.ai.timeoutMs);
-    const signal = options.signal ?? ctrl.signal;
     try {
       const res = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -58,10 +58,14 @@ export class HttpAIProvider implements AIProvider {
         this.logger.warn({ status: res.status }, 'ai provider failed');
         throw new Error(`AI provider returned ${res.status}`);
       }
-      const data = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
-      };
-      const content = data.choices?.[0]?.message?.content;
+      let data: { choices?: { message?: { content?: string } }[] };
+      try {
+        data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+      } catch (error) {
+        if (error instanceof SyntaxError) throw new Error('AI provider returned invalid JSON');
+        throw error;
+      }
+      const content = data?.choices?.[0]?.message?.content;
       if (typeof content !== 'string') throw new Error('AI provider returned empty content');
       return content;
     } finally {

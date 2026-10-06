@@ -39,7 +39,7 @@
 
 - Không. Controller `/ai/recommendations` chỉ trả recommendations, không gọi `placeOrder`.
 - Bất kỳ đề xuất nào của AI đều phải được khách bấm "Thêm vào giỏ" trên UI, mới gọi `POST /orders` với idempotency key + ownership.
-- LLM output qua Zod parse + whitelist theo `Product` trong DB; nếu không hợp lệ thì fallback rule-based.
+- Output LLM qua structural hook/schema rồi service chỉ giữ ID/variant hợp lệ từ MongoDB; backend tự xác minh giá, evidence và constraints. Output không hợp lệ hoặc không còn món hợp lệ thì fallback; prompt instruction không phải security boundary.
 
 ## 7. CORS có chống CSRF được không?
 
@@ -65,7 +65,17 @@
 
 ## 10. Phụ thuộc nào có thể thay thế?
 
-- AI Provider: cấu hình `AI_BASE_URL` + `AI_MODEL` để dùng OpenAI, Azure OpenAI, Ollama, v.v.
+- AI không có adapter cho mọi nhà cung cấp: `HttpAIProvider` chỉ gọi native Chat Completions (`/chat/completions`) với Bearer auth và `response_format: { type: 'json_object' }`. Chỉ provider/model hỗ trợ đủ contract này mới dùng được; không khẳng định Azure OpenAI hay Ollama tương thích vô điều kiện.
+- Dùng `AI_BASE_URL`, `AI_MODEL` và `AI_API_KEY` để chọn endpoint, raw model ID và credential. Zen `space-bunny-free` không có tiền tố `opencode/`; smoke Chat Completions/JSON thật với model ID này đã đạt ngày 06/10/2026. Kết quả không bảo đảm mọi model hoặc mọi credential Zen đều đáp ứng contract.
+- `AI_MODE` điều khiển Barista; `ANOMALY_AI_MODE` độc lập và mặc định `fallback`. Nếu một trong hai mode là `live`, startup cần model và key; lỗi provider khi chạy Barista chuyển fallback. Dev config ở `server/.env` (không phải root `.env`), production dùng `.env.production`; thay env phải restart/recreate API/worker.
+- Smoke command dưới đây cần DB demo đã seed và credential/hạn mức provider; trên lượt thành công gửi ba request live (một/case), dừng ở case lỗi, chỉ kiểm tra Barista và không gọi anomaly:
+
+  ```bash
+  npm run build:contracts
+  npm -w @may-cafe/server exec -- tsx scripts/ai-live-smoke.ts
+  ```
+
+- Smoke Zen thật đã có kết quả ngày 06/10/2026: ba case trước chuyên hoá và một case kết hợp sau chuyên hoá trả `llm`; một case sau chuyên hoá timeout và fallback. Chưa đánh giá chất lượng tổng quát hoặc skill-vs-baseline. HTTP 401 ngày 22/09/2026 là kết quả lịch sử; xem [ai-evaluation.md](ai-evaluation.md).
 - MongoDB: có thể đổi sang PostgreSQL bằng cách viết lại repository (interface đã độc lập với Mongoose).
 - Realtime: thay Socket.IO bằng SSE/WS nếu cần.
 

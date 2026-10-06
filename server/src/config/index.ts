@@ -81,6 +81,37 @@ function authSecret(name: string, developmentFallback: string): string {
   return value;
 }
 
+type AIMode = 'live' | 'fallback' | 'off';
+
+function readAIMode(name: string): AIMode {
+  const value = required(name, 'fallback').trim();
+  if (value !== 'live' && value !== 'fallback' && value !== 'off')
+    throw new Error(`Invalid ${name}: expected live, fallback or off`);
+  return value;
+}
+
+const anomalyAiMode = readAIMode('ANOMALY_AI_MODE');
+const aiSettings = {
+  mode: readAIMode('AI_MODE'),
+  provider: required('AI_PROVIDER', 'openai').trim(),
+  model: required('AI_MODEL', '').trim(),
+  apiKey: (process.env.AI_API_KEY ?? '').trim(),
+  baseUrl: required('AI_BASE_URL', 'https://api.openai.com/v1').trim(),
+  timeoutMs: positiveInt('AI_TIMEOUT_MS', 15000),
+};
+if (aiSettings.mode === 'live' || anomalyAiMode === 'live') {
+  if (!aiSettings.apiKey) throw new Error('Missing required env var: AI_API_KEY');
+  if (!aiSettings.model) throw new Error('Missing required env var: AI_MODEL');
+}
+let aiUrl: URL;
+try {
+  aiUrl = new URL(aiSettings.baseUrl);
+} catch {
+  throw new Error('Invalid AI_BASE_URL');
+}
+if (!['http:', 'https:'].includes(aiUrl.protocol) || aiUrl.username || aiUrl.password)
+  throw new Error('Invalid AI_BASE_URL: expected HTTP(S) URL without userinfo');
+
 export const config = {
   env: environment,
   port: num('PORT', 4000),
@@ -138,15 +169,9 @@ export const config = {
   seedDemoPassword: required('SEED_DEMO_PASSWORD', 'MayCafe@2025'),
   guestAutoOpen: bool('GUEST_AUTO_OPEN', true),
   sessionIdleTimeoutMin: num('SESSION_IDLE_TIMEOUT_MIN', 60),
-  ai: {
-    mode: required('AI_MODE', 'fallback') as 'live' | 'fallback' | 'off',
-    provider: required('AI_PROVIDER', 'openai'),
-    model: required('AI_MODEL', 'gpt-4o-mini'),
-    apiKey: process.env.AI_API_KEY ?? '',
-    baseUrl: required('AI_BASE_URL', 'https://api.openai.com/v1'),
-    timeoutMs: num('AI_TIMEOUT_MS', 15000),
-  },
+  ai: aiSettings,
   anomaly: {
+    aiMode: anomalyAiMode,
     enabled: bool('ANOMALY_ENABLED', true),
     intervalMs: positiveInt('ANOMALY_INTERVAL_MS', 60_000),
     windowMinutes: positiveInt('ANOMALY_WINDOW_MIN', 15),

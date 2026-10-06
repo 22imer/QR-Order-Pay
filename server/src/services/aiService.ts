@@ -1,9 +1,9 @@
-import { z } from 'zod';
 import { config } from '../config/index.js';
 import { HttpAIProvider, type AIProvider } from '../providers/aiProvider.js';
 import { productRepository } from '../repositories/productRepository.js';
 import { logger } from '../infrastructure/logger.js';
 import type { ProductDoc } from '../models/Product.js';
+import { beforeBaristaRequest, afterBaristaResponse } from '../ai/baristaHooks.js';
 
 export interface RecommendInput {
   prompt: string;
@@ -38,17 +38,6 @@ export interface RecommendResult {
   latencyMs: number;
 }
 
-const RECOMMEND_SCHEMA = z.object({
-  message: z.string(),
-  recommendations: z.array(
-    z.object({
-      productId: z.string(),
-      variantId: z.string().nullable().optional(),
-      reason: z.string(),
-    }),
-  ),
-  followUpQuestion: z.string().optional(),
-});
 
 export class AIService {
   constructor(
@@ -93,11 +82,13 @@ export class AIService {
       name: p.name,
       description: p.description,
       basePrice: p.basePrice,
-      variants: p.variants.map((v) => ({
-        id: v._id?.toString() ?? null,
-        name: v.name,
-        price: v.price,
-      })),
+      variants: p.variants
+        .filter((v) => v.isAvailable !== false && p.allowedOptions.sizes.includes(v.name))
+        .map((v) => ({
+          id: v._id?.toString() ?? null,
+          name: v.name,
+          price: v.price,
+        })),
       caffeine: p.ingredientMetadata?.caffeine ?? null,
       dairy: p.ingredientMetadata?.dairy ?? null,
       flavorProfile: p.ingredientMetadata?.flavorProfile ?? [],
@@ -105,25 +96,22 @@ export class AIService {
     }));
     const budget = input.maxBudget ?? null;
     const preferences = input.preferences ?? {};
-    const sysPrompt = `Bạn là AI Barista cho quán cà phê Việt Nam. Trả lời tiếng Việt. CHỈ chọn món từ danh sách sản phẩm. KHÔNG tự tạo ID. Trả về JSON hợp lệ theo schema: {"message": string, "recommendations":[{"productId": string, "variantId": string|null, "reason": string}], "followUpQuestion": string?}. Lý do ≤ 25 từ, đề cập ràng buộc ngân sách/dinh dưỡng nếu có. Tối đa 3 gợi ý.`;
-    const userPrompt = `Khách: ${input.prompt}\nNgân sách: ${budget ? `${budget} VND` : 'không giới hạn'}\nSở thích: ${JSON.stringify(preferences)}\nDanh sách món (id, tên, giá từ, caffeine, dairy, flavor): ${JSON.stringify(candidateJson)}`;
-    const raw = await this.provider!.chat(
-      [
-        { role: 'system', content: sysPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      { model: config.ai.model, jsonMode: true, temperature: 0.3 },
-    );
-    const parsed = safeJsonParse(raw);
-    const validated = RECOMMEND_SCHEMA.safeParse(parsed);
-    if (!validated.success) {
-      logger.warn({ raw: raw.slice(0, 200) }, 'ai schema invalid');
-      throw new Error('AI schema invalid');
-    }
+    const messages = beforeBaristaRequest({
+      prompt: input.prompt,
+      budget,
+      preferences,
+      menu: candidateJson,
+    });
+    const raw = await this.provider!.chat(messages, {
+      model: config.ai.model,
+      jsonMode: true,
+      temperature: 0.3,
+    });
+    const validated = afterBaristaResponse(raw);
     const candidateMap = new Map(filtered.map((p) => [p._id.toString(), p]));
     const seen = new Set<string>();
     const recommendations = [];
-    for (const rec of validated.data.recommendations) {
+    for (const rec of validated.recommendations) {
       const product = candidateMap.get(rec.productId);
       if (!product) continue;
       if (seen.has(rec.productId)) continue;
@@ -160,29 +148,14 @@ export class AIService {
     }
     return {
       mode: 'llm',
-      message: validated.data.message,
+      message: validated.message,
       recommendations,
-      followUpQuestion: validated.data.followUpQuestion,
+      followUpQuestion: validated.followUpQuestion,
       latencyMs: Date.now() - started,
     };
   }
 }
 
-function safeJsonParse(s: string): unknown {
-  try {
-    return JSON.parse(s);
-  } catch {
-    const match = /\{[\s\S]*\}/.exec(s);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  }
-}
 
 function fallbackResult(
   input: RecommendInput,
@@ -267,8 +240,13 @@ function availableVariant(p: ProductDoc) {
 
 function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
   if (!p.isAvailable || p.isArchived) return false;
-  if (input.preferences?.noCaffeine && p.ingredientMetadata?.caffeine !== false) return false;
-  if (input.preferences?.noDairy && p.ingredientMetadata?.dairy !== false) return false;
+  // Hydration defaults are not evidence of ingredient metadata stored in the database.
+  if (input.preferences?.noCaffeine &&
+      (p.$isDefault('ingredientMetadata') || p.$isDefault('ingredientMetadata.caffeine') ||
+       p.ingredientMetadata?.caffeine !== false)) return false;
+  if (input.preferences?.noDairy &&
+      (p.$isDefault('ingredientMetadata') || p.$isDefault('ingredientMetadata.dairy') ||
+       p.ingredientMetadata?.dairy !== false)) return false;
   const variant = availableVariant(p);
   if (p.variants.length > 0 && !variant) return false;
   return (variant?.price ?? p.basePrice) <= (input.maxBudget ?? Infinity);
@@ -349,7 +327,7 @@ function recommendationEvidence(
 }
 
 export function buildAIService(): AIService {
-  if (config.ai.mode === 'live' && config.ai.apiKey) {
+  if (config.ai.mode === 'live') {
     const provider = new HttpAIProvider({
       name: config.ai.provider,
       apiKey: config.ai.apiKey,
@@ -357,7 +335,7 @@ export function buildAIService(): AIService {
     });
     return new AIService(provider, 'live');
   }
-  return new AIService(null, config.ai.mode === 'off' ? 'off' : 'fallback');
+  return new AIService(null, config.ai.mode);
 }
 
 export async function validateRecommendedConfiguration(input: {

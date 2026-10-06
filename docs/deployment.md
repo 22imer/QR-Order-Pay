@@ -28,7 +28,21 @@ COOKIE_SECURE=false
 JWT_ACCESS_SECRET=<chuỗi ngẫu nhiên tối thiểu 32 ký tự>
 JWT_REFRESH_SECRET=<chuỗi ngẫu nhiên khác, tối thiểu 32 ký tự>
 AI_MODE=fallback
+ANOMALY_AI_MODE=fallback
+AI_PROVIDER=openai
+AI_BASE_URL=https://api.openai.com/v1
+AI_MODEL=
+AI_API_KEY=
+AI_TIMEOUT_MS=15000
 ```
+
+Barista và anomaly có công tắc riêng; mặc định cả hai không gọi AI. Muốn bật Barista live, điền `AI_MODE=live`, `AI_MODEL` là raw model ID và `AI_API_KEY` từ provider vào `.env.production`; giữ `ANOMALY_AI_MODE=fallback` nếu không chủ động muốn anomaly inference. Với OpenCode Zen, base URL ví dụ là `https://opencode.ai/zen/v1`, raw ID `space-bunny-free` (không tiền tố `opencode/`); smoke Chat Completions/JSON thật với ID này đã đạt ngày 06/10/2026, không bảo đảm credential/model khác tương thích. Thay provider/model cần cập nhật base URL, model và key phù hợp cùng lúc.
+
+Backend chỉ gửi native Chat Completions tới `${AI_BASE_URL}/chat/completions`, với Bearer auth và `response_format: { type: 'json_object' }`. Chỉ chọn endpoint/model hỗ trợ đủ contract này; không mặc định mọi model Zen, Azure OpenAI hay Ollama đều tương thích. Khi một trong hai mode là `live`, startup yêu cầu key và model tường minh; startup không gọi inference. Lỗi provider khi chạy Barista chuyển sang fallback.
+
+Dev backend đọc `server/.env`, không `.env` ở repo root. Env không hot-reload: restart process dev; sau khi sửa `.env.production`, recreate các container API/worker để nạp cấu hình mới.
+
+`.dockerignore` loại cả `.env`/`.env.*` trong các thư mục con (gồm `server/.env`) khỏi build context; chỉ giữ template `.env.example`. Credential được inject lúc chạy, không copy vào image.
 
 Khởi động và kiểm tra:
 
@@ -56,6 +70,18 @@ Menu/sản phẩm công khai được cache Redis mặc định 60 giây. Mọi 
 Dashboard Admin dùng hàng đợi worker qua `POST /api/v1/admin/reports/overview/jobs` và poll `GET /api/v1/admin/reports/jobs/:id`. Cả JSON và CSV đều được tạo ngoài API process, kết quả giữ mặc định 15 phút sau khi terminal. Thông báo realtime dùng worker riêng qua Socket.IO Redis emitter. Job có owner lease, retry/backoff, reclaim khi worker chết và dead-letter; Admin operations xem/replay job/outbox lỗi có audit.
 
 Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu demo, thực hiện có chủ ý sau khi kiểm tra đúng database; seed sẽ thay dữ liệu hiện có.
+
+## Smoke live AI Barista (chỉ trên database demo)
+
+Chỉ chạy khi MongoDB đang trỏ đúng database demo đã migrate/seed có chủ ý, có candidate cho cả ba ca, `AI_MODE=live`, cùng model/provider và credential hợp lệ có hạn mức cho phép. Nếu cả ba case thành công thì có đúng ba request Chat Completions (một request/case); dừng ở lỗi/case đầu tiên không đạt. Không gọi anomaly. Không chạy trên production hoặc database rỗng; seed thay dữ liệu hiện có.
+
+```bash
+npm run build:contracts
+npm -w @may-cafe/server exec -- tsx scripts/ai-live-smoke.ts
+```
+
+Sau khi đổi biến AI trong `.env.production`, recreate API/worker containers trước khi smoke; env không được hot-reload. Smoke provider thật đã có biên bản giới hạn ngày 06/10/2026, gồm kết quả `llm` và timeout/fallback sau chuyên hoá — xem [ai-evaluation.md](ai-evaluation.md). Deployment của bạn vẫn cần smoke riêng với credential/model/candidate hợp lệ.
+
 
 ## Health và shutdown
 

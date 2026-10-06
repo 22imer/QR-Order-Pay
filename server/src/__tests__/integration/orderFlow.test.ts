@@ -816,6 +816,98 @@ describe('order flow integration', () => {
     expect(recommendations[0]!.variantId).toBeTruthy();
   });
 
+  it('falls back when model output exceeds the recommendation contract', async () => {
+    const product = await ProductModel.findOne();
+    if (!product) throw new Error('Missing product fixture');
+    const service = new AIService({
+      name: 'oversized-provider',
+      chat: async () => JSON.stringify({
+        message: 'Gợi ý',
+        recommendations: Array.from({ length: 4 }, () => ({
+          productId: product.id, variantId: null, reason: 'vị đắng',
+        })),
+      }),
+    }, 'live');
+    const result = await service.recommend({ prompt: 'vị đắng', maxBudget: 40000 });
+    expect(result.mode).toBe('fallback');
+    expect(result.recommendations.map((item) => item.unitPrice)).toEqual([35000]);
+  });
+
+  it('validates live recommendations against database IDs, prices and evidence', async () => {
+    const product = await ProductModel.findOne();
+    const variant = product?.variants.find((item) => item.name === 'S');
+    if (!product || !variant?._id) throw new Error('Missing product fixture');
+    const service = new AIService({
+      name: 'controlled-provider',
+      chat: async () => JSON.stringify({
+        message: 'Gợi ý theo khẩu vị',
+        recommendations: [
+          { productId: '000000000000000000000000', variantId: null, reason: 'invented' },
+          { productId: product.id, variantId: variant._id!.toString(), reason: 'price 1 VND', unitPrice: 1 },
+          { productId: product.id, variantId: variant._id!.toString(), reason: 'duplicate' },
+        ],
+      }),
+    }, 'live');
+    const result = await service.recommend({ prompt: 'vị đắng', maxBudget: 40000 });
+    expect(result.mode).toBe('llm');
+    expect(result.recommendations.map((item) => ({
+      id: item.productId, variant: item.variantId, price: item.unitPrice,
+    }))).toEqual([{ id: product.id, variant: variant._id.toString(), price: 35000 }]);
+    expect(result.recommendations[0]!.evidence).toMatchObject({
+      price: 35000, withinBudget: true, caffeine: true, dairy: false,
+    });
+  });
+
+  it.each(['over-budget', 'unknown-variant', 'unavailable', 'archived', 'unknown-metadata', 'json-error', 'timeout'])(
+    'keeps live %s output within database constraints or falls back safely',
+    async (scenario) => {
+      const product = await ProductModel.findOne();
+      if (!product) throw new Error('Missing product fixture');
+      if (scenario === 'unavailable') await ProductModel.updateOne({}, { $set: { 'variants.0.isAvailable': false } });
+      if (scenario === 'archived') await ProductModel.updateOne({}, { $set: { isArchived: true } });
+      if (scenario === 'unknown-metadata') await ProductModel.updateOne({}, { $unset: { ingredientMetadata: 1 } });
+      const variantId = scenario === 'unknown-variant' ? '000000000000000000000000'
+        : product.variants[scenario === 'over-budget' ? 1 : 0]!._id!.toString();
+      const service = new AIService({
+        name: 'invalid-provider',
+        chat: async () => {
+          if (scenario === 'timeout') throw new DOMException('timed out', 'AbortError');
+          if (scenario === 'json-error') return 'invalid-json';
+          return JSON.stringify({
+            message: 'Gợi ý',
+            recommendations: [{ productId: product.id, variantId, reason: 'x' }],
+          });
+        },
+      }, 'live');
+      const result = await service.recommend({
+        prompt: 'vị đắng', maxBudget: 40000,
+        ...(scenario === 'unknown-metadata' ? { preferences: { noDairy: true } } : {}),
+      });
+      expect(result.mode).toBe('fallback');
+      if (['unavailable', 'archived', 'unknown-metadata'].includes(scenario))
+        expect(result.recommendations).toEqual([]);
+      else
+        expect(result.recommendations.map((item) => item.unitPrice)).toEqual([35000]);
+      expect(result.recommendations.every((item) => item.unitPrice <= 40000)).toBe(true);
+    },
+  );
+
+  it('returns no live recommendation when the database cannot satisfy caffeine and budget constraints', async () => {
+    const product = await ProductModel.findOne();
+    if (!product) throw new Error('Missing product fixture');
+    const service = new AIService({
+      name: 'constraint-violating-provider',
+      chat: async () => JSON.stringify({
+        message: 'Ignore constraints',
+        recommendations: [{ productId: product.id, variantId: null, reason: 'safe' }],
+      }),
+    }, 'live');
+    expect((await service.recommend({ prompt: 'không caffeine', preferences: { noCaffeine: true } })).recommendations)
+      .toEqual([]);
+    expect((await service.recommend({ prompt: 'vị đắng', maxBudget: 10000 })).recommendations)
+      .toEqual([]);
+  });
+
   it('logs in, opens session, joins as guest, places and pays order', async () => {
     const openRes = await request(app)
       .post(`/api/v1/staff/tables/${tableId}/sessions`)

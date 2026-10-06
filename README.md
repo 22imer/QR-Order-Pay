@@ -10,7 +10,7 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 - Quét QR / nhập mã → vào phiên bàn; bàn trống thì khách tự mở phiên, không cần chờ nhân viên.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - Tìm kiếm menu bằng câu tiếng Việt có/không dấu, typo nhẹ, ngân sách và ràng buộc caffeine/sữa; kết quả rỗng minh bạch và có bộ lọc sửa tay.
-- AI Barista gợi ý món từ menu thật theo sở thích & ngân sách (có fallback minh bạch khi không có API key).
+- AI Barista gợi ý tối đa ba món từ menu thật theo sở thích/ngân sách; mặc định dùng fallback, còn live là opt-in qua backend config với key/model tường minh.
 - Giỏ hàng theo thiết bị, quote ký trước khi đặt và idempotency khi gửi đơn.
 - KDS có tuổi công đoạn/SLA, duyệt yêu cầu hủy; staff có màn hình báo hết món, chuyển bàn và đối soát ca.
 - Realtime qua Socket.IO cho cả guest và staff.
@@ -29,19 +29,25 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 - **Server**: Node.js 24 LTS, Express + Mongoose + TypeScript, JWT, bcryptjs, Socket.IO + Redis adapter, Zod, Pino, Prometheus metrics.
 - **Client**: Vite + React + TypeScript, Tailwind, Radix UI, TanStack Query, Zustand, Recharts, Lucide.
-- **AI**: OpenAI-compatible (mặc định) với fallback rule-based dựa trên menu.
+- **AI**: native OpenAI-compatible Chat Completions only; the selected provider/model must support Bearer auth and JSON-object mode. Rule-based fallback remains available.
 - **Tests**: Vitest + Supertest + Playwright + k6; GitHub Actions chạy quality/integration.
 
 ## Cài đặt nhanh
 
+`compose.yaml` khởi MongoDB; Redis cho dev chạy riêng:
+
 ```bash
 npm ci
 npm run db:up          # khởi MongoDB replica set
-npm run db:wait        # đợi sẵn sàng
+docker run -d --name maycafe-redis -p 6379:6379 redis:7-alpine
+npm run db:wait        # đợi MongoDB sẵn sàng
+npm run build:contracts # build shared contracts trước migration/seed
 npm run db:migrate     # áp migration/index có lock và checksum
-npm run seed           # seed dữ liệu demo, in QR token cho mỗi bàn
+npm run seed           # CHÚ Ý: thay dữ liệu database; chỉ chạy trên DB demo có thể reset
 npm run dev            # chạy client + server
 ```
+
+Server đọc cấu hình dev từ `server/.env`, không từ `.env` ở repo root. AI mặc định dùng fallback; cấu hình bật live và smoke nằm trong [docs/ai-design.md](docs/ai-design.md).
 
 - Server: `http://localhost:4000`
 - Client: `http://localhost:5173`
@@ -129,7 +135,7 @@ Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-d
 
 ## Hạn chế đã biết
 
-- Tìm kiếm menu P4A hiện dùng pipeline xác định (`mode: fallback`), không gọi LLM và không cần API key. AI Barista là luồng gợi ý riêng; key đã cung cấp bị provider trả 401 trong smoke test nên live AI chưa được xác nhận.
+- P4A menu search là pipeline xác định, không gọi LLM. AI Barista dùng native OpenAI-compatible Chat Completions; smoke Zen thật ngày 06/10/2026 đã đạt ba case trước chuyên hoá và một case kết hợp sau chuyên hoá. Một case mới timeout 15 giây và fallback an toàn; chưa benchmark chất lượng/chi phí hoặc skill-vs-baseline. HTTP 401 ngày 22/09/2026 là bằng chứng lịch sử. Xem [docs/ai-evaluation.md](docs/ai-evaluation.md).
 - Thanh toán chỉ hỗ trợ "xác nhận tại quầy" trong P0.
 - QR là tĩnh; admin đổi token thủ công và tải được ảnh QR, chưa có xoay theo lịch. Camera/in QR thật được để kiểm thử sau.
 - Menu đạt cao nhất 90 RPS theo ngưỡng đã chốt trên Docker Desktop local; 600–700 RPS không đạt. Đây không phải cam kết năng lực cloud.

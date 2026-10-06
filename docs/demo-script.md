@@ -4,6 +4,15 @@
 
 - Ưu tiên production-local: tạo `.env.production` theo `docs/deployment.md`, rồi `docker compose -f compose.production.yaml --env-file .env.production up -d --build`.
 - Seed demo là thao tác phá dữ liệu hiện có; chỉ chạy `npm run seed` khi đã xác nhận đúng database demo.
+- Mặc định `AI_MODE=fallback` và `ANOMALY_AI_MODE=fallback`. Muốn chọn Barista live phải cấu hình base URL, raw `AI_MODEL`, key và mode trong `.env.production`, giữ anomaly fallback nếu không chủ động bật, rồi recreate API/worker containers. Dev backend dùng `server/.env`, không phải `.env` ở repo root.
+- Hiện không có credential provider live; demo chỉ được mô tả là fallback, không tuyên bố live đã được kiểm chứng. Bằng chứng HTTP 401 là lượt lịch sử ngày 22/09/2026, không phải kết quả mới.
+- Chỉ chạy live smoke khi đã có credential/quota và DB demo sẵn sàng: khi cả ba case đạt sẽ có đúng ba request thật, một request/case; lệnh dừng ở case đầu không đạt.
+
+  ```bash
+  npm run build:contracts
+  npm -w @may-cafe/server exec -- tsx scripts/ai-live-smoke.ts
+  ```
+
 - Mở Guest portal `http://localhost:8080` và kiểm tra `http://localhost:8080/healthz`.
 - Trên điện thoại cùng mạng Wi-Fi, mở `http://<IP-máy>:8080/t/<token-bàn-01>`. Lấy token từ log khi seed và đặt `PUBLIC_APP_URL` theo IP LAN trước khi xoay QR.
 - Mở sẵn:
@@ -25,7 +34,7 @@
 | 5:45–6:30 | Khách gửi "Yêu cầu thanh toán"; Staff chuyển phiên sang CHECKOUT, xem bill, thu tiền, phiên đóng | Vòng đời phiên |
 | 6:30–7:00 | Mở dashboard, lọc 30 ngày, KPI, biểu đồ ngày/giờ, top sản phẩm | Báo cáo từ dữ liệu thật |
 | 7:00–7:30 | Mở Operations: instance/dependency/alert có timestamp, dữ liệu thiếu ghi rõ | Observability thật |
-| 7:30–8:00 | Hỏi AI ở `AI_MODE=fallback` → response ghi rõ fallback; nêu key live hiện bị provider từ chối 401 | Fallback minh bạch, không giả live |
+| 7:30–8:00 | Hỏi AI ở `AI_MODE=fallback` → xác nhận UI nói rõ fallback; đối chiếu biên bản Zen thật ngày 06/10/2026, gồm live đạt và một timeout sau chuyên hoá. Smoke 401 ngày 22/09/2026 là bằng chứng lịch sử | Không giả live hoặc hứa chất lượng |
 
 ## Phương án dự phòng khi mất mạng
 

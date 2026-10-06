@@ -1,8 +1,7 @@
-import type { AnomalyEvaluation } from '@may-cafe/contracts';
+import assert from 'node:assert/strict';
+import { config } from '../src/config/index.js';
 import { connectMongo, disconnectMongo } from '../src/infrastructure/mongo.js';
 import { buildAIService, type RecommendInput } from '../src/services/aiService.js';
-import { explainAnomaly } from '../src/services/anomalyExplanationService.js';
-
 const cases: Array<{ name: string; input: RecommendInput }> = [
   { name: 'budget', input: { prompt: 'Gợi ý đồ uống dễ uống dưới 45 nghìn', maxBudget: 45_000 } },
   { name: 'no-caffeine', input: { prompt: 'Tôi muốn món không caffeine', preferences: { noCaffeine: true } } },
@@ -10,52 +9,59 @@ const cases: Array<{ name: string; input: RecommendInput }> = [
 ];
 
 async function main(): Promise<void> {
-  await connectMongo();
   try {
+    assert.equal(config.ai.mode, 'live', 'AI_SMOKE_REQUIRES_LIVE_MODE');
+    await connectMongo();
     const service = buildAIService();
-    const recommendations = [];
+    const summaries = [];
     for (const testCase of cases) {
       const result = await service.recommend(testCase.input);
-      recommendations.push({
+      assert.equal(result.mode, 'llm', `AI_SMOKE_NOT_LIVE:${testCase.name}`);
+      assert(
+        result.recommendations.length >= 1 && result.recommendations.length <= 3,
+        `AI_SMOKE_INVALID_RESULT_COUNT:${testCase.name}`,
+      );
+      for (const item of result.recommendations) {
+        assert.equal(item.unitPrice, item.evidence.price, 'AI_SMOKE_PRICE_EVIDENCE_MISMATCH');
+        assert(
+          item.unitPrice <= (testCase.input.maxBudget ?? Infinity),
+          'AI_SMOKE_OVER_BUDGET',
+        );
+        assert(item.evidence.withinBudget, 'AI_SMOKE_INVALID_BUDGET_EVIDENCE');
+        if (testCase.input.preferences?.noCaffeine) {
+          assert.equal(item.evidence.caffeine, false, 'AI_SMOKE_CAFFEINE_CONSTRAINT');
+        }
+        if (testCase.input.preferences?.noDairy) {
+          assert.equal(item.evidence.dairy, false, 'AI_SMOKE_DAIRY_CONSTRAINT');
+        }
+      }
+      summaries.push({
         name: testCase.name,
         mode: result.mode,
-        count: result.recommendations.length,
         latencyMs: result.latencyMs,
-        budgetValid: result.recommendations.every((item) => item.unitPrice <= (testCase.input.maxBudget ?? Infinity)),
+        constraints: {
+          budget: true,
+          priceEvidence: true,
+          noCaffeine: testCase.input.preferences?.noCaffeine ? true : null,
+          noDairy: testCase.input.preferences?.noDairy ? true : null,
+        },
+        recommendations: result.recommendations.map((item) => ({
+          productId: item.productId,
+          variantId: item.variantId,
+        })),
       });
     }
-    const now = new Date();
-    const evaluation: AnomalyEvaluation = {
-      detector: 'HTTP_LATENCY_P95',
-      target: 'all',
-      state: 'ALERT',
-      severity: 'WARNING',
-      windowStart: new Date(now.getTime() - 15 * 60_000).toISOString(),
-      windowEnd: now.toISOString(),
-      observedValue: 1_600,
-      thresholdValue: 1_000,
-      baselineValue: 220,
-      sampleCount: 300,
-      baselineSampleCount: 1_200,
-      method: 'Synthetic live-provider schema check.',
-      evidence: { requests: 300, slowestRoutes: [{ route: '/api/v1/products', p95Ms: 1_600, samples: 180 }] },
-    };
-    const explanation = await explainAnomaly(evaluation);
-    process.stdout.write(JSON.stringify({
-      recommendationCases: recommendations,
-      anomaly: {
-        mode: explanation.mode,
-        evidenceCount: explanation.evidence.length,
-        hypothesisCount: explanation.hypotheses.length,
-        checkCount: explanation.checks.length,
-      },
-    }) + '\n');
+    process.stdout.write(JSON.stringify({ recommendationCases: summaries }) + '\n');
   } finally {
     await disconnectMongo();
   }
 }
 
 void main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  const message =
+    error instanceof Error && error.message.startsWith('AI_SMOKE_')
+      ? error.message
+      : 'AI_SMOKE_FAILED';
+  process.stderr.write(`${message}\n`);
   process.exitCode = 1;
 });

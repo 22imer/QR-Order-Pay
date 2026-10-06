@@ -53,7 +53,7 @@ export function fallbackExplanation(evaluation: AnomalyEvaluation): AnomalyExpla
 }
 
 function buildProvider(): AIProvider | null {
-  if (config.ai.mode !== 'live' || !config.ai.apiKey) return null;
+  if (config.anomaly.aiMode !== 'live') return null;
   return new HttpAIProvider({ name: config.ai.provider, apiKey: config.ai.apiKey, baseUrl: config.ai.baseUrl });
 }
 
