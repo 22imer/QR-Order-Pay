@@ -30,7 +30,7 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 - **Server**: Node.js 24 LTS, Express + Mongoose + TypeScript, JWT, bcryptjs, Socket.IO + Redis adapter, Zod, Pino, Prometheus metrics.
 - **Client**: Vite + React + TypeScript, Tailwind, Radix UI, TanStack Query, Zustand, Recharts, Lucide.
 - **AI**: native OpenAI-compatible Chat Completions only; the selected provider/model must support Bearer auth and JSON-object mode. Rule-based fallback remains available.
-- **Tests**: Vitest + Supertest + Playwright + k6; GitHub Actions chạy quality/integration.
+- **Tests**: Vitest + Supertest + Playwright + k6; GitHub Actions chạy lint/typecheck/unit/integration/build và browser smoke, không chạy bước `npm audit` tự động.
 
 ## Cài đặt nhanh
 
