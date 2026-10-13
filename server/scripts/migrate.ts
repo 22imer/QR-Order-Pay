@@ -7,6 +7,7 @@ import '../src/models/CashShift.js';
 import '../src/models/CancelRequest.js';
 import '../src/models/OutboxEvent.js';
 import '../src/models/Payment.js';
+import '../src/models/PaymentCorrection.js';
 import '../src/models/TableSession.js';
 import '../src/models/AnomalyAlert.js';
 import '../src/models/AuditLog.js';
@@ -28,6 +29,20 @@ interface Migration {
   up: () => Promise<void>;
 }
 const migrations: Migration[] = [
+  {
+    id: '20261013-001-payment-correction-indexes',
+    description: 'Create unique pending payment correction and accounting lookup indexes',
+    checksumSource: 'v1:paymentcorrections-paymentId-unique-requested,payments-refundedAt-orderIds',
+    up: async () => {
+      await mongoose.models['PaymentCorrection']!.createIndexes();
+      await mongoose.connection
+        .db!.collection('payments')
+        .createIndex({ refundedAt: -1 }, { name: 'refundedAt_1' });
+      await mongoose.connection
+        .db!.collection('payments')
+        .createIndex({ orderIds: 1 }, { name: 'orderIds_1' });
+    },
+  },
   {
     id: '20260923-001-reliability-indexes',
     description: 'Preflight active sessions and create outbox/cancel/shift indexes',

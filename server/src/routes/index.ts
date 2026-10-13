@@ -4,6 +4,7 @@ import * as menu from '../controllers/menuController.js';
 import * as tableSession from '../controllers/tableSessionController.js';
 import * as order from '../controllers/orderController.js';
 import * as payment from '../controllers/paymentController.js';
+import * as tableDisplay from '../controllers/tableDisplayController.js';
 import * as ai from '../controllers/aiController.js';
 import * as serviceRequest from '../controllers/serviceRequestController.js';
 import * as admin from '../controllers/adminController.js';
@@ -106,6 +107,11 @@ apiRouter.post(
 );
 
 // table session public + guest
+apiRouter.get(
+  '/table-displays/qr',
+  rateLimitOrPassthrough(120, 'table-display'),
+  tableDisplay.currentQr,
+);
 apiRouter.post(
   '/table-sessions/join',
   loadGuest,
@@ -190,6 +196,68 @@ apiRouter.post(
 );
 
 // staff/admin
+apiRouter.get('/staff/payments', requireAuth, requireRole('STAFF', 'ADMIN'), payment.accounting);
+apiRouter.post(
+  '/staff/payments/:id/corrections',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.requestCorrection,
+);
+apiRouter.get('/admin/payments', requireAuth, requireRole('ADMIN'), payment.accounting);
+apiRouter.post(
+  '/admin/payments/:id/corrections',
+  requireAuth,
+  requireRole('ADMIN'),
+  payment.requestCorrection,
+);
+apiRouter.post(
+  '/admin/payment-corrections/:id/decision',
+  requireAuth,
+  requireRole('ADMIN'),
+  payment.decideCorrection,
+);
+apiRouter.post(
+  '/staff/table-sessions/:id/payment-claim',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.claim,
+);
+apiRouter.post(
+  '/staff/table-sessions/:id/payment-claim/release',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.releaseClaim,
+);
+apiRouter.get(
+  '/staff/awaiting-payments',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.awaiting,
+);
+apiRouter.post(
+  '/staff/orders/:id/payments',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.confirmOrder,
+);
+apiRouter.post(
+  '/staff/orders/:id/refund',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  payment.refundOrder,
+);
+apiRouter.post(
+  '/staff/tables/:id/display',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  tableDisplay.provision,
+);
+apiRouter.post(
+  '/admin/tables/:id/display',
+  requireAuth,
+  requireRole('ADMIN'),
+  tableDisplay.provision,
+);
 apiRouter.get(
   '/staff/tables',
   requireAuth,
@@ -366,7 +434,7 @@ apiRouter.post(
   '/admin/tables/:id/rotate-token',
   requireAuth,
   requireRole('ADMIN'),
-  admin.rotateTableToken,
+  tableDisplay.provision,
 );
 apiRouter.get('/admin/users', requireAuth, requireRole('ADMIN'), admin.listUsers);
 apiRouter.post('/admin/users', requireAuth, requireRole('ADMIN'), admin.createStaff);

@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CurrentTableSessionResponse, OrderQuoteResponse } from '@may-cafe/contracts';
 import { getAxiosError } from '../../lib/api';
-import { Trash2, ShoppingBag } from 'lucide-react';
-import { Card } from '../../components/ui/Card';
+import { Trash2, ShoppingBag, TriangleAlert } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
+import { QtyStepper } from './QtyStepper';
+import { useGuestContext } from './guestContext';
 import { useCart, cartTotals } from '../../store/cart';
 import { api, generateIdempotencyKey, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { useToast } from '../../components/ui/useToast';
@@ -21,6 +22,7 @@ export function CartPage(): JSX.Element {
   const clear = useCart((s) => s.clear);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const tableName = useGuestContext()?.tableName ?? null;
   const submission = useRef<{ payload: string; key: string } | null>(null);
   const [quote, setQuote] = useState<OrderQuoteResponse | null>(null);
   const sessionQuery = useQuery({
@@ -50,38 +52,32 @@ export function CartPage(): JSX.Element {
     submission.current = null;
   }, [cartSignature]);
 
-  const quoteMutation = useMutation({
-    mutationFn: async () =>
-      unwrap<OrderQuoteResponse>(await api.post('/orders/quote', orderPayload)),
-    onSuccess: (value) => setQuote(value),
-    onError: (error) =>
-      toast({
-        title: 'Không thể báo giá giỏ hàng',
-        description: getErrorMessage(error),
-        tone: 'danger',
-      }),
-  });
-
   const placeMutation = useMutation({
     mutationFn: async () => {
-      if (!quote) throw new Error('QUOTE_REQUIRED');
-      const payload = { ...orderPayload, quoteToken: quote.quoteToken };
+      let checkedQuote = quote;
+      if (!checkedQuote) {
+        checkedQuote = unwrap<OrderQuoteResponse>(await api.post('/orders/quote', orderPayload));
+        setQuote(checkedQuote);
+        // Only a changed price needs another confirmation; the normal flow sends immediately.
+        if (checkedQuote.total !== subtotal) return false;
+      }
+      const payload = { ...orderPayload, quoteToken: checkedQuote.quoteToken };
       const signature = JSON.stringify({
         session: useCart.getState().tableSessionId,
         orderPayload,
       });
       if (submission.current?.payload !== signature)
         submission.current = { payload: signature, key: generateIdempotencyKey() };
-      return unwrap(
-        await api.post('/orders', payload, {
-          headers: { 'Idempotency-Key': submission.current.key },
-        }),
-      );
+      await api.post('/orders', payload, {
+        headers: { 'Idempotency-Key': submission.current.key },
+      });
+      return true;
     },
-    onSuccess: () => {
+    onSuccess: (sent) => {
+      if (!sent) return;
       toast({
-        title: 'Đã gửi đơn tới bếp',
-        description: 'Bạn có thể theo dõi tiến độ ở trang Đơn.',
+        title: 'Đã gửi đơn chờ thanh toán',
+        description: 'Vui lòng thanh toán với nhân viên để đơn được chuyển sang pha chế.',
         tone: 'success',
       });
       clear();
@@ -117,81 +113,92 @@ export function CartPage(): JSX.Element {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <h1 className="font-display text-2xl font-semibold">Giỏ hàng của bạn</h1>
-      <fieldset disabled={placeMutation.isPending} className="space-y-3">
-        {groupedItems.map((it) => (
-          <Card key={it.clientId} className="p-3 flex gap-3">
-            <img src={it.image} alt={it.name} className="h-20 w-20 rounded-xl object-cover" />
-            <div className="flex-1">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-display font-semibold">{it.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {it.variantName ? `${it.variantName} · ` : ''}
-                    Đường {it.sugarLevel} · Đá {labelIce(it.iceLevel)}
-                  </p>
-                  {it.toppingIds.length > 0 ? (
-                    <p className="text-xs text-muted-foreground">Topping: {it.toppingIds.length}</p>
-                  ) : null}
-                  {it.note ? (
-                    <p className="text-xs italic text-muted-foreground">"{it.note}"</p>
-                  ) : null}
-                </div>
-                <button
-                  onClick={() => remove(it.clientId)}
-                  className="text-muted-foreground hover:text-danger"
-                  aria-label="Xoá món"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <div className="inline-flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => update(it.clientId, { quantity: Math.max(1, it.quantity - 1) })}
-                  >
-                    −
-                  </Button>
-                  <span className="w-6 text-center text-sm">{it.quantity}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => update(it.clientId, { quantity: Math.min(50, it.quantity + 1) })}
-                  >
-                    +
-                  </Button>
-                </div>
-                <p className="font-semibold">{vnd(it.unitPrice * it.quantity)}</p>
-              </div>
-            </div>
-          </Card>
-        ))}
-      </fieldset>
+  const priceChanged = quote !== null && quote.total !== subtotal;
 
-      <Card className="p-4 space-y-2">
-        <div className="flex justify-between text-sm">
-          <span>Tạm tính</span>
-          <span className="font-semibold">{vnd(subtotal)}</span>
+  return (
+    <div className="space-y-6 pt-2">
+      <h1 className="g-display text-[2.25rem]">Giỏ hàng của bạn</h1>
+
+      <div className="slip-wrap">
+        <div className="slip px-5 pt-5">
+          <div className="flex items-end justify-between gap-3">
+            <p className="g-title text-lg">Phiếu gọi món</p>
+            {tableName ? <p className="font-semibold">{tableName}</p> : null}
+          </div>
+          <div className="slip-rule mt-4" />
+
+          <fieldset disabled={placeMutation.isPending} className="min-w-0">
+            <ul className="space-y-5 py-5">
+              {groupedItems.map((it) => (
+                <li key={it.clientId} className="flex gap-3">
+                  <img
+                    src={it.image}
+                    alt=""
+                    className="h-14 w-14 shrink-0 rounded-xl bg-muted object-cover"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-end gap-2">
+                      <p className="font-semibold leading-snug">
+                        {it.name}
+                        {it.variantName ? ` (${it.variantName})` : ''}
+                      </p>
+                      <span className="leader" aria-hidden="true" />
+                      <p className="font-semibold tabular-nums">
+                        {vnd(it.unitPrice * it.quantity)}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                      Đường {it.sugarLevel}, {labelIce(it.iceLevel)}
+                      {it.toppingIds.length > 0 ? `, thêm ${it.toppingIds.length} topping` : ''}
+                    </p>
+                    {it.note ? (
+                      <p className="text-sm italic text-muted-foreground">“{it.note}”</p>
+                    ) : null}
+                    <div className="mt-2 flex items-center justify-between">
+                      <QtyStepper
+                        value={it.quantity}
+                        onChange={(quantity) => update(it.clientId, { quantity })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => remove(it.clientId)}
+                        className="grid h-10 w-10 place-items-center rounded-full text-muted-foreground transition hover:bg-danger/10 hover:text-danger focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                        aria-label="Xoá món"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+
+          <div className="slip-rule" />
+          <dl className="space-y-2 pt-4">
+            <div className="flex justify-between text-sm">
+              <dt className="text-muted-foreground">Tạm tính</dt>
+              <dd className="tabular-nums">{vnd(subtotal)}</dd>
+            </div>
+            <div className="flex items-end justify-between gap-3">
+              <dt className="g-title text-lg">Tổng</dt>
+              <dd className="g-display text-3xl tabular-nums">{vnd(quote?.total ?? subtotal)}</dd>
+            </div>
+          </dl>
         </div>
-        <div className="flex justify-between text-sm text-muted-foreground">
-          <span>Phụ phí</span>
-          <span>0₫</span>
-        </div>
-        <div className="border-t border-foreground/10 pt-2 flex justify-between font-display text-base">
-          <span>Tổng</span>
-          <span>{vnd(quote?.total ?? subtotal)}</span>
-        </div>
-        {quote ? (
+      </div>
+
+      <div className="space-y-3">
+        {quote && priceChanged ? (
           <div
-            className={`rounded-xl p-3 text-sm ${quote.total !== subtotal ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}
+            role="alert"
+            className="flex items-start gap-3 border-l-4 border-accent bg-card py-3 pl-4 pr-3 text-sm"
           >
-            {quote.total !== subtotal
-              ? `Giá mới từ hệ thống là ${vnd(quote.total)} (giỏ cũ ${vnd(subtotal)}). Hãy kiểm tra và xác nhận lại.`
-              : `Đã kiểm tra giá và tình trạng món. Báo giá có hiệu lực đến ${new Date(quote.expiresAt).toLocaleTimeString('vi-VN')}.`}
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <p>
+              Giá món đã thay đổi: tổng mới {vnd(quote.total)} (trước đó {vnd(subtotal)}). Bấm đặt
+              món nếu bạn đồng ý với giá mới.
+            </p>
           </div>
         ) : null}
         {sessionQuery.data?.active && sessionQuery.data.status === 'CHECKOUT' ? (
@@ -200,24 +207,22 @@ export function CartPage(): JSX.Element {
           </p>
         ) : null}
         <Button
+          size="lg"
           className="w-full"
-          onClick={() => (quote ? placeMutation.mutate() : quoteMutation.mutate())}
+          onClick={() => placeMutation.mutate()}
           disabled={
             placeMutation.isPending ||
-            quoteMutation.isPending ||
             !sessionQuery.data?.active ||
             sessionQuery.data.status !== 'OPEN'
           }
         >
           {placeMutation.isPending
-            ? 'Đang gửi đơn...'
-            : quoteMutation.isPending
-              ? 'Đang kiểm tra giá...'
-              : quote
-                ? 'Xác nhận gửi đơn tới bếp'
-                : 'Kiểm tra giá và tình trạng món'}
+            ? 'Đang đặt món...'
+            : priceChanged
+              ? `Đặt món · ${vnd(quote!.total)}`
+              : 'Đặt món'}
         </Button>
-      </Card>
+      </div>
     </div>
   );
 }

@@ -1,10 +1,26 @@
-const CACHE_VERSION = 'may-cafe-shell-v3';
+const CACHE_VERSION = 'fantastic-cafe-shell-v4';
 const SHELL_URLS = [
   '/',
   '/index.html',
   '/t',
   '/manifest.webmanifest',
   '/favicon.svg',
+  '/fonts/be-vietnam-pro.css',
+  '/fonts/be-vietnam-pro-400-vietnamese.woff2',
+  '/fonts/be-vietnam-pro-400-latin-ext.woff2',
+  '/fonts/be-vietnam-pro-400-latin.woff2',
+  '/fonts/be-vietnam-pro-500-vietnamese.woff2',
+  '/fonts/be-vietnam-pro-500-latin-ext.woff2',
+  '/fonts/be-vietnam-pro-500-latin.woff2',
+  '/fonts/be-vietnam-pro-600-vietnamese.woff2',
+  '/fonts/be-vietnam-pro-600-latin-ext.woff2',
+  '/fonts/be-vietnam-pro-600-latin.woff2',
+  '/fonts/be-vietnam-pro-700-vietnamese.woff2',
+  '/fonts/be-vietnam-pro-700-latin-ext.woff2',
+  '/fonts/be-vietnam-pro-700-latin.woff2',
+  '/fonts/be-vietnam-pro-800-vietnamese.woff2',
+  '/fonts/be-vietnam-pro-800-latin-ext.woff2',
+  '/fonts/be-vietnam-pro-800-latin.woff2',
 ];
 
 self.addEventListener('install', (event) => {

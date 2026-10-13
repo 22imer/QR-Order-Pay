@@ -332,38 +332,6 @@ export async function listTables(_req: Request, res: Response, next: NextFunctio
   }
 }
 
-export async function rotateTableToken(
-  req: Request,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
-  try {
-    const id = String(req.params['id'] ?? '');
-    const table = await tableRepository.findById(id);
-    if (!table) {
-      res.status(404).json({
-        success: false,
-        error: { code: 'TABLE_NOT_FOUND', message: 'Không tìm thấy bàn.' },
-      });
-      return;
-    }
-    const newToken = (await import('../utils/crypto.js')).randomToken(24);
-    const newHash = (await import('../utils/crypto.js')).sha256(newToken);
-    await tableRepository.update(id, { publicTokenHash: newHash });
-    const publicAppUrl = process.env['PUBLIC_APP_URL'] ?? 'http://localhost:5173';
-    res.json({
-      success: true,
-      data: {
-        tableId: id,
-        publicToken: newToken,
-        url: `${publicAppUrl}/t/${newToken}`,
-      },
-    });
-  } catch (e) {
-    next(e);
-  }
-}
-
 export async function listUsers(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const users = await userRepository.list();

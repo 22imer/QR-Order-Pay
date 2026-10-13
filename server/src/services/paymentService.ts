@@ -20,8 +20,189 @@ import { outboxRepository } from '../repositories/outboxRepository.js';
 import { UserModel } from '../models/User.js';
 import { ensureOpenShift } from './cashShiftService.js';
 import { CancelRequestModel } from '../models/CancelRequest.js';
+import type { ClientSession } from 'mongoose';
+import mongoose from 'mongoose';
+import { orderRealtimeEvents } from './orderService.js';
+import { guardPaymentClaim, clearCommittedPaymentClaim } from './paymentClaimService.js';
+import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
+
+export interface ConfirmOrderPaymentInput {
+  claimToken?: string;
+  orderId: string;
+  expectedVersion: number;
+  staffId: string;
+  amount: number;
+  method: 'CASH' | 'BANK_TRANSFER' | 'OTHER';
+  note?: string;
+  idempotencyKey: string;
+}
+
+export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
+  if (!Number.isInteger(input.amount) || input.amount < 0)
+    throw new ValidationError('Số tiền không hợp lệ.');
+  const replay = async () => {
+    const payment = await paymentRepository.findByIdempotency(input.idempotencyKey);
+    if (!payment) return null;
+    if (
+      payment.orderIds.length !== 1 ||
+      payment.orderIds[0]?.toString() !== input.orderId ||
+      payment.amount !== input.amount ||
+      payment.method !== input.method ||
+      payment.confirmedBy.toString() !== input.staffId ||
+      payment.note !== (input.note ?? '')
+    )
+      throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Mã thanh toán đã dùng cho yêu cầu khác.');
+    return { payment, replayed: true };
+  };
+  const existing = await replay();
+  if (existing) return existing;
+  try {
+    return await unitOfWork.withTransaction(async (session) => {
+      const order = await orderRepository.findById(input.orderId, session);
+      if (!order) throw new NotFoundError('Đơn không tồn tại.');
+      await assertNoPaymentCorrection(order.id, session);
+      if (
+        await CancelRequestModel.exists({ orderId: order._id, status: 'REQUESTED' }).session(
+          session,
+        )
+      )
+        throw new ConflictError(
+          'CANCEL_REQUEST_PENDING',
+          'Cần xử lý yêu cầu hủy trước khi thu thêm tiền.',
+        );
+      if (
+        order.version !== input.expectedVersion ||
+        order.paymentStatus !== 'UNPAID' ||
+        order.status === 'CANCELLED'
+      )
+        throw new ConflictError('CONFLICT', 'Đơn đã thay đổi hoặc đã thu tiền. Vui lòng tải lại.');
+      const collected = order.paidAmount ?? 0;
+      const remaining = order.total - collected;
+      if (input.amount > remaining || (input.amount <= 0 && remaining !== 0))
+        throw new ValidationError(
+          `Số tiền thực nhận phải lớn hơn 0 và không quá ${remaining} VND còn thiếu.`,
+        );
+      await guardPaymentClaim(
+        order.tableSessionId.toString(),
+        input.staffId,
+        input.claimToken,
+        session,
+      );
+      const shift = await ensureOpenShift(input.staffId, session);
+      const payment = await paymentRepository.create(
+        {
+          tableSessionId: order.tableSessionId,
+          shiftId: shift._id,
+          orderIds: [order._id],
+          amount: input.amount,
+          method: input.method,
+          status: 'SUCCESS',
+          confirmedBy: new mongoose.Types.ObjectId(input.staffId),
+          paidAt: new Date(),
+          idempotencyKey: input.idempotencyKey,
+          note: input.note ?? '',
+        },
+        session,
+      );
+      const paidAmount = collected + input.amount;
+      const paid = paidAmount === order.total;
+      const nextStatus = paid && order.status === 'AWAITING_PAYMENT' ? 'PENDING' : order.status;
+      const updated = await OrderModel.findOneAndUpdate(
+        { _id: order._id, version: order.version, paymentStatus: 'UNPAID' },
+        {
+          $set: { paidAmount, paymentStatus: paid ? 'PAID' : 'UNPAID', status: nextStatus },
+          $inc: { version: 1 },
+          ...(nextStatus !== order.status
+            ? {
+                $push: {
+                  statusHistory: {
+                    from: order.status,
+                    to: nextStatus,
+                    at: new Date(),
+                    by: input.staffId,
+                    reason: 'Đã nhận đủ tiền',
+                  },
+                },
+              }
+            : {}),
+        },
+        { new: true, session },
+      );
+      if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
+      await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
+      await auditRepository.log(
+        {
+          actorType: 'USER',
+          actorId: input.staffId,
+          action: 'payment.orderConfirmed',
+          entityType: 'Payment',
+          entityId: payment.id,
+          metadata: { orderId: order.id, amount: payment.amount },
+        },
+        session,
+      );
+      await outboxRepository.createRealtimeEvents(
+        orderRealtimeEvents(updated, 'order.statusChanged'),
+        session,
+      );
+      return { payment, replayed: false };
+    });
+  } catch (error) {
+    const raced = await replay();
+    if (raced) return raced;
+    throw error;
+  }
+}
+
+export async function listAwaitingPayments() {
+  const sessions = await tableSessionRepository.listOpen();
+  return OrderModel.find({
+    tableSessionId: { $in: sessions.map((s) => s._id) },
+    status: { $ne: 'CANCELLED' },
+    paymentStatus: 'UNPAID',
+  }).sort({ createdAt: 1 });
+}
+
+export async function finalizeSessionBill(
+  tableSession: TableSessionDoc,
+  staffId: string | null,
+  session: ClientSession,
+) {
+  if (
+    await CancelRequestModel.exists({
+      tableSessionId: tableSession._id,
+      status: 'REQUESTED',
+    }).session(session)
+  )
+    throw new ConflictError(
+      'CANCEL_REQUEST_PENDING',
+      'Cần xử lý yêu cầu hủy trước khi đóng phiên.',
+    );
+  const table = await tableRepository.findById(tableSession.tableId.toString(), session);
+  if (!table) throw new NotFoundError('Bàn không tồn tại.');
+  const cashier = staffId ? await UserModel.findById(staffId).session(session) : null;
+  const orders = await OrderModel.find({ tableSessionId: tableSession._id })
+    .sort({ createdAt: 1 })
+    .session(session);
+  for (const order of orders) await assertNoPaymentCorrection(order.id, session);
+  const payments = await paymentRepository.listBySession(tableSession.id, session);
+  const { bill } = await billRepository.finalize(
+    {
+      tableSession,
+      tableCode: table.code,
+      tableName: table.name,
+      cashierName: cashier?.name ?? 'Nhân viên',
+      orders,
+      payments,
+      closedAt: tableSession.closedAt ?? new Date(),
+    },
+    session,
+  );
+  return bill;
+}
 
 export interface ConfirmPaymentInput {
+  claimToken?: string;
   tableSessionId: string;
   expectedVersion: number;
   staffId: string;
@@ -91,6 +272,7 @@ async function settleSession(input: ConfirmPaymentInput) {
     }
 
     const allOrders = await OrderModel.find({ tableSessionId: tableSession._id }).session(session);
+    for (const order of allOrders) await assertNoPaymentCorrection(order.id, session);
     if (allOrders.some((o) => !['SERVED', 'CANCELLED'].includes(o.status))) {
       throw new ValidationError(
         'Còn món chưa phục vụ. Hãy hoàn tất hoặc hủy đơn hợp lệ trước khi thu tiền.',
@@ -100,10 +282,16 @@ async function settleSession(input: ConfirmPaymentInput) {
     if (orders.length === 0) {
       throw new ValidationError('Không có đơn nào đang chờ thanh toán.');
     }
-    const expected = orders.reduce((s, o) => s + o.total, 0);
+    const expected = orders.reduce((s, o) => s + o.total - (o.paidAmount ?? 0), 0);
     if (input.amount !== expected) {
       throw new ValidationError(`Số tiền phải thu là ${expected} VND, không khớp với yêu cầu.`);
     }
+    const claimedSession = await guardPaymentClaim(
+      input.tableSessionId,
+      input.staffId,
+      input.claimToken,
+      session,
+    );
 
     const table = await tableRepository.findById(tableSession.tableId.toString(), session);
     if (!table) throw new NotFoundError('Bàn không tồn tại.');
@@ -130,6 +318,12 @@ async function settleSession(input: ConfirmPaymentInput) {
       'PAID',
       session,
     );
+    for (const order of orders)
+      await OrderModel.updateOne(
+        { _id: order._id },
+        { $set: { paidAmount: order.total }, $inc: { version: 1 } },
+        { session },
+      );
 
     // Snapshot bất biến của phiên: chốt ngay trong cùng transaction với payment.
     // Đọc lại đơn sau khi cập nhật paymentStatus để snapshot không giữ trạng thái cũ trong bộ nhớ.
@@ -158,7 +352,7 @@ async function settleSession(input: ConfirmPaymentInput) {
 
     const closed = await tableSessionRepository.updateStatus(
       tableSession._id.toString(),
-      tableSession.version,
+      claimedSession.version,
       {
         status: 'CLOSED',
         closedBy: input.staffId,
@@ -168,9 +362,11 @@ async function settleSession(input: ConfirmPaymentInput) {
       session,
     );
     if (!closed) throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng thử lại.');
+    await clearCommittedPaymentClaim(input.tableSessionId, session);
 
     // revoke all guest sessions of this table session
     await guestSessionRepository.revokeByTableSession(tableSession._id.toString(), session);
+    await tableRepository.invalidateQr(tableSession.tableId.toString(), session);
     await ServiceRequestModel.updateMany(
       { tableSessionId: tableSession._id, status: 'OPEN' },
       { $set: { status: 'RESOLVED', resolvedBy: input.staffId, resolvedAt: new Date() } },
@@ -284,10 +480,11 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
   const table = await tableRepository.findById(session.tableId.toString());
   if (!table) throw new NotFoundError('Bàn không tồn tại.');
   const orders = await OrderModel.find({ tableSessionId }).sort({ createdAt: 1 });
-  const paidOrders = orders.filter((o) => o.status === 'SERVED' && o.paymentStatus === 'PAID');
-  const unpaid = orders.filter((o) => o.status === 'SERVED' && o.paymentStatus === 'UNPAID');
-  const total = unpaid.reduce((s, o) => s + o.total, 0);
-  const paidAmount = paidOrders.reduce((s, o) => s + o.total, 0);
+  const unpaid = orders.filter((o) => o.status !== 'CANCELLED' && o.paymentStatus === 'UNPAID');
+  const total = unpaid.reduce((s, o) => s + o.total - (o.paidAmount ?? 0), 0);
+  const paidAmount = orders
+    .filter((o) => o.status !== 'CANCELLED')
+    .reduce((s, o) => s + (o.paidAmount ?? (o.paymentStatus === 'PAID' ? o.total : 0)), 0);
   return {
     tableSessionId,
     tableCode: table.code,

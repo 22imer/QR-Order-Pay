@@ -6,6 +6,7 @@ import { tableSessionRepository } from '../repositories/tableSessionRepository.j
 import { OrderModel } from '../models/Order.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
+import { tableRepository } from '../repositories/tableRepository.js';
 
 const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -44,6 +45,7 @@ export async function sweepIdleSessions(now: Date = new Date()): Promise<number>
         if (!closed) return false;
 
         await guestSessionRepository.revokeByTableSession(id, mongoSession);
+        await tableRepository.invalidateQr(candidate.tableId.toString(), mongoSession);
         await auditRepository.log(
           {
             actorType: 'SYSTEM',

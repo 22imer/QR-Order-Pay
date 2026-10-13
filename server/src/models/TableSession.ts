@@ -12,6 +12,10 @@ export const tableSessionSchema = new Schema(
     billId: { type: Schema.Types.ObjectId, ref: 'Bill', default: null },
     closedReason: { type: String, enum: ['PAID', 'STAFF', 'IDLE'], default: null },
     version: { type: Number, default: 0 },
+    collectionOwner: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+    collectionOwnerName: { type: String, default: '' },
+    collectionTokenHash: { type: String, default: '', select: false },
+    collectionExpiresAt: { type: Date, default: null },
     tableTransfers: {
       type: [
         {

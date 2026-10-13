@@ -1,7 +1,7 @@
 {
-  "name": "Mây Café — Gọi món tại bàn",
-  "short_name": "Mây Café",
-  "description": "Quét QR, gọi món và theo dõi đơn tại Mây Café.",
+  "name": "Fantastic cafe — Gọi món tại bàn",
+  "short_name": "Fantastic cafe",
+  "description": "Quét QR, gọi món và theo dõi đơn tại Fantastic cafe.",
   "lang": "vi",
   "start_url": "/t",
   "scope": "/",

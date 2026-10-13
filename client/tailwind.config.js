@@ -1,36 +1,39 @@
+const token = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
-        background: '#FAF7F2',
-        foreground: '#2B2118',
+        background: token('background'),
+        foreground: token('foreground'),
         primary: {
-          DEFAULT: '#285943',
-          foreground: '#FAF7F2',
+          DEFAULT: token('primary'),
+          foreground: token('primary-fg'),
         },
         accent: {
-          DEFAULT: '#C88A4D',
-          foreground: '#2B2118',
+          DEFAULT: token('accent'),
+          foreground: token('accent-fg'),
         },
         muted: {
-          DEFAULT: '#EFEAE2',
-          foreground: '#6B5E52',
+          DEFAULT: token('muted'),
+          foreground: token('muted-fg'),
         },
         card: {
-          DEFAULT: '#FFFFFF',
-          foreground: '#2B2118',
+          DEFAULT: token('card'),
+          foreground: token('card-fg'),
         },
-        danger: '#C0392B',
-        success: '#2D8F4E',
+        danger: token('danger'),
+        success: token('success'),
+        warning: { DEFAULT: token('accent'), foreground: token('accent-fg') },
       },
       fontFamily: {
-        sans: ['"Inter"', '"Be Vietnam Pro"', 'system-ui', 'sans-serif'],
-        display: ['"Playfair Display"', '"Be Vietnam Pro"', 'serif'],
+        sans: ['var(--font-sans)'],
+        display: ['var(--font-display)'],
       },
       boxShadow: {
-        soft: '0 8px 24px -12px rgba(43, 33, 24, 0.18)',
+        soft: '0 8px 24px -12px rgb(var(--c-shadow) / 0.18)',
       },
     },
   },

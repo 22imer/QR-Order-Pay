@@ -20,18 +20,30 @@ const mocks = vi.hoisted(() => {
   const data = new Map<string, string>();
   const storage = {
     getItem: (key: string): string | null => data.get(key) ?? null,
-    setItem: (key: string, value: string): void => { data.set(key, String(value)); },
-    removeItem: (key: string): void => { data.delete(key); },
-    clear: (): void => { data.clear(); },
+    setItem: (key: string, value: string): void => {
+      data.set(key, String(value));
+    },
+    removeItem: (key: string): void => {
+      data.delete(key);
+    },
+    clear: (): void => {
+      data.clear();
+    },
     key: (index: number): string | null => Array.from(data.keys())[index] ?? null,
-    get length(): number { return data.size; },
+    get length(): number {
+      return data.size;
+    },
   };
-  Object.defineProperty(globalThis, 'localStorage', { value: storage, writable: true, configurable: true });
+  Object.defineProperty(globalThis, 'localStorage', {
+    value: storage,
+    writable: true,
+    configurable: true,
+  });
   return { get: vi.fn(), post: vi.fn(), patch: vi.fn(), disconnect: vi.fn() };
 });
 
 vi.mock('../lib/api', async (original) => ({
-  ...await original<typeof apiModule>(),
+  ...(await original<typeof apiModule>()),
   api: { get: mocks.get, post: mocks.post, patch: mocks.patch },
 }));
 vi.mock('../lib/socket', () => ({
@@ -56,7 +68,9 @@ function joined(created: boolean) {
 
 // Route `/menu` thật được thay bằng dấu mốc để khẳng định JoinPage đã điều hướng.
 function mount(entry: string) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   render(
     <QueryClientProvider client={client}>
       <ToastProvider>
@@ -102,9 +116,18 @@ describe('JoinPage tự mở phiên khi quét QR bàn chưa có phiên', () => {
   it('drops the previous cart when the joined session changes', async () => {
     useCart.getState().setSession('s-old', 'p-old');
     useCart.getState().add({
-      productId: 'pr-1', variantId: 'v-1', sizeName: 'S', sugarLevel: '50%',
-      iceLevel: 'normal-ice', toppingIds: [], note: '', quantity: 2,
-      unitPrice: 35000, name: 'Cà phê', variantName: 'S', image: '',
+      productId: 'pr-1',
+      variantId: 'v-1',
+      sizeName: 'S',
+      sugarLevel: '50%',
+      iceLevel: 'normal-ice',
+      toppingIds: [],
+      note: '',
+      quantity: 2,
+      unitPrice: 35000,
+      name: 'Cà phê',
+      variantName: 'S',
+      image: '',
     });
     expect(useCart.getState().items).toHaveLength(1);
     mocks.post.mockResolvedValue(ok(joined(true)));
@@ -116,16 +139,22 @@ describe('JoinPage tự mở phiên khi quét QR bàn chưa có phiên', () => {
   });
 
   it('explains a closed table on FORBIDDEN and stays on the QR screen', async () => {
-    mocks.post.mockRejectedValue(new AxiosError('Bàn chưa mở phiên', 'ERR_BAD_REQUEST', undefined, undefined, {
-      status: 403,
-      data: { success: false, error: { code: 'FORBIDDEN', message: 'Bàn chưa mở phiên' } },
-    } as AxiosResponse));
+    mocks.post.mockRejectedValue(
+      new AxiosError('Bàn chưa mở phiên', 'ERR_BAD_REQUEST', undefined, undefined, {
+        status: 403,
+        data: { success: false, error: { code: 'FORBIDDEN', message: 'Bàn chưa mở phiên' } },
+      } as AxiosResponse),
+    );
     mount(`/t/${token}`);
     expect(await screen.findByText('Bàn chưa mở phiên')).toBeTruthy();
-    expect(await screen.findByText('Vui lòng báo nhân viên hoặc quét lại QR sau ít phút.')).toBeTruthy();
+    expect(await screen.findByText('Chưa vào được bàn')).toBeTruthy();
     expect(mocks.post).toHaveBeenCalledTimes(1);
     expect(useCart.getState().tableSessionId).toBeNull();
-    await waitFor(() => expect((screen.getByRole('button', { name: /Vào bàn/ }) as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() =>
+      expect((screen.getByRole('button', { name: /Vào bàn/ }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     expect(screen.queryByText('TRANG-THU-DON')).toBeNull();
   });
 });

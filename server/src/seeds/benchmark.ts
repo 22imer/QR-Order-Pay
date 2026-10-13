@@ -19,7 +19,7 @@ import '../models/Topping.js';
 import '../models/User.js';
 
 const productCount = Number(process.env.BENCHMARK_PRODUCT_COUNT ?? 200);
-const tableToken = process.env.BENCHMARK_TABLE_TOKEN ?? 'benchmark-table-token-local-only';
+const displayToken = process.env.BENCHMARK_DISPLAY_TOKEN;
 
 async function main(): Promise<void> {
   await connectMongo();
@@ -28,6 +28,8 @@ async function main(): Promise<void> {
     throw new Error(`Refusing to reset non-benchmark database: ${databaseName}`);
   if (!Number.isInteger(productCount) || productCount < 1 || productCount > 10_000)
     throw new Error('BENCHMARK_PRODUCT_COUNT must be 1..10000');
+  if (!displayToken || !/^[A-Za-z0-9_-]{43}$/.test(displayToken))
+    throw new Error('BENCHMARK_DISPLAY_TOKEN must be a private 32-byte base64url credential');
   await mongoose.connection.db?.dropDatabase();
   // dropDatabase removes every index. Rebuild them before accepting concurrent
   // benchmark traffic so production invariants (notably one active session per
@@ -73,7 +75,8 @@ async function main(): Promise<void> {
     code: 'BENCH-01',
     name: 'Benchmark table',
     capacity: 10_000,
-    publicTokenHash: sha256(tableToken),
+    publicTokenHash: sha256(`unused-legacy-${displayToken}`),
+    displayTokenHash: sha256(displayToken),
     isActive: true,
   });
   process.stdout.write(

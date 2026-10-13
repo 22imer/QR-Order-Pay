@@ -73,6 +73,7 @@ export const errorCode = {
 export type ErrorCode = (typeof errorCode)[keyof typeof errorCode];
 
 export const orderStatusSchema = z.enum([
+  'AWAITING_PAYMENT',
   'PENDING',
   'CONFIRMED',
   'PREPARING',
@@ -95,6 +96,43 @@ export const paymentRequestSchema = z.object({
   note: z.string().max(280).optional(),
 });
 export type PaymentRequest = z.infer<typeof paymentRequestSchema>;
+
+export const paymentClaimRequestSchema = z.object({ token: z.string().min(16).max(128) });
+export const paymentCorrectionRequestSchema = z
+  .object({
+    kind: z.enum(['VOID', 'METHOD', 'TRANSFER']),
+    reason: z.string().trim().min(3).max(280),
+    method: paymentMethodSchema.optional(),
+    targetOrderId: z
+      .string()
+      .regex(/^[a-f\d]{24}$/i)
+      .optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.kind === 'METHOD' && !value.method)
+      ctx.addIssue({ code: 'custom', path: ['method'], message: 'Chọn phương thức đúng.' });
+    if (value.kind === 'TRANSFER' && !value.targetOrderId)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetOrderId'],
+        message: 'Chọn đơn nhận khoản thu.',
+      });
+  });
+export const paymentCorrectionDecisionSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  approve: z.boolean(),
+  note: z.string().trim().min(3).max(280),
+});
+
+export const orderPaymentRequestSchema = paymentRequestSchema;
+export const dynamicQrResponseSchema = z.object({
+  tableId: z.string(),
+  tableName: z.string(),
+  url: z.string().url(),
+  expiresAt: z.number().int(),
+  serverTime: z.number().int(),
+});
+export type DynamicQrResponse = z.infer<typeof dynamicQrResponseSchema>;
 
 export const tableSessionStatusSchema = z.enum(['OPEN', 'CHECKOUT', 'CLOSED']);
 export type TableSessionStatus = z.infer<typeof tableSessionStatusSchema>;
@@ -226,6 +264,8 @@ export const orderSchema = z.object({
   total: moneyVndSchema,
   status: orderStatusSchema,
   paymentStatus: paymentStatusSchema,
+  paidAmount: moneyVndSchema.optional(),
+  balanceDue: moneyVndSchema.optional(),
   statusHistory: z.array(
     z.object({
       from: orderStatusSchema.nullable(),
@@ -252,13 +292,23 @@ const orderDtoBaseSchema = z.object({
   participantId: z.string(),
   items: z.array(orderDtoItemSchema),
   total: moneyVndSchema,
+  paidAmount: moneyVndSchema.optional(),
+  balanceDue: moneyVndSchema.optional(),
   status: orderStatusSchema,
   paymentStatus: paymentStatusSchema,
   cancelReason: z.string(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
+export const orderReviewSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  comment: z.string().nullable().optional(),
+  createdAt: z.string().datetime(),
+});
+export type OrderReview = z.infer<typeof orderReviewSchema>;
+
 export const guestOrderSchema = orderDtoBaseSchema.extend({
+  review: orderReviewSchema.nullable().default(null),
   statusHistory: z.array(
     z.object({
       from: orderStatusSchema.nullable(),
@@ -270,6 +320,10 @@ export const guestOrderSchema = orderDtoBaseSchema.extend({
 });
 export type GuestOrder = z.infer<typeof guestOrderSchema>;
 export const staffOrderSchema = orderDtoBaseSchema.extend({
+  collectionClaim: z
+    .object({ ownerId: z.string(), ownerName: z.string(), expiresAt: z.string() })
+    .nullable()
+    .optional(),
   tableId: z.string(),
   version: z.number().int().nonnegative(),
   tableName: z.string().optional(),
@@ -526,6 +580,15 @@ export const cancelRequestDecisionSchema = z.object({
   decision: z.enum(['APPROVED', 'REJECTED']),
   expectedVersion: z.number().int().nonnegative(),
   note: z.string().max(280).optional(),
+  refundConfirmed: z.boolean().optional(),
+  refundMethod: paymentMethodSchema.optional(),
+});
+export const refundOrderRequestSchema = z.object({
+  expectedVersion: z.number().int().nonnegative(),
+  amount: moneyVndSchema,
+  method: paymentMethodSchema,
+  reason: z.string().trim().min(3).max(280),
+  refundConfirmed: z.literal(true),
 });
 export const openCashShiftRequestSchema = z.object({ openingCash: moneyVndSchema });
 export const closeCashShiftRequestSchema = z.object({
@@ -572,13 +635,7 @@ export const receiptResponseSchema = z.object({
           lineTotal: moneyVndSchema,
         }),
       ),
-      review: z
-        .object({
-          rating: z.number().int().min(1).max(5),
-          comment: z.string().nullable().optional(),
-          createdAt: z.string().datetime(),
-        })
-        .nullable(),
+      review: orderReviewSchema.nullable(),
     }),
   ),
 });
@@ -670,7 +727,10 @@ export const billSchema = z.object({
 });
 
 export const dashboardOverviewSchema = z.object({
-  totalRevenue: moneyVndSchema,
+  totalRevenue: z.number().int(),
+  grossCollected: moneyVndSchema.default(0),
+  totalRefunded: moneyVndSchema.default(0),
+  adjustmentAmount: z.number().int().default(0),
   orderCount: z.number().int(),
   averageOrderValue: moneyVndSchema,
   topProducts: z.array(
@@ -684,14 +744,14 @@ export const dashboardOverviewSchema = z.object({
   revenueByDay: z.array(
     z.object({
       date: z.string(),
-      revenue: moneyVndSchema,
+      revenue: z.number().int(),
       orders: z.number().int(),
     }),
   ),
   revenueByHour: z.array(
     z.object({
       hour: z.number().int().min(0).max(23),
-      revenue: moneyVndSchema,
+      revenue: z.number().int(),
     }),
   ),
 });

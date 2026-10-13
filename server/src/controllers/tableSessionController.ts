@@ -30,12 +30,13 @@ import { sha256 } from '../utils/crypto.js';
 import { RECEIPT_COOKIE } from '../middlewares/guest.js';
 import { closeGuestSockets } from '../realtime/socket.js';
 import { recordBusinessEvent } from '../infrastructure/metrics.js';
+import { resolveAdmissionTable } from '../services/tableQrService.js';
 
 export async function join(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const input = joinTableRequestSchema.parse(req.body);
     if (req.guest) {
-      const table = await tableRepository.findByPublicTokenHash(sha256(input.tableToken));
+      const table = await resolveAdmissionTable(input.tableToken);
       const session = await tableSessionRepository.findById(req.guest.tableSessionId);
       if (table?.isActive && session && session.tableId.toString() === table.id) {
         res.json({

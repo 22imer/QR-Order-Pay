@@ -17,6 +17,8 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { config } from '../config/index.js';
 import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
+import { verifyAdmissionTicket } from './tableQrService.js';
+import { finalizeSessionBill } from './paymentService.js';
 
 /**
  * Single entry point for "this table must have a live session".
@@ -29,6 +31,8 @@ export async function ensureActiveSession(input: {
   const active = await tableSessionRepository.findActiveByTable(input.tableId);
   if (active) {
     if (input.actor.type === 'STAFF' && active.status === 'CHECKOUT') {
+      if (active.collectionExpiresAt && active.collectionExpiresAt.getTime() > Date.now())
+        throw new ConflictError('PAYMENT_CLAIMED', 'Bàn đang được thu tiền, chưa thể mở lại phiên.');
       const reverted = await unitOfWork.withTransaction(async (mongoSession) => {
         const result = await tableSessionRepository.updateStatus(
           active._id.toString(),
@@ -134,7 +138,18 @@ export async function transition(
       mongoSession,
     );
     if (!result) throw new ConflictError('CONFLICT', 'Phiên đã thay đổi, vui lòng tải lại.');
+    if (result.collectionExpiresAt && result.collectionExpiresAt.getTime() > Date.now())
+      throw new ConflictError(
+        'PAYMENT_CLAIMED',
+        'Bàn đang được thu tiền. Hãy kết thúc thao tác thu tiền trước khi đổi trạng thái phiên.',
+      );
     if (next === 'CLOSED') {
+      const unfinished = await OrderModel.exists({
+        tableSessionId: id,
+        status: { $nin: ['SERVED', 'CANCELLED'] },
+      }).session(mongoSession);
+      if (unfinished)
+        throw new ForbiddenError('Cần phục vụ hoặc hủy các đơn còn lại trước khi đóng phiên.');
       const outstanding = await OrderModel.exists({
         tableSessionId: id,
         status: { $ne: 'CANCELLED' },
@@ -142,6 +157,14 @@ export async function transition(
       }).session(mongoSession);
       if (outstanding)
         throw new ForbiddenError('Cần xử lý và thanh toán hết đơn trước khi đóng phiên.');
+      const bill = await finalizeSessionBill(result, closedBy, mongoSession);
+      await TableSessionModel.updateOne(
+        { _id: id },
+        { $set: { billId: bill.id } },
+        { session: mongoSession },
+      );
+      result.billId = bill._id;
+      await tableRepository.invalidateQr(session.tableId.toString(), mongoSession);
       await guestSessionRepository.revokeByTableSession(id, mongoSession);
       await ServiceRequestModel.updateMany(
         { tableSessionId: id, status: 'OPEN' },
@@ -215,32 +238,73 @@ function allowedTransitions(from: TableSessionStatus): TableSessionStatus[] {
 }
 
 export async function joinAsGuest(tablePublicToken: string) {
-  const table = await tableRepository.findByPublicTokenHash(sha256(tablePublicToken));
-  if (!table || !table.isActive) throw new NotFoundError('Mã QR không hợp lệ hoặc đã hết hạn.');
-  const { session, created: sessionCreated } = await ensureActiveSession({
-    tableId: table._id.toString(),
-    actor: { type: 'GUEST' },
-  });
-  const guestToken = randomToken(32);
-  const receiptToken = randomToken(32);
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12);
-  const participantId = randomToken(8);
-  const created = await guestSessionRepository.create({
-    tableSessionId: session._id.toString(),
-    participantId,
-    tokenHash: sha256(guestToken),
-    receiptTokenHash: sha256(receiptToken),
-    expiresAt,
-  });
-  return {
-    guestToken,
-    receiptToken,
-    guestId: created.id,
-    participantId,
-    tableSession: session,
-    table,
-    created: sessionCreated,
-  };
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await unitOfWork.withTransaction(async (mongoSession) => {
+        const ticket = verifyAdmissionTicket(tablePublicToken);
+        const table = await tableRepository.claimAdmission(
+          ticket.tableId,
+          ticket.epoch,
+          mongoSession,
+        );
+        if (!table) throw new ForbiddenError('QR đã bị thu hồi. Vui lòng quét mã mới tại bàn.');
+        let session = await tableSessionRepository.findActiveByTable(table.id, mongoSession);
+        let sessionCreated = false;
+        if (!session) {
+          if (!config.guestAutoOpen)
+            throw new ForbiddenError('Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên.');
+          session = await tableSessionRepository.create(
+            { tableId: table.id, source: 'GUEST' },
+            mongoSession,
+          );
+          sessionCreated = true;
+          await auditRepository.log(
+            {
+              actorType: 'SYSTEM',
+              action: 'tableSession.autoOpened',
+              entityType: 'TableSession',
+              entityId: session.id,
+              metadata: { tableId: table.id, source: 'GUEST' },
+            },
+            mongoSession,
+          );
+          await createSessionStatusEvents(session, mongoSession);
+        }
+        if (session.status !== 'OPEN')
+          throw new ForbiddenError('Bàn đang kết thúc phiên, vui lòng liên hệ nhân viên.');
+        const guestToken = randomToken(32);
+        const receiptToken = randomToken(32);
+        const participantId = randomToken(8);
+        const created = await guestSessionRepository.create(
+          {
+            tableSessionId: session.id,
+            participantId,
+            tokenHash: sha256(guestToken),
+            receiptTokenHash: sha256(receiptToken),
+            expiresAt: new Date(Date.now() + 12 * 60 * 60_000),
+          },
+          mongoSession,
+        );
+        return {
+          guestToken,
+          receiptToken,
+          guestId: created.id,
+          participantId,
+          tableSession: session,
+          table,
+          created: sessionCreated,
+        };
+      });
+    } catch (error) {
+      if (
+        ((error as { code?: number }).code === 11000 ||
+          (error instanceof ConflictError && error.code === 'TABLE_SESSION_ALREADY_OPEN')) &&
+        attempt < 3
+      )
+        continue;
+      throw error;
+    }
+  }
 }
 
 export async function guestCanOrder(tableSessionId: string): Promise<void> {
@@ -280,6 +344,8 @@ export async function transferSession(
       tableRepository.findById(targetTableId, session),
     ]);
     if (!source) throw new NotFoundError('Phiên không tồn tại.');
+    if (source.collectionExpiresAt && source.collectionExpiresAt.getTime() > Date.now())
+      throw new ConflictError('PAYMENT_CLAIMED', 'Bàn đang được thu tiền, chưa thể chuyển bàn.');
     if (!target?.isActive) throw new NotFoundError('Bàn đích không hoạt động.');
     if (source.status !== 'OPEN')
       throw new ConflictError('STATE_TRANSITION_INVALID', 'Chỉ chuyển được phiên đang mở.');
@@ -313,6 +379,8 @@ export async function transferSession(
       throw error;
     }
     if (!moved) throw new ConflictError('CONFLICT', 'Phiên vừa được cập nhật.');
+    await tableRepository.invalidateQr(source.tableId.toString(), session);
+    await tableRepository.invalidateQr(targetTableId, session);
     await OrderModel.updateMany(
       { tableSessionId: source._id },
       { $set: { tableId: target._id } },

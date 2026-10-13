@@ -1,0 +1,27 @@
+@media print {
+  /* Radix portals mount directly under body: print only the finalized bill. */
+  body:has(.staff-bill-dialog) > :not(.staff-bill-dialog) {
+    display: none !important;
+  }
+
+  body:has(.staff-bill-dialog) {
+    overflow: visible !important;
+  }
+
+  .staff-bill-dialog {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    color: black !important;
+    background: white !important;
+  }
+
+  .staff-bill-dialog button {
+    display: none !important;
+  }
+}

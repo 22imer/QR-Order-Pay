@@ -21,6 +21,7 @@ import { orderRepository } from '../repositories/orderRepository.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { recordBusinessEvent, recordOrderStageDuration } from '../infrastructure/metrics.js';
 import { createOrderQuote } from '../services/orderPricingService.js';
+import { reviewRepository } from '../repositories/reviewRepository.js';
 
 export async function quote(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -58,7 +59,10 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
     }
     res
       .status(result.created ? 201 : 200)
-      .json({ success: true, data: { order: toGuestOrder(result.order), created: result.created } });
+      .json({
+        success: true,
+        data: { order: toGuestOrder(result.order), created: result.created },
+      });
   } catch (e) {
     next(e);
   }
@@ -81,7 +85,8 @@ export async function detail(req: Request, res: Response, next: NextFunction): P
     if (!req.guest) throw new ForbiddenError();
     const id = String(req.params['id'] ?? '');
     const order = await getOrderForGuest(id, req.guest.participantId);
-    res.json({ success: true, data: { order: toGuestOrder(order) } });
+    const review = await reviewRepository.findByOrder(order.id);
+    res.json({ success: true, data: { order: toGuestOrder(order, review) } });
   } catch (e) {
     next(e);
   }
@@ -90,8 +95,15 @@ export async function detail(req: Request, res: Response, next: NextFunction): P
 export async function listMine(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     if (!req.guest) throw new ForbiddenError();
-    const orders = await listOrdersForGuest(req.guest.participantId, req.guest.tableSessionId);
-    res.json({ success: true, data: { orders: orders.map((order) => toGuestOrder(order)) } });
+    const [orders, reviews] = await Promise.all([
+      listOrdersForGuest(req.guest.participantId, req.guest.tableSessionId),
+      reviewRepository.listByParticipant(req.guest.tableSessionId, req.guest.participantId),
+    ]);
+    const byOrder = new Map(reviews.map((review) => [review.orderId.toString(), review]));
+    res.json({
+      success: true,
+      data: { orders: orders.map((order) => toGuestOrder(order, byOrder.get(order.id))) },
+    });
   } catch (e) {
     next(e);
   }
@@ -105,6 +117,7 @@ export async function review(req: Request, res: Response, next: NextFunction): P
     const created = await submitReview({
       orderId: id,
       participantId: req.guest.participantId,
+      tableSessionId: req.guest.tableSessionId,
       rating: input.rating,
       comment: input.comment,
     });

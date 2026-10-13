@@ -83,6 +83,7 @@ export const orderRepository = {
     if (filters.tableSessionIds.length === 0) return [];
     return OrderModel.find({
       tableSessionId: { $in: filters.tableSessionIds },
+      paymentStatus: 'PAID',
       status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },
     }).sort({ createdAt: 1 });
   },

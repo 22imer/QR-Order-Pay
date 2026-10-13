@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ReceiptText, Search } from 'lucide-react';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
@@ -44,6 +45,13 @@ export function AdminBills(): JSX.Element {
         <h1 className="font-display text-2xl font-semibold">Lịch sử hóa đơn</h1>
         <p className="text-sm text-muted-foreground">
           Tra cứu theo snapshot đã chốt; đổi menu sau này không làm thay đổi hóa đơn.
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Điều chỉnh sau khi đóng phiên được lưu tại{' '}
+          <Link className="underline" to="/admin/payments">
+            Khoản thu & điều chỉnh
+          </Link>
+          .
         </p>
       </div>
       <Card className="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-5">

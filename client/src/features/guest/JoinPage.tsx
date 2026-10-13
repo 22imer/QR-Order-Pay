@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { QrCode, Sparkles } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { api, getErrorCode, getErrorMessage, unwrap } from '../../lib/api';
@@ -9,6 +9,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCart } from '../../store/cart';
 import { disconnectSocket } from '../../lib/socket';
+import { CloudMark } from './CloudMark';
 import type { JoinTableResponse } from '@may-cafe/contracts';
 
 export function JoinPage(): JSX.Element {
@@ -51,8 +52,8 @@ export function JoinPage(): JSX.Element {
     } catch (e) {
       if (getErrorCode(e) === 'FORBIDDEN') {
         toast({
-          title: 'Bàn chưa mở phiên',
-          description: 'Vui lòng báo nhân viên hoặc quét lại QR sau ít phút.',
+          title: 'Chưa vào được bàn',
+          description: getErrorMessage(e),
           tone: 'danger',
         });
       } else {
@@ -72,42 +73,68 @@ export function JoinPage(): JSX.Element {
   }, [token]);
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-      <div className="card max-w-md w-full p-6">
-        <div className="flex items-center gap-2 text-primary">
-          <Sparkles className="h-5 w-5" />
-          <span className="text-sm font-medium uppercase tracking-wider">Mây Café</span>
+    <main className="grid min-h-dvh md:grid-cols-2">
+      <section className="flex flex-col px-5 pb-6 pt-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
+        <div className="flex items-center gap-3">
+          <CloudMark className="h-7 w-10 text-primary md:text-primary-foreground" />
+          <span className="g-title text-2xl">Fantastic cafe</span>
         </div>
-        <h1 className="mt-3 font-display text-2xl font-semibold">Quét QR hoặc nhập mã bàn</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Mở camera, quét QR trên bàn — hoặc dán mã QR vào ô bên dưới để vào phiên phục vụ.
+        <div className="hidden flex-1 flex-col justify-center py-14 md:flex">
+          <CloudMark className="mb-10 h-24 w-36 text-primary-foreground/70" />
+          <p className="g-display max-w-md text-5xl lg:text-6xl">Gọi món tại bàn bằng QR</p>
+          <p className="mt-6 max-w-sm text-base leading-relaxed text-primary-foreground/70">
+            Mở camera và quét mã QR đang hiển thị trên màn hình tại bàn. Mã tự đổi mỗi 60 giây.
+          </p>
+        </div>
+        <p className="hidden border-t border-primary-foreground/20 pt-6 text-sm text-primary-foreground/70 md:block">
+          Thanh toán từng đơn trước khi pha chế.
         </p>
-        <form
-          className="mt-5 space-y-3"
-          onSubmit={(e: React.FormEvent) => {
-            e.preventDefault();
-            void join(value);
-          }}
-        >
-          <label className="block text-sm font-medium">
-            Mã QR
-            <Input
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Vd: xYzAbC123…"
-              className="mt-1"
-            />
-          </label>
-          <Button type="submit" disabled={loading} className="w-full">
-            <QrCode className="h-4 w-4" /> {loading ? 'Đang vào...' : 'Vào bàn'}
-          </Button>
-        </form>
-        <div className="mt-5 rounded-xl border border-dashed border-foreground/15 p-3 text-xs text-muted-foreground">
-          Trong bản demo, dán token QR in ra khi chạy{' '}
-          <code className="font-mono">npm run seed</code> hoặc dán liên kết{' '}
-          <code className="font-mono">/t/&lt;token&gt;</code> vào trình duyệt.
+      </section>
+      <section className="flex items-center justify-center px-5 pb-10 md:px-10 md:py-16">
+        <div className="w-full max-w-md rounded-3xl border border-foreground/10 bg-card p-6 shadow-soft sm:p-9">
+          <span className="mb-6 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <QrCode className="h-6 w-6" />
+          </span>
+          <h1 className="g-display text-[2.5rem]">Quét QR hoặc nhập mã bàn</h1>
+          <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
+            Mở camera và quét mã QR đang hiển thị trên màn hình tại bàn. Mã tự đổi mỗi 60 giây.
+          </p>
+          <form
+            className="mt-8 space-y-5"
+            aria-busy={loading}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void join(value);
+            }}
+          >
+            <label className="block text-sm font-semibold">
+              Mã QR
+              <Input
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                placeholder="Link vào bàn"
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                className="mt-2 h-12 text-base font-normal"
+              />
+            </label>
+            <Button type="submit" size="lg" disabled={loading} className="w-full">
+              <QrCode className="h-5 w-5" />
+              {loading ? 'Đang vào...' : 'Vào bàn'}
+            </Button>
+          </form>
+          <details className="mt-6 border-t border-foreground/10 pt-5 text-sm text-muted-foreground">
+            <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
+              Mở link vào bàn
+            </summary>
+            <p className="mt-3 leading-relaxed">
+              Trên màn hình QR tại bàn, bấm “Sao chép link”, rồi dán vào ô Mã QR. Link tự đổi cùng
+              QR.
+            </p>
+          </details>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

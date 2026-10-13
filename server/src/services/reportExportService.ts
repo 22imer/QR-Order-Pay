@@ -6,10 +6,13 @@ export function overviewToCsv(
   to: string | null,
 ): string {
   const rows: Array<Array<string | number>> = [
-    ['Báo cáo Mây Café', `${displayDate(from)} - ${displayDate(to)}`],
-    ['Doanh thu', data.totalRevenue],
-    ['Số đơn', data.orderCount],
-    ['Giá trị trung bình/đơn', data.averageOrderValue],
+    ['Báo cáo Fantastic cafe', `${displayDate(from)} - ${displayDate(to)}`],
+    ['Thực thu ròng', data.totalRevenue],
+    ['Tiền đã thu', data.grossCollected ?? 0],
+    ['Tiền đã hoàn', data.totalRefunded ?? 0],
+    ['Điều chỉnh', data.adjustmentAmount ?? 0],
+    ['Số đơn có thu tiền', data.orderCount],
+    ['Tiền thu trung bình/đơn', data.averageOrderValue],
     [],
     ['Doanh thu theo ngày'],
     ['Ngày', 'Doanh thu', 'Số đơn'],

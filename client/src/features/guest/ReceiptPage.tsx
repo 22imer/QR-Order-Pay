@@ -1,14 +1,27 @@
-import { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { api, unwrap, vnd, getErrorMessage } from '../../lib/api';
-import { Card } from '../../components/ui/Card';
-import { Button } from '../../components/ui/Button';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
-import { useToast } from '../../components/ui/useToast';
-import { receiptResponseSchema, type ReceiptResponse } from '@may-cafe/contracts';
+import { receiptResponseSchema } from '@may-cafe/contracts';
+import { OrderReview } from './OrderReview';
 
-type ReceiptOrder = ReceiptResponse['orders'][number];
+function iceLabel(value: string): string {
+  return value === 'no-ice' ? 'không đá' : value === 'less-ice' ? 'ít đá' : 'đá thường';
+}
+
+function formatClosedAt(iso: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export function ReceiptPage(): JSX.Element {
   useDocumentTitle('Hóa đơn & đánh giá');
@@ -18,129 +31,97 @@ export function ReceiptPage(): JSX.Element {
       receiptResponseSchema.parse(unwrap(await api.get<unknown>('/receipts/current'))),
     retry: false,
   });
-  if (query.isLoading) return <p>Đang tải hóa đơn...</p>;
+  if (query.isLoading) return <Skeleton className="mt-2 h-96 rounded-3xl" />;
   if (query.isError)
     return <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />;
   const data = query.data!;
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap justify-between gap-3 items-center">
+    <div className="mx-auto w-full max-w-3xl space-y-8 pt-2">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold">Hóa đơn của bạn</h1>
-          <p className="text-sm text-muted-foreground">
-            Mây Café · {data.tableName} · Đã kết thúc phiên
+          <h1 className="g-display text-[2.25rem]">Hóa đơn của bạn</h1>
+          <p className="mt-2 max-w-[40ch] text-sm text-muted-foreground">
+            Các món do thiết bị này đặt. Nhân viên thu tiền và in hóa đơn chung theo bàn.
           </p>
         </div>
-        <Button variant="outline" className="print:hidden" onClick={() => window.print()}>
-          In hóa đơn
-        </Button>
       </div>
-      <p className="text-sm">Các món do thiết bị này đặt. Nhân viên thu tiền chung theo bàn.</p>
+
       {data.orders.length === 0 ? (
         <EmptyState
           title="Không có món đã thanh toán"
           description="Phiên đã đóng; thiết bị này không có đơn đã thanh toán."
         />
       ) : (
-        data.orders.map((order) => (
-          <Card key={order._id} className="p-4 space-y-3 break-inside-avoid">
-            <h2 className="font-semibold">Đơn {order.code}</h2>
-            {order.items.map((item, i) => (
-              <div key={i} className="flex justify-between gap-4 text-sm">
-                <div>
-                  <p>
-                    {item.quantity} × {item.nameSnapshot}
-                    {item.sizeName ? ` (${item.sizeName})` : ''}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Đường {item.sugarLevel} ·{' '}
-                    {item.iceLevel === 'no-ice'
-                      ? 'Không đá'
-                      : item.iceLevel === 'less-ice'
-                        ? 'Ít đá'
-                        : 'Đá thường'}
-                  </p>
-                  {item.toppingNamesSnapshot?.length ? (
-                    <p className="text-xs">{item.toppingNamesSnapshot.join(', ')}</p>
-                  ) : null}
-                  {item.note ? <p className="text-xs italic">{item.note}</p> : null}
-                </div>
-                <span className="whitespace-nowrap">{vnd(item.lineTotal)}</span>
+        <div className="slip-wrap slip-print">
+          <article className="slip px-5 pt-5">
+            <header className="flex items-start justify-between gap-3">
+              <div>
+                <p className="g-title text-lg">Fantastic cafe</p>
+                <p className="text-sm text-muted-foreground">{data.tableName}, đã kết thúc phiên</p>
               </div>
+              <p className="text-right text-sm text-muted-foreground">
+                {formatClosedAt(data.closedAt)}
+              </p>
+            </header>
+
+            {data.orders.map((order) => (
+              <section key={order._id} aria-label={`Đơn ${order.code}`}>
+                <div className="slip-rule mt-4" />
+                <p className="mt-4 text-sm font-semibold">Đơn {order.code}</p>
+                <ul className="mt-3 space-y-3">
+                  {order.items.map((item, i) => (
+                    <li key={i}>
+                      <div className="flex items-end gap-2">
+                        <span className="leading-snug">
+                          {item.quantity} × {item.nameSnapshot}
+                          {item.sizeName ? ` (${item.sizeName})` : ''}
+                        </span>
+                        <span className="leader" aria-hidden="true" />
+                        <span className="tabular-nums">{vnd(item.lineTotal)}</span>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Đường {item.sugarLevel}, {iceLabel(item.iceLevel)}
+                        {item.toppingNamesSnapshot?.length
+                          ? `, ${item.toppingNamesSnapshot.join(', ')}`
+                          : ''}
+                      </p>
+                      {item.note ? (
+                        <p className="text-sm italic text-muted-foreground">“{item.note}”</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-3 flex justify-between text-sm text-muted-foreground">
+                  <span>Tổng đơn, đã thanh toán</span>
+                  <span className="tabular-nums">{vnd(order.total)}</span>
+                </p>
+              </section>
             ))}
-            <p className="font-semibold text-right">{vnd(order.total)} · Đã thanh toán</p>
-            <div className="print:hidden">
-              <ReviewForm order={order} />
+
+            <div className="slip-rule mt-4" />
+            <div className="flex items-end justify-between gap-3 pt-4">
+              <span className="g-title text-lg">Tổng đã thanh toán</span>
+              <span className="g-display text-3xl tabular-nums">{vnd(data.total)}</span>
             </div>
-          </Card>
-        ))
+          </article>
+        </div>
       )}
-      <p className="text-xl font-semibold text-right">Tổng đã thanh toán: {vnd(data.total)}</p>
-      <p className="text-sm text-muted-foreground">
-        Cảm ơn bạn đã ghé Mây Café! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể từ lúc
+
+      {data.orders.length > 0 ? (
+        <section className="space-y-4 print:hidden" aria-labelledby="review-title">
+          <h2 id="review-title" className="g-title text-xl">
+            Bạn thấy đồ uống thế nào?
+          </h2>
+          {data.orders.map((order) => (
+            <OrderReview key={order._id} order={order} mode="receipt" />
+          ))}
+        </section>
+      ) : null}
+
+      <p className="text-sm text-muted-foreground print:mt-4">
+        Cảm ơn bạn đã ghé Fantastic cafe! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể từ lúc
         vào bàn hoặc khi bạn rời bàn.
       </p>
     </div>
-  );
-}
-
-function ReviewForm({ order }: { order: ReceiptOrder }): JSX.Element {
-  const [rating, setRating] = useState(5);
-  const [comment, setComment] = useState('');
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const review = useMutation({
-    mutationFn: () => api.post(`/receipts/orders/${order._id}/review`, { rating, comment }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ['receipt'] });
-      toast({ title: 'Cảm ơn bạn đã đánh giá!', tone: 'success' });
-    },
-    onError: (e) =>
-      toast({ title: 'Chưa gửi được đánh giá', description: getErrorMessage(e), tone: 'danger' }),
-  });
-  if (order.review)
-    return (
-      <p className="text-sm text-primary">
-        Bạn đã đánh giá {order.review.rating}/5 sao
-        {order.review.comment ? ` — ${order.review.comment}` : ''}
-      </p>
-    );
-  return (
-    <form
-      className="border-t pt-3 space-y-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        review.mutate();
-      }}
-    >
-      <label className="text-sm block">
-        Đánh giá đồ uống
-        <select
-          aria-label={`Số sao cho đơn ${order.code}`}
-          value={rating}
-          onChange={(e) => setRating(Number(e.target.value))}
-          className="ml-3 border rounded p-2"
-        >
-          {[5, 4, 3, 2, 1].map((n) => (
-            <option key={n} value={n}>
-              {n} sao
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="block text-sm">
-        Nhận xét (không bắt buộc)
-        <textarea
-          value={comment}
-          onChange={(e) => setComment(e.target.value)}
-          maxLength={500}
-          rows={2}
-          className="mt-1 w-full rounded-xl border p-3"
-        />
-      </label>
-      <Button type="submit" disabled={review.isPending || review.isSuccess}>
-        {review.isPending ? 'Đang gửi...' : 'Gửi đánh giá'}
-      </Button>
-    </form>
   );
 }

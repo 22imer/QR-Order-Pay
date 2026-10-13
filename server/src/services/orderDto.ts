@@ -15,6 +15,7 @@ type OrderSource = Pick<
   | 'tableId'
   | 'items'
   | 'total'
+  | 'paidAmount'
   | 'status'
   | 'paymentStatus'
   | 'cancelReason'
@@ -51,6 +52,14 @@ function baseOrder(order: OrderSource) {
       variantNameSnapshot: item.variantNameSnapshot ?? '',
     })),
     total: order.total,
+    paidAmount: order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0),
+    balanceDue:
+      order.paymentStatus === 'REFUNDED'
+        ? 0
+        : Math.max(
+            0,
+            order.total - (order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0)),
+          ),
     status: order.status,
     paymentStatus: order.paymentStatus ?? 'UNPAID',
     cancelReason: order.cancelReason ?? '',
@@ -60,9 +69,15 @@ function baseOrder(order: OrderSource) {
 }
 
 /** Đơn trả cho khách: không có khóa idempotency, hash request hay ID nhân viên đã thao tác. */
-export function toGuestOrder(order: OrderSource): GuestOrder {
+export function toGuestOrder(
+  order: OrderSource,
+  review?: { rating: number; comment?: string | null; createdAt: Date | string } | null,
+): GuestOrder {
   return guestOrderSchema.parse({
     ...baseOrder(order),
+    review: review
+      ? { rating: review.rating, comment: review.comment ?? '', createdAt: iso(review.createdAt) }
+      : null,
     statusHistory: order.statusHistory.map((entry) => ({
       from: entry.from ?? null,
       to: entry.to,

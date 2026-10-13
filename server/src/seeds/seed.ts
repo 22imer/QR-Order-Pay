@@ -539,25 +539,47 @@ export async function seed(): Promise<void> {
   const adminHash = await hashPassword(STAFF_PASSWORD);
   const staffHash = await hashPassword(STAFF_PASSWORD);
   await UserModel.insertMany([
-    { name: 'Admin Mây', email: 'admin@maycafe.vn', passwordHash: adminHash, role: 'ADMIN', isActive: true },
-    { name: 'Nhân viên A', email: 'staff.a@maycafe.vn', passwordHash: staffHash, role: 'STAFF', isActive: true },
-    { name: 'Nhân viên B', email: 'staff.b@maycafe.vn', passwordHash: staffHash, role: 'STAFF', isActive: true },
+    {
+      name: 'Admin Mây',
+      email: 'admin@maycafe.vn',
+      passwordHash: adminHash,
+      role: 'ADMIN',
+      isActive: true,
+    },
+    {
+      name: 'Nhân viên A',
+      email: 'staff.a@maycafe.vn',
+      passwordHash: staffHash,
+      role: 'STAFF',
+      isActive: true,
+    },
+    {
+      name: 'Nhân viên B',
+      email: 'staff.b@maycafe.vn',
+      passwordHash: staffHash,
+      role: 'STAFF',
+      isActive: true,
+    },
   ]);
 
   logger.info('seeding tables...');
   const tables = [];
   for (let i = 1; i <= 10; i++) {
     const publicToken = randomToken(24);
+    const displayToken = randomToken(32);
     tables.push({
       code: `B${i.toString().padStart(2, '0')}`,
       name: `Bàn ${i.toString().padStart(2, '0')}`,
       capacity: i % 2 === 0 ? 4 : 2,
       publicTokenHash: sha256(publicToken),
+      displayTokenHash: sha256(displayToken),
       isActive: true,
     });
     // Demo-only credential: show it to the operator, but never send it through
     // the structured application logger where logs may be retained centrally.
-    process.stdout.write(`Table ${i.toString().padStart(2, '0')} token: ${publicToken}\n`);
+    process.stdout.write(
+      `Table ${i.toString().padStart(2, '0')} display setup (operator only): ${config.publicAppUrl}/display#${displayToken}\n`,
+    );
   }
   await TableModel.insertMany(tables);
 
@@ -566,7 +588,14 @@ export async function seed(): Promise<void> {
   const staffUser = await UserModel.findOne({ role: 'STAFF' });
   if (!staffUser) throw new Error('staff user not found');
 
-  const orderStatuses = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'] as const;
+  const orderStatuses = [
+    'PENDING',
+    'CONFIRMED',
+    'PREPARING',
+    'READY',
+    'SERVED',
+    'CANCELLED',
+  ] as const;
   const orders: unknown[] = [];
   const payments: unknown[] = [];
 
@@ -598,17 +627,68 @@ export async function seed(): Promise<void> {
       createdAt.setMinutes(Math.floor(rand() * 60));
       const status = d === 0 ? 'SERVED' : pick([...orderStatuses]);
       const isPaid = status === 'SERVED' && rand() > 0.1;
-      const paymentStatus = isPaid ? 'PAID' : status === 'CANCELLED' ? 'UNPAID' : pick(['UNPAID', 'UNPAID', 'PAID']);
+      const paymentStatus = isPaid
+        ? 'PAID'
+        : status === 'CANCELLED'
+          ? 'UNPAID'
+          : pick(['UNPAID', 'UNPAID', 'PAID']);
       const code = `MC${randomShortCode(5)}`;
       const orderId = new mongoose.Types.ObjectId();
       const history: unknown[] = [
-        { from: null, to: 'PENDING', at: createdAt, by: null, byParticipantId: 'demo-participant', reason: '' },
+        {
+          from: null,
+          to: 'PENDING',
+          at: createdAt,
+          by: null,
+          byParticipantId: 'demo-participant',
+          reason: '',
+        },
       ];
-      if (status !== 'PENDING') history.push({ from: 'PENDING', to: 'CONFIRMED', at: new Date(createdAt.getTime() + 60000), by: staffUser._id, byParticipantId: null, reason: '' });
-      if (['PREPARING', 'READY', 'SERVED'].includes(status)) history.push({ from: 'CONFIRMED', to: 'PREPARING', at: new Date(createdAt.getTime() + 120000), by: staffUser._id, byParticipantId: null, reason: '' });
-      if (['READY', 'SERVED'].includes(status)) history.push({ from: 'PREPARING', to: 'READY', at: new Date(createdAt.getTime() + 180000), by: staffUser._id, byParticipantId: null, reason: '' });
-      if (status === 'SERVED') history.push({ from: 'READY', to: 'SERVED', at: new Date(createdAt.getTime() + 240000), by: staffUser._id, byParticipantId: null, reason: '' });
-      if (status === 'CANCELLED') history.push({ from: 'PENDING', to: 'CANCELLED', at: new Date(createdAt.getTime() + 30000), by: null, byParticipantId: 'demo-participant', reason: 'demo' });
+      if (status !== 'PENDING')
+        history.push({
+          from: 'PENDING',
+          to: 'CONFIRMED',
+          at: new Date(createdAt.getTime() + 60000),
+          by: staffUser._id,
+          byParticipantId: null,
+          reason: '',
+        });
+      if (['PREPARING', 'READY', 'SERVED'].includes(status))
+        history.push({
+          from: 'CONFIRMED',
+          to: 'PREPARING',
+          at: new Date(createdAt.getTime() + 120000),
+          by: staffUser._id,
+          byParticipantId: null,
+          reason: '',
+        });
+      if (['READY', 'SERVED'].includes(status))
+        history.push({
+          from: 'PREPARING',
+          to: 'READY',
+          at: new Date(createdAt.getTime() + 180000),
+          by: staffUser._id,
+          byParticipantId: null,
+          reason: '',
+        });
+      if (status === 'SERVED')
+        history.push({
+          from: 'READY',
+          to: 'SERVED',
+          at: new Date(createdAt.getTime() + 240000),
+          by: staffUser._id,
+          byParticipantId: null,
+          reason: '',
+        });
+      if (status === 'CANCELLED')
+        history.push({
+          from: 'PENDING',
+          to: 'CANCELLED',
+          at: new Date(createdAt.getTime() + 30000),
+          by: null,
+          byParticipantId: 'demo-participant',
+          reason: 'demo',
+        });
 
       const sessionId = new mongoose.Types.ObjectId();
       const tableId = (await TableModel.findOne())!._id;
@@ -673,7 +753,10 @@ export async function seed(): Promise<void> {
       openedBy: staffUser._id,
       version: 0,
     });
-    logger.info({ sessionId: session._id.toString(), code: demoTable.code }, 'demo OPEN session ready');
+    logger.info(
+      { sessionId: session._id.toString(), code: demoTable.code },
+      'demo OPEN session ready',
+    );
   }
 
   await disconnectMongo();
@@ -684,7 +767,7 @@ export async function seed(): Promise<void> {
       ' - admin@maycafe.vn (ADMIN)',
       ' - staff.a@maycafe.vn (STAFF)',
       ' - staff.b@maycafe.vn (STAFF)',
-      'Demo QR tokens were printed above.',
+      'Display setup links were printed above; customers scan the rotating QR on those displays.',
       '',
     ].join('\n'),
   );
