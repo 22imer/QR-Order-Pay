@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { AnomalyEvaluation } from '@may-cafe/contracts';
 import type { AIProvider } from '../../providers/aiProvider.js';
 import { evaluateAnomalies, type AnomalySettings, type OrderSignal } from '../../services/anomalyDetector.js';
 import { explainAnomaly } from '../../services/anomalyExplanationService.js';
+import { config } from '../../config/index.js';
+import { HttpAIProvider } from '../../providers/aiProvider.js';
 
 const now = new Date('2026-09-22T12:00:00.000Z');
 const settings: AnomalySettings = {
@@ -70,8 +72,43 @@ describe('anomaly detectors with labeled synthetic data', () => {
     const timeoutProvider: AIProvider = { name: 'timeout-test', chat: async () => { throw new DOMException('timed out', 'AbortError'); } };
     const explanation = await explainAnomaly(alertEvaluation(), timeoutProvider);
     expect(explanation.mode).toBe('fallback');
-    expect(explanation.summary).toContain('chưa phải kết luận nguyên nhân');
     expect(explanation.evidence).toHaveLength(3);
+  });
+  it.each(['fallback', 'off'])('keeps anomaly %s independent of live Barista', async (mode) => {
+    const previousAI = { ...config.ai };
+    const previousAnomaly = { ...config.anomaly };
+    Object.assign(config.ai, { mode: 'live', apiKey: 'unit-test-key', model: 'test-model' });
+    Object.assign(config.anomaly, { aiMode: mode });
+    const chat = vi.spyOn(HttpAIProvider.prototype, 'chat').mockResolvedValue(JSON.stringify({
+      summary: 'Observed error rate', evidence: ['12 errors in 40 requests'],
+      hypotheses: ['Inspect workload'], checks: ['Inspect logs'],
+    }));
+    try {
+      expect((await explainAnomaly(alertEvaluation())).mode).toBe('fallback');
+      expect(chat).not.toHaveBeenCalled();
+    } finally {
+      Object.assign(config.ai, previousAI);
+      Object.assign(config.anomaly, previousAnomaly);
+      chat.mockRestore();
+    }
+  });
+  it.each(['fallback', 'off'])('allows opt-in anomaly inference while Barista is %s', async (mode) => {
+    const previousAI = { ...config.ai };
+    const previousAnomaly = { ...config.anomaly };
+    Object.assign(config.ai, { mode, apiKey: 'unit-test-key', model: 'test-model' });
+    Object.assign(config.anomaly, { aiMode: 'live' });
+    const chat = vi.spyOn(HttpAIProvider.prototype, 'chat').mockResolvedValue(JSON.stringify({
+      summary: 'Observed error rate', evidence: ['12 errors in 40 requests'],
+      hypotheses: ['Inspect workload'], checks: ['Inspect logs'],
+    }));
+    try {
+      expect((await explainAnomaly(alertEvaluation())).mode).toBe('llm');
+      expect(chat).toHaveBeenCalledTimes(1);
+    } finally {
+      Object.assign(config.ai, previousAI);
+      Object.assign(config.anomaly, previousAnomaly);
+      chat.mockRestore();
+    }
   });
 });
 

@@ -1,8 +1,8 @@
 # Hạn chế đã biết
 
-Trạng thái mới nhất 23/09/2026: xem [bộ nhớ dự án](../PROJECT_MEMORY.md) và [test report](test-report.md).
+Cập nhật mục AI ngày 06/10/2026; các trạng thái còn lại phản ánh snapshot 23/09/2026. Xem [bộ nhớ dự án](../PROJECT_MEMORY.md) và [test report](test-report.md).
 
-- **AI live chưa verify trong môi trường dev** vì thiếu API key. Đã có fallback rule-based và adapter sẵn sàng; live mode sẽ chạy khi set `AI_MODE=live` + `AI_API_KEY`.
+- **AI Barista mới có smoke provider thật giới hạn**: Zen `space-bunny-free` đã trả `llm` cho ba case trước chuyên hoá và một case kết hợp sau chuyên hoá ngày 06/10/2026; một case mới timeout 15 giây và fallback. Chưa benchmark chất lượng, skill-vs-baseline, chi phí hoặc latency đại diện. Backend chỉ hỗ trợ native Chat Completions với Bearer auth/JSON-object mode; live cần model/key tường minh. `ANOMALY_AI_MODE` độc lập, mặc định `fallback`; HTTP 401 ngày 22/09/2026 là bằng chứng lịch sử. Xem [ai-evaluation.md](ai-evaluation.md).
 - **MongoDB cần replica set** để dùng transaction; compose.yaml đã cấu hình nhưng cần Docker Desktop chạy. Test integration dùng `mongodb-memory-server` để thay thế.
 - **Ảnh món lấy từ Unsplash** — chưa upload asset riêng. Có thể thay bằng pipeline upload trong P2.
 - **Chưa có Vercel/Netlify deployment** — README hướng dẫn chạy local; production deploy cần thêm reverse proxy + HTTPS config.
