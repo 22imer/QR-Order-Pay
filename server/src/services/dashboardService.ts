@@ -1,4 +1,5 @@
 import { orderRepository } from '../repositories/orderRepository.js';
+import { paymentAnalytics } from './paymentAnalyticsService.js';
 
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 
@@ -20,7 +21,11 @@ export async function overview(from?: Date, to?: Date) {
   const f = from ? startOfDayVietnam(from) : startOfDayVietnam(defaultFrom);
   const t = to ? endOfDayVietnam(to) : endOfDayVietnam(today);
 
-  const analytics = await orderRepository.paidAnalytics(f, new Date(t.getTime() + 1));
+  const [sales, financial] = await Promise.all([
+    orderRepository.paidAnalytics(f, new Date(t.getTime() + 1)),
+    paymentAnalytics(f, new Date(t.getTime() + 1)),
+  ]);
+  const analytics = { ...sales, ...financial };
   const revenueByHour = Array.from({ length: 24 }, (_, hour) => ({
     hour,
     revenue: analytics.revenueByHour.find((item) => item.hour === hour)?.revenue ?? 0,

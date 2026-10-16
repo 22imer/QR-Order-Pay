@@ -8,13 +8,16 @@ export interface IGuestSessionRepository {
     participantId: string;
     expiresAt: Date;
   } | null>;
-  create(data: {
-    tableSessionId: string;
-    participantId: string;
-    tokenHash: string;
-    receiptTokenHash?: string;
-    expiresAt: Date;
-  }): Promise<{ id: string; tokenHash: string }>;
+  create(
+    data: {
+      tableSessionId: string;
+      participantId: string;
+      tokenHash: string;
+      receiptTokenHash?: string;
+      expiresAt: Date;
+    },
+    session?: ClientSession,
+  ): Promise<{ id: string; tokenHash: string }>;
   touch(id: string): Promise<void>;
   revokeByTableSession(tableSessionId: string, session?: ClientSession): Promise<number>;
   revokeByHash(hash: string): Promise<boolean>;
@@ -36,8 +39,9 @@ export const guestSessionRepository: IGuestSessionRepository = {
       expiresAt: doc.expiresAt,
     };
   },
-  async create(data) {
-    const doc = await GuestSessionModel.create(data);
+  async create(data, session) {
+    const [doc] = await GuestSessionModel.create([data], { session });
+    if (!doc) throw new Error('Failed to create guest session');
     return { id: doc._id.toString(), tokenHash: doc.tokenHash };
   },
   async touch(id) {

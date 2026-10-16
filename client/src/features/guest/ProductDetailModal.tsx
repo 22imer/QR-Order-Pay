@@ -3,8 +3,11 @@ import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
+import { cn } from '../../lib/cn';
 import { useCart } from '../../store/cart';
 import { useToast } from '../../components/ui/useToast';
+import { QtyStepper } from './QtyStepper';
+import { MenuPhoto } from './MenuPhoto';
 
 interface Variant {
   _id: string;
@@ -114,6 +117,21 @@ export function ProductDetailModal({
   const unitPrice =
     (variant?.price ?? product.basePrice) +
     toppingIds.reduce((sum, id) => sum + (toppings.find((t) => t._id === id)?.price ?? 0), 0);
+  const visibleToppings = toppings.filter(
+    (t) => t.isAvailable !== false && (product.allowedOptions.toppingIds ?? []).includes(t._id),
+  );
+  const sugarOptions = (
+    product.allowedOptions.sugarLevels?.length > 0
+      ? product.allowedOptions.sugarLevels
+      : SUGAR_LEVELS
+  ).map((s) => ({ value: s, label: s }));
+  const iceOptions =
+    product.allowedOptions.iceLevels?.length > 0
+      ? product.allowedOptions.iceLevels.map((v) => ({
+          value: v,
+          label: ICE_LEVELS.find((i) => i.value === v)?.label ?? v,
+        }))
+      : ICE_LEVELS;
 
   function toggleTopping(id: string): void {
     setToppingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -173,110 +191,91 @@ export function ProductDetailModal({
   }
 
   return (
-    <Modal open={!!product} onOpenChange={(o) => !o && onClose()} title={product.name}>
-      <div className="grid grid-cols-1 sm:grid-cols-[160px,1fr] gap-4">
-        <img
-          src={product.image}
-          alt={product.name}
-          className="rounded-xl h-32 w-full object-cover"
-        />
-        <div>
-          <p className="text-sm text-muted-foreground">{product.description}</p>
-          {!product.isAvailable ? (
-            <Badge tone="danger" className="mt-2">
-              Món đang tạm hết
-            </Badge>
-          ) : null}
-        </div>
-      </div>
+    <Modal
+      open={!!product}
+      onOpenChange={(o) => !o && onClose()}
+      title={product.name}
+      description={product.description}
+      className="g-sheet product-sheet"
+    >
+      <MenuPhoto
+        source={product.image}
+        eager
+        className="h-44 w-full rounded-2xl bg-muted object-cover"
+      />
+      {!product.isAvailable ? (
+        <Badge tone="danger" className="mt-3">
+          Món đang tạm hết
+        </Badge>
+      ) : null}
 
       {availableSizes.length > 0 ? (
         <Section title="Size">
-          <div className="flex flex-wrap gap-2">
-            {product.variants.map((v) => (
-              <button
-                key={v._id}
-                disabled={v.isAvailable === false || !product.allowedOptions.sizes.includes(v.name)}
-                className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                  variantId === v._id
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'border-foreground/15 hover:bg-muted'
-                }`}
-                onClick={() => setVariantId(v._id)}
-              >
-                {v.name} · {vnd(v.price)}
-              </button>
-            ))}
+          <div role="radiogroup" aria-label="Size" className="flex flex-wrap gap-2">
+            {product.variants.map((v) => {
+              const disabled =
+                v.isAvailable === false || !product.allowedOptions.sizes.includes(v.name);
+              const selected = variantId === v._id;
+              return (
+                <button
+                  key={v._id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={disabled}
+                  className={cn(
+                    'max-w-[10rem] flex-1 basis-24 rounded-2xl border px-2 py-2.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    selected
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-foreground/15 bg-card hover:bg-muted',
+                    disabled && 'cursor-not-allowed opacity-50 hover:bg-card',
+                  )}
+                  onClick={() => setVariantId(v._id)}
+                >
+                  <span className="block font-semibold">{v.name}</span>
+                  <span
+                    className={cn(
+                      'block text-xs tabular-nums',
+                      selected ? 'opacity-90' : 'text-muted-foreground',
+                    )}
+                  >
+                    {disabled ? 'Hết' : vnd(v.price)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </Section>
       ) : null}
 
       <Section title="Đường">
-        <div className="flex flex-wrap gap-2">
-          {(product.allowedOptions.sugarLevels?.length > 0
-            ? product.allowedOptions.sugarLevels
-            : SUGAR_LEVELS
-          ).map((s) => (
-            <button
-              key={s}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                sugar === s
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'border-foreground/15 hover:bg-muted'
-              }`}
-              onClick={() => setSugar(s)}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Đường" options={sugarOptions} value={sugar} onChange={setSugar} />
       </Section>
 
       <Section title="Đá">
-        <div className="flex flex-wrap gap-2">
-          {(product.allowedOptions.iceLevels?.length > 0
-            ? product.allowedOptions.iceLevels.map((v) => ({
-                value: v,
-                label: ICE_LEVELS.find((i) => i.value === v)?.label ?? v,
-              }))
-            : ICE_LEVELS
-          ).map((i) => (
-            <button
-              key={i.value}
-              className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                ice === i.value
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'border-foreground/15 hover:bg-muted'
-              }`}
-              onClick={() => setIce(i.value)}
-            >
-              {i.label}
-            </button>
-          ))}
-        </div>
+        <Segmented label="Đá" options={iceOptions} value={ice} onChange={setIce} />
       </Section>
 
-      {toppings.length > 0 && product.allowedOptions.toppingIds?.length > 0 ? (
-        <Section title="Topping">
-          <div className="flex flex-wrap gap-2">
-            {toppings
-              .filter(
-                (t) => t.isAvailable !== false && product.allowedOptions.toppingIds.includes(t._id),
-              )
-              .map((t) => (
-                <button
-                  key={t._id}
-                  className={`rounded-full border px-3 py-1.5 text-sm transition ${
-                    toppingIds.includes(t._id)
-                      ? 'bg-accent text-accent-foreground border-accent'
-                      : 'border-foreground/15 hover:bg-muted'
-                  }`}
-                  onClick={() => toggleTopping(t._id)}
-                >
-                  {t.name} · {vnd(t.price)}
-                </button>
-              ))}
-          </div>
+      {visibleToppings.length > 0 ? (
+        <Section title="Topping" hint="Chọn được nhiều loại">
+          <ul className="divide-y divide-foreground/10 overflow-hidden rounded-2xl border border-foreground/10 bg-card">
+            {visibleToppings.map((t) => (
+              <li key={t._id}>
+                <label className="flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2 focus-within:bg-muted">
+                  <input
+                    type="checkbox"
+                    checked={toppingIds.includes(t._id)}
+                    onChange={() => toggleTopping(t._id)}
+                    className="h-5 w-5 accent-[rgb(var(--c-primary))]"
+                  />
+                  <span className="flex-1">{t.name}</span>
+                  <span className="text-sm tabular-nums text-muted-foreground">
+                    +{vnd(t.price)}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
         </Section>
       ) : null}
 
@@ -286,37 +285,17 @@ export function ProductDetailModal({
           onChange={(e) => setNote(e.target.value)}
           maxLength={280}
           rows={2}
+          aria-label="Ghi chú"
           placeholder="Ví dụ: ít ngọt hơn, đổi sang sữa hạnh nhân..."
-          className="w-full rounded-xl border border-foreground/15 bg-white p-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+          className="w-full rounded-2xl border border-foreground/15 bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </Section>
 
-      <Section title="Số lượng">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-          >
-            −
-          </Button>
-          <span className="text-lg font-semibold w-8 text-center">{quantity}</span>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setQuantity((q) => Math.min(50, q + 1))}
-          >
-            +
-          </Button>
-          <span className="ml-auto font-semibold">{vnd(unitPrice * quantity)}</span>
-        </div>
-      </Section>
-
-      <div className="mt-5 flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>
-          Hủy
-        </Button>
+      <div className="product-sheet-footer sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-foreground/10 bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+        <QtyStepper value={quantity} onChange={setQuantity} />
         <Button
+          size="lg"
+          className="flex-1 justify-between whitespace-nowrap px-4 text-[0.9375rem]"
           onClick={() => void handleAdd()}
           disabled={
             validating ||
@@ -326,20 +305,73 @@ export function ProductDetailModal({
             (product.variants.length > 0 && !variant)
           }
         >
-          {validating ? 'Đang kiểm tra cấu hình…' : 'Thêm vào giỏ'}
+          {validating ? (
+            'Đang kiểm tra cấu hình…'
+          ) : (
+            <>
+              <span>Thêm vào giỏ</span>
+              <span className="tabular-nums">{vnd(unitPrice * quantity)}</span>
+            </>
+          )}
         </Button>
       </div>
     </Modal>
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }): JSX.Element {
+function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <div className="mt-4">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+    <div className="mt-5">
+      <p className="mb-2 flex items-baseline gap-2 text-sm font-semibold">
         {title}
+        {hint ? <span className="text-xs font-normal text-muted-foreground">{hint}</span> : null}
       </p>
       {children}
+    </div>
+  );
+}
+
+function Segmented({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: Array<{ value: string; label: string }>;
+  value: string;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex rounded-2xl bg-muted p-1">
+      {options.map((option) => {
+        const selected = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            className={cn(
+              'h-10 flex-1 rounded-xl px-1 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+              selected
+                ? 'bg-primary/15 font-semibold text-primary shadow-soft'
+                : 'text-muted-foreground hover:text-foreground',
+            )}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

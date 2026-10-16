@@ -36,8 +36,91 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('checkout interfaces', () => {
+  function addCartItem() {
+    useCart.getState().setSession('s1', 'g1');
+    useCart.getState().add({
+      productId: 'p1',
+      variantId: 'v1',
+      sizeName: 'S',
+      sugarLevel: '50%',
+      iceLevel: 'normal-ice',
+      toppingIds: [],
+      note: '',
+      quantity: 1,
+      unitPrice: 35000,
+      name: 'Cà phê',
+      variantName: 'S',
+      image: '',
+    });
+    mock.get.mockResolvedValue(response({ active: true, status: 'OPEN' }));
+  }
+
+  it('checks and sends with one click, locking the cart throughout the quote request', async () => {
+    addCartItem();
+    let finishQuote!: (value: unknown) => void;
+    mock.post.mockImplementation((url: string) => {
+      if (url === '/orders/quote')
+        return new Promise((resolve) => {
+          finishQuote = resolve;
+        });
+      return Promise.resolve(response({ order: { code: 'MC1' } }));
+    });
+    const qc = mount(<CartPage />);
+    const submit = screen.getByRole('button', { name: 'Đặt món' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(submit);
+    await waitFor(() => expect(finishQuote).toBeTypeOf('function'));
+    expect((submit as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Xoá món' }).closest('fieldset')?.disabled).toBe(
+      true,
+    );
+    fireEvent.click(submit);
+    finishQuote(response({ quoteToken: 'signed-quote', total: 35000 }));
+    await waitFor(() => expect(useCart.getState().items).toHaveLength(0));
+    expect(mock.post.mock.calls.map((call) => call[0])).toEqual(['/orders/quote', '/orders']);
+    expect(mock.post).toHaveBeenLastCalledWith(
+      '/orders',
+      expect.objectContaining({ quoteToken: 'signed-quote' }),
+      expect.anything(),
+    );
+    qc.clear();
+  });
+
+  it('asks for consent only when the quoted price changes', async () => {
+    addCartItem();
+    mock.post.mockImplementation(async (url: string) =>
+      response(url === '/orders/quote' ? { quoteToken: 'new-price-quote', total: 40000 } : {}),
+    );
+    const qc = mount(<CartPage />);
+    const submit = screen.getByRole('button', { name: 'Đặt món' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(submit);
+    await screen.findByRole('alert');
+    expect(mock.post.mock.calls.map((call) => call[0])).toEqual(['/orders/quote']);
+    expect(useCart.getState().items).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: /Đặt món ·/ }));
+    await waitFor(() => expect(useCart.getState().items).toHaveLength(0));
+    expect(mock.post.mock.calls.map((call) => call[0])).toEqual(['/orders/quote', '/orders']);
+    qc.clear();
+  });
+
+  it('keeps the cart and does not send an order when availability validation fails', async () => {
+    addCartItem();
+    mock.post.mockRejectedValue(new Error('Món đã hết'));
+    const qc = mount(<CartPage />);
+    const submit = screen.getByRole('button', { name: 'Đặt món' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(submit);
+    await waitFor(() => expect(mock.post).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    expect(mock.post.mock.calls[0]![0]).toBe('/orders/quote');
+    expect(useCart.getState().items).toHaveLength(1);
+    qc.clear();
+  });
+
   it('shows empty tables waiting for a guest QR instead of letting staff open a session', async () => {
     mock.get.mockImplementation(async (url: string) => {
+      if (url === '/staff/awaiting-payments') return response({ items: [] });
       if (url === '/staff/tables')
         return response({ tables: [{ _id: 't1', name: 'Bàn 01', capacity: 4, isActive: true }] });
       return response({ items: [] });
@@ -52,6 +135,7 @@ describe('checkout interfaces', () => {
 
   it('requires explicit confirmation and sends the actual bill amount and payment method', async () => {
     mock.get.mockImplementation(async (url: string) => {
+      if (url === '/staff/awaiting-payments') return response({ items: [] });
       if (url === '/staff/tables')
         return response({ tables: [{ _id: 't1', name: 'Bàn 01', isActive: true }] });
       if (url === '/staff/table-sessions')
@@ -79,19 +163,26 @@ describe('checkout interfaces', () => {
         ],
       });
     });
-    mock.post.mockResolvedValue(response({}));
+    mock.post.mockResolvedValue(
+      response({ expiresAt: new Date(Date.now() + 120000).toISOString(), version: 4 }),
+    );
     const qc = mount(<StaffTables />);
     const inspect = await screen.findByRole('button', { name: 'Kiểm tra & thu tiền' });
     await waitFor(() => expect((inspect as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(inspect);
-    expect(mock.post).not.toHaveBeenCalled();
+    await screen.findByRole('dialog', { name: 'Thanh toán · Bàn 01' });
+    expect(
+      mock.post.mock.calls.filter((call) => String(call[0]).endsWith('/payments')),
+    ).toHaveLength(0);
     fireEvent.change(screen.getByRole('combobox'), { target: { value: 'BANK_TRANSFER' } });
     fireEvent.click(screen.getByRole('button', { name: 'Đã nhận đủ tiền — đóng phiên' }));
     await waitFor(() =>
       expect(mock.post).toHaveBeenCalledWith(
         '/staff/table-sessions/s1/payments',
-        { amount: 70000, method: 'BANK_TRANSFER', expectedVersion: 3 },
-        { headers: { 'Idempotency-Key': expect.any(String) } },
+        { amount: 70000, method: 'BANK_TRANSFER', expectedVersion: 4 },
+        {
+          headers: { 'Idempotency-Key': expect.any(String), 'X-Payment-Claim': expect.any(String) },
+        },
       ),
     );
     qc.clear();
@@ -122,6 +213,7 @@ describe('checkout interfaces', () => {
     mock.post.mockResolvedValue(response({ review: { rating: 4 } }));
     const qc = mount(<ReceiptPage />);
     await screen.findByText('Hóa đơn của bạn');
+    expect(screen.queryByRole('button', { name: 'In hóa đơn' })).toBeNull();
     fireEvent.change(screen.getByRole('combobox'), { target: { value: '4' } });
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Đồ uống ngon' } });
     fireEvent.click(screen.getByRole('button', { name: 'Gửi đánh giá' }));
@@ -136,22 +228,20 @@ describe('checkout interfaces', () => {
 
   it('reuses the order idempotency key when a network failure is retried', async () => {
     useCart.getState().setSession('s1', 'g1');
-    useCart
-      .getState()
-      .add({
-        productId: 'p1',
-        variantId: 'v1',
-        sizeName: 'S',
-        sugarLevel: '50%',
-        iceLevel: 'normal-ice',
-        toppingIds: [],
-        note: '',
-        quantity: 1,
-        unitPrice: 35000,
-        name: 'Cà phê',
-        variantName: 'S',
-        image: '',
-      });
+    useCart.getState().add({
+      productId: 'p1',
+      variantId: 'v1',
+      sizeName: 'S',
+      sugarLevel: '50%',
+      iceLevel: 'normal-ice',
+      toppingIds: [],
+      note: '',
+      quantity: 1,
+      unitPrice: 35000,
+      name: 'Cà phê',
+      variantName: 'S',
+      image: '',
+    });
     mock.get.mockResolvedValue(response({ active: true, status: 'OPEN' }));
     mock.post.mockImplementation(async (url: string) => {
       if (url === '/orders/quote')
@@ -165,10 +255,8 @@ describe('checkout interfaces', () => {
       throw new Error('Network disconnected');
     });
     const qc = mount(<CartPage />);
-    const quote = screen.getByRole('button', { name: 'Kiểm tra giá và tình trạng món' });
-    await waitFor(() => expect((quote as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(quote);
-    const submit = await screen.findByRole('button', { name: 'Xác nhận gửi đơn tới bếp' });
+    const submit = screen.getByRole('button', { name: 'Đặt món' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(submit);
     await waitFor(() =>
       expect(mock.post.mock.calls.filter((call) => call[0] === '/orders')).toHaveLength(1),
@@ -222,10 +310,8 @@ describe('checkout interfaces', () => {
       throw failure;
     });
     const qc = mount(<CartPage />);
-    const quote = screen.getByRole('button', { name: 'Kiểm tra giá và tình trạng món' });
-    await waitFor(() => expect((quote as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(quote);
-    const submit = await screen.findByRole('button', { name: 'Xác nhận gửi đơn tới bếp' });
+    const submit = screen.getByRole('button', { name: 'Đặt món' });
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(submit);
     await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(submit);

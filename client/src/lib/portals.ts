@@ -15,6 +15,14 @@ export function getPortalUrls(): PortalUrls {
 }
 
 export function getPortalMode(origin = window.location.origin): PortalMode {
+  const servedPortal = document.querySelector<HTMLMetaElement>(
+    'meta[name="fantastic-cafe-portal"]',
+  )?.content;
+  if (
+    origin === window.location.origin &&
+    (servedPortal === 'guest' || servedPortal === 'staff' || servedPortal === 'admin')
+  )
+    return servedPortal;
   const current = normalizeOrigin(origin);
   const urls = getPortalUrls();
   if (current === normalizeOrigin(urls.guest)) return 'guest';

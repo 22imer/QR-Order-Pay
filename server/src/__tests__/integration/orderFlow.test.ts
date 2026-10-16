@@ -30,6 +30,7 @@ import { CancelRequestModel } from '../../models/CancelRequest.js';
 import { CashShiftModel } from '../../models/CashShift.js';
 import { orderRepository } from '../../repositories/orderRepository.js';
 import { paymentRepository } from '../../repositories/paymentRepository.js';
+import { createAdmissionTicket } from '../../services/tableQrService.js';
 
 const INTERNAL_ORDER_FIELDS = ['idempotencyKey', 'requestHash', '__v'];
 
@@ -48,6 +49,12 @@ let app: ReturnType<typeof buildApp>;
 let staffAccess = '';
 let tableId = '';
 let tableToken = '';
+const collectionToken = randomToken(24);
+
+async function freshQr(id: string) {
+  const table = (await TableModel.findById(id))!;
+  return createAdmissionTicket(id, table.qrEpoch ?? 0).token;
+}
 
 async function seedBasic() {
   await Promise.all(
@@ -411,7 +418,7 @@ describe('order flow integration', () => {
   it('aggregates dashboard data beyond the repository page limit and filters by date', async () => {
     const product = (await ProductModel.findOne())!;
     const createdAt = new Date();
-    await OrderModel.insertMany(
+    const reportedOrders = await OrderModel.insertMany(
       Array.from({ length: 105 }, (_, index) => ({
         code: `REPORT-${index}`,
         tableSessionId: new mongoose.Types.ObjectId(),
@@ -446,6 +453,19 @@ describe('order flow integration', () => {
       })),
     );
 
+    const reportCollector = (await UserModel.findOne({ role: 'STAFF' }))!;
+    await PaymentModel.insertMany(
+      reportedOrders.map((order) => ({
+        tableSessionId: order.tableSessionId,
+        orderIds: [order._id],
+        amount: order.total,
+        method: 'CASH',
+        status: 'SUCCESS',
+        paidAt: createdAt,
+        confirmedBy: reportCollector._id,
+        idempotencyKey: `report-payment-${order.id}`,
+      })),
+    );
     const adminLogin = await request(app)
       .post('/api/v1/auth/login')
       .send({ email: 'admin@test.vn', password: 'Password@123' });
@@ -485,7 +505,9 @@ describe('order flow integration', () => {
       .post(`/api/v1/staff/tables/${tableId}/sessions`)
       .set('Authorization', `Bearer ${staffAccess}`);
     expect(opened.status).toBe(200);
-    const joined = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joined = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     expect(joined.status).toBe(200);
     const product = (await ProductModel.findOne())!;
     const payload = {
@@ -525,13 +547,50 @@ describe('order flow integration', () => {
     expect(quoted.status).toBe(200);
     return { ...payload, quoteToken: quoted.body.data.quoteToken };
   }
-  async function serve(id: string) {
+  async function serveLegacy(id: string) {
+    // A historical order that predates prepayment; only legacy settlement tests use this fixture.
+    await OrderModel.updateOne(
+      { _id: id },
+      {
+        $set: {
+          status: 'SERVED',
+          statusHistory: [
+            { from: null, to: 'PENDING', at: new Date() },
+            { from: 'PENDING', to: 'CONFIRMED', at: new Date() },
+            { from: 'CONFIRMED', to: 'PREPARING', at: new Date() },
+            { from: 'PREPARING', to: 'READY', at: new Date() },
+            { from: 'READY', to: 'SERVED', at: new Date() },
+          ],
+        },
+      },
+    );
+  }
+  async function receive(id: string) {
+    const order = (await OrderModel.findById(id))!;
+    await request(app)
+      .post(`/api/v1/staff/table-sessions/${order.tableSessionId}/payment-claim`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ token: collectionToken });
+    const response = await request(app)
+      .post(`/api/v1/staff/orders/${id}/payments`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .set('Idempotency-Key', randomToken(16))
+      .set('X-Payment-Claim', collectionToken)
+      .send({ amount: order.total, method: 'CASH', expectedVersion: order.version });
+    expect(response.status).toBe(201);
+    await request(app)
+      .post(`/api/v1/staff/table-sessions/${order.tableSessionId}/payment-claim/release`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ token: collectionToken });
+    return response;
+  }
+  async function servePaid(id: string) {
     for (const status of ['CONFIRMED', 'PREPARING', 'READY', 'SERVED']) {
-      const res = await request(app)
+      const response = await request(app)
         .patch(`/api/v1/staff/orders/${id}/status`)
         .set('Authorization', `Bearer ${staffAccess}`)
         .send({ status });
-      expect(res.status).toBe(200);
+      expect(response.status).toBe(200);
     }
   }
   async function checkout(sessionId: string) {
@@ -543,12 +602,26 @@ describe('order flow integration', () => {
     expect(res.status).toBe(200);
     return res.body.data.session.version as number;
   }
-  function pay(sessionId: string, amount: number, version: number, key: string) {
-    return request(app)
+  async function pay(sessionId: string, amount: number, version: number, key: string) {
+    const claimed = await request(app)
+      .post(`/api/v1/staff/table-sessions/${sessionId}/payment-claim`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ token: collectionToken });
+    const response = await request(app)
       .post(`/api/v1/staff/table-sessions/${sessionId}/payments`)
       .set('Authorization', `Bearer ${staffAccess}`)
       .set('Idempotency-Key', key)
-      .send({ amount, expectedVersion: version, method: 'CASH' });
+      .set('X-Payment-Claim', collectionToken)
+      .send({
+        amount,
+        expectedVersion: claimed.status === 200 ? claimed.body.data.version : version,
+        method: 'CASH',
+      });
+    await request(app)
+      .post(`/api/v1/staff/table-sessions/${sessionId}/payment-claim/release`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ token: collectionToken });
+    return response;
   }
   function event<T = unknown>(socket: Socket, name: string): Promise<T> {
     return new Promise((resolve, reject) => {
@@ -596,17 +669,19 @@ describe('order flow integration', () => {
     const rejoin = await request(app)
       .post('/api/v1/table-sessions/join')
       .set('Cookie', cookie)
-      .send({ tableToken });
+      .send({ tableToken: await freshQr(tableId) });
     expect(rejoin.body.data.participantId).toBe(participantId);
-    const second = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const second = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const secondCookie = cookies(second);
     const firstOrder = await place(cookie, payload);
     const secondOrder = await place(secondCookie, payload);
     expect((await request(app).get('/api/v1/receipts/current').set('Cookie', cookie)).status).toBe(
       401,
     );
-    await serve(firstOrder._id);
-    await serve(secondOrder._id);
+    await serveLegacy(firstOrder._id);
+    await serveLegacy(secondOrder._id);
     expect(
       (
         await request(app)
@@ -756,8 +831,12 @@ describe('order flow integration', () => {
     const created = event<{ orderId: string }>(staff, 'order.created');
     const order = await place(cookie, payload);
     expect((await created).orderId).toBe(order._id);
+    const paidUpdate = event<{ status: string }>(guest, 'order.statusChanged');
+    await receive(order._id);
+    expect((await paidUpdate).status).toBe('PENDING');
+    expect(guest.connected).toBe(true);
     const changed = event<{ status: string }>(guest, 'order.statusChanged');
-    await serve(order._id);
+    await servePaid(order._id);
     expect((await changed).status).toBe('CONFIRMED');
     const requested = event(staff, 'serviceRequest.created');
     await request(app)
@@ -766,9 +845,16 @@ describe('order flow integration', () => {
       .send({ type: 'CALL_STAFF' });
     await requested;
     const version = await checkout(sessionId);
-    const payment = event(guest, 'payment.confirmed');
+    const payment = event(guest, 'tableSession.statusChanged');
     const disconnected = event(guest, 'disconnect');
-    expect((await pay(sessionId, order.total, version, 'socket-payment')).status).toBe(201);
+    expect(
+      (
+        await request(app)
+          .patch(`/api/v1/staff/table-sessions/${sessionId}/status`)
+          .set('Authorization', `Bearer ${staffAccess}`)
+          .send({ status: 'CLOSED', expectedVersion: version })
+      ).status,
+    ).toBe(200);
     await payment;
     await disconnected;
     const denied = event<Error>(guest, 'connect_error');
@@ -914,7 +1000,9 @@ describe('order flow integration', () => {
       .set('Authorization', `Bearer ${staffAccess}`);
     expect(openRes.status).toBe(200);
 
-    const joinRes = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joinRes = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     expect(joinRes.status).toBe(200);
     expect(joinRes.body.success).toBe(true);
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0];
@@ -954,13 +1042,16 @@ describe('order flow integration', () => {
     expect(replay.body.data.created).toBe(false);
 
     // guest cannot cancel other guest's order
-    const otherGuest = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const otherGuest = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const otherCookie = otherGuest.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const otherCancel = await request(app)
       .post(`/api/v1/orders/${orderId}/cancel`)
       .set('Cookie', otherCookie);
     expect(otherCancel.status).toBe(403);
 
+    await receive(orderId);
     const confirmRes = await request(app)
       .patch(`/api/v1/staff/orders/${orderId}/status`)
       .set('Authorization', `Bearer ${staffAccess}`)
@@ -979,7 +1070,8 @@ describe('order flow integration', () => {
       .get(`/api/v1/staff/table-sessions/${confirmRes.body.data.order.tableSessionId}/bill`)
       .set('Authorization', `Bearer ${staffAccess}`);
     expect(billRes.status).toBe(200);
-    expect(billRes.body.data.total).toBe(variant.price * 2);
+    expect(billRes.body.data.total).toBe(0);
+    expect(billRes.body.data.paidAmount).toBe(variant.price * 2);
 
     const expected = variant.price * 2;
     const sessionId = billRes.body.data.tableSessionId;
@@ -997,14 +1089,11 @@ describe('order flow integration', () => {
       .send({ status: 'CHECKOUT', expectedVersion: version });
     const nextVersion =
       transitionRes.status === 200 ? transitionRes.body.data.session.version : version + 1;
-    const payRes = await request(app)
-      .post(`/api/v1/staff/table-sessions/${sessionId}/payments`)
+    const closeRes = await request(app)
+      .patch(`/api/v1/staff/table-sessions/${sessionId}/status`)
       .set('Authorization', `Bearer ${staffAccess}`)
-      .set('Idempotency-Key', 'pay-key-1')
-      .send({ amount: expected, method: 'CASH', expectedVersion: nextVersion });
-    expect(payRes.status).toBe(201);
-    expect(payRes.body.data.payment.amount).toBe(expected);
-    expect(payRes.body.data.payment.shiftId).toBeTruthy();
+      .send({ status: 'CLOSED', expectedVersion: nextVersion });
+    expect(closeRes.status).toBe(200);
     const shift = await request(app)
       .get('/api/v1/staff/cash-shifts/current')
       .set('Authorization', `Bearer ${staffAccess}`);
@@ -1025,6 +1114,7 @@ describe('order flow integration', () => {
   it('prevents two staff transitions from overwriting the same order version', async () => {
     const { cookie, payload } = await startVisit();
     const order = await place(cookie, payload);
+    await receive(order._id);
     const responses = await Promise.all([
       request(app)
         .patch(`/api/v1/staff/orders/${order._id}/status`)
@@ -1039,7 +1129,7 @@ describe('order flow integration', () => {
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
     const stored = await OrderModel.findById(order._id);
     expect(stored?.status).toBe('CONFIRMED');
-    expect(stored?.version).toBe(1);
+    expect(stored?.version).toBe(2);
     expect(stored?.statusHistory.filter((entry) => entry.to === 'CONFIRMED')).toHaveLength(1);
   });
 
@@ -1047,7 +1137,9 @@ describe('order flow integration', () => {
     await request(app)
       .post(`/api/v1/staff/tables/${tableId}/sessions`)
       .set('Authorization', `Bearer ${staffAccess}`);
-    const joinRes = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joinRes = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
@@ -1078,7 +1170,9 @@ describe('order flow integration', () => {
     await request(app)
       .post(`/api/v1/staff/tables/${tableId}/sessions`)
       .set('Authorization', `Bearer ${staffAccess}`);
-    const joinRes = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joinRes = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const res = await request(app)
@@ -1104,7 +1198,9 @@ describe('order flow integration', () => {
     await request(app)
       .post(`/api/v1/staff/tables/${tableId}/sessions`)
       .set('Authorization', `Bearer ${staffAccess}`);
-    const joinRes = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joinRes = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
@@ -1173,7 +1269,7 @@ describe('order flow integration', () => {
   it('replays a payment when the same key races past the idempotency pre-check', async () => {
     const { cookie, sessionId, payload } = await startVisit();
     const order = await place(cookie, payload);
-    await serve(order._id);
+    await serveLegacy(order._id);
     const version = await checkout(sessionId);
     const first = await pay(sessionId, order.total, version, 'pay-race-0001');
     expect(first.status).toBe(201);
@@ -1192,7 +1288,7 @@ describe('order flow integration', () => {
   it('lists only unfinished orders of active visits in the staff feed', async () => {
     const closedVisit = await startVisit();
     const served = await place(closedVisit.cookie, closedVisit.payload);
-    await serve(served._id);
+    await serveLegacy(served._id);
     const version = await checkout(closedVisit.sessionId);
     expect((await pay(closedVisit.sessionId, served.total, version, randomToken(16))).status).toBe(
       201,
@@ -1210,6 +1306,7 @@ describe('order flow integration', () => {
 
     const activeVisit = await startVisit();
     const pending = await place(activeVisit.cookie, activeVisit.payload);
+    await receive(pending._id);
 
     const feed = await request(app)
       .get('/api/v1/staff/orders')
@@ -1235,6 +1332,7 @@ describe('order flow integration', () => {
     expect(placed.status).toBe(201);
     expectNoInternalOrderFields(placed.body.data.order);
     const orderId = placed.body.data.order._id as string;
+    await receive(orderId);
     const confirmed = await request(app)
       .patch(`/api/v1/staff/orders/${orderId}/status`)
       .set('Authorization', `Bearer ${staffAccess}`)
@@ -1269,7 +1367,9 @@ describe('order flow integration', () => {
     await request(app)
       .post(`/api/v1/staff/tables/${tableId}/sessions`)
       .set('Authorization', `Bearer ${staffAccess}`);
-    const joinRes = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const joinRes = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     const cookie = joinRes.headers['set-cookie']?.[0]?.split(';')[0] ?? '';
     const product = await ProductModel.findOne({ slug: 'espresso-may' });
     const variant = product!.variants[0]!;
@@ -1365,6 +1465,7 @@ describe('order flow integration', () => {
   it('approves a confirmed-order cancellation request exactly once', async () => {
     const { cookie, payload } = await startVisit();
     const order = await place(cookie, payload);
+    await receive(order._id);
     expect(
       (
         await request(app)
@@ -1373,7 +1474,9 @@ describe('order flow integration', () => {
           .send({ status: 'CONFIRMED' })
       ).status,
     ).toBe(200);
-    const otherGuest = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const otherGuest = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     expect(
       (
         await request(app)
@@ -1400,7 +1503,12 @@ describe('order flow integration', () => {
     const approved = await request(app)
       .patch(`/api/v1/staff/cancel-requests/${requestId}`)
       .set('Authorization', `Bearer ${staffAccess}`)
-      .send({ decision: 'APPROVED', expectedVersion: 0 });
+      .send({
+        decision: 'APPROVED',
+        expectedVersion: 0,
+        refundConfirmed: true,
+        refundMethod: 'CASH',
+      });
     expect(approved.status).toBe(200);
     expect((await OrderModel.findById(order._id))!.status).toBe('CANCELLED');
     expect(
@@ -1416,6 +1524,7 @@ describe('order flow integration', () => {
   it('does not collect payment while a cancellation request is still pending', async () => {
     const { cookie, payload, sessionId } = await startVisit();
     const order = await place(cookie, payload);
+    await receive(order._id);
     expect(
       (
         await request(app)
@@ -1443,16 +1552,19 @@ describe('order flow integration', () => {
       ).toBe(200);
     }
     const version = await checkout(sessionId);
-    const response = await pay(sessionId, order.total, version, randomToken(16));
+    const response = await request(app)
+      .patch(`/api/v1/staff/table-sessions/${sessionId}/status`)
+      .set('Authorization', `Bearer ${staffAccess}`)
+      .send({ status: 'CLOSED', expectedVersion: version });
     expect(response.status).toBe(409);
     expect(response.body.error.code).toBe('CANCEL_REQUEST_PENDING');
-    expect(await PaymentModel.countDocuments()).toBe(0);
+    expect(await PaymentModel.countDocuments()).toBe(1);
   });
 
   it('assigns a concurrent payment to exactly one valid cash shift while closing', async () => {
     const { cookie, payload, sessionId } = await startVisit();
     const order = await place(cookie, payload);
-    await serve(order._id);
+    await serveLegacy(order._id);
     const sessionVersion = await checkout(sessionId);
     const opened = await request(app)
       .post('/api/v1/staff/cash-shifts')
@@ -1480,7 +1592,7 @@ describe('order flow integration', () => {
   it('reconciles an overnight shift once under payment replay and concurrent close', async () => {
     const { cookie, payload, sessionId } = await startVisit();
     const order = await place(cookie, payload);
-    await serve(order._id);
+    await serveLegacy(order._id);
     const sessionVersion = await checkout(sessionId);
     const opened = await request(app)
       .post('/api/v1/staff/cash-shifts')
@@ -1552,9 +1664,11 @@ describe('order flow integration', () => {
     expect(current.body.data.table).toMatchObject({ id: target.id, code: 'B02' });
     const targetJoin = await request(app)
       .post('/api/v1/table-sessions/join')
-      .send({ tableToken: targetToken });
+      .send({ tableToken: await freshQr(target.id) });
     expect(targetJoin.body.data.tableSessionId).toBe(sessionId);
-    const sourceJoin = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+    const sourceJoin = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .send({ tableToken: await freshQr(tableId) });
     expect(sourceJoin.body.data.tableSessionId).not.toBe(sessionId);
   });
 
@@ -1717,7 +1831,7 @@ describe('order flow integration', () => {
     async function joinWithoutStaff(cookie?: string) {
       const req = request(app).post('/api/v1/table-sessions/join');
       if (cookie) req.set('Cookie', cookie);
-      const res = await req.send({ tableToken });
+      const res = await req.send({ tableToken: await freshQr(tableId) });
       expect(res.status).toBe(200);
       return res;
     }
@@ -1788,7 +1902,7 @@ describe('order flow integration', () => {
       const cookie = cookieNamed(joined, 'mc_guest');
       const sessionId = joined.body.data.tableSessionId as string;
       const order = await place(cookie, await orderPayload());
-      await serve(order._id);
+      await serveLegacy(order._id);
       const version = await checkout(sessionId);
       const paid = await pay(sessionId, order.total, version, 'auto-open-payment');
       expect(paid.status).toBe(201);
@@ -1819,7 +1933,7 @@ describe('order flow integration', () => {
       const cookie = cookieNamed(joined, 'mc_guest');
       const sessionId = joined.body.data.tableSessionId as string;
       const order = await place(cookie, await orderPayload());
-      await serve(order._id);
+      await serveLegacy(order._id);
       const version = await checkout(sessionId);
 
       const metricBefore = getInstanceMetricsSnapshot().businessEvents.payment_confirmed;
@@ -1849,7 +1963,7 @@ describe('order flow integration', () => {
       const receiptCookie = cookieNamed(joined, 'mc_receipt');
       const sessionId = joined.body.data.tableSessionId as string;
       const order = await place(cookie, await orderPayload());
-      await serve(order._id);
+      await serveLegacy(order._id);
       const version = await checkout(sessionId);
       expect((await pay(sessionId, order.total, version, 'auto-open-snapshot')).status).toBe(201);
 
@@ -1907,7 +2021,9 @@ describe('order flow integration', () => {
       const previous = runtimeConfig.guestAutoOpen;
       runtimeConfig.guestAutoOpen = false;
       try {
-        const res = await request(app).post('/api/v1/table-sessions/join').send({ tableToken });
+        const res = await request(app)
+          .post('/api/v1/table-sessions/join')
+          .send({ tableToken: await freshQr(tableId) });
         expect(res.status).toBe(403);
         expect(res.body.error).toMatchObject({
           code: 'FORBIDDEN',

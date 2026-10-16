@@ -1,14 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import {
-  Coffee,
   ClipboardList,
   UtensilsCrossed,
   BellRing,
-  LogOut,
   Volume2,
   VolumeX,
-  Bell,
   PackageCheck,
   WalletCards,
 } from 'lucide-react';
@@ -16,6 +13,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
 import { connectStaffSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
 import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { InternalShell } from '../components/layout/InternalShell';
 import { useToast } from '../components/ui/useToast';
 import { api, unwrap } from '../lib/api';
 import {
@@ -48,7 +47,12 @@ const NAV = [
     icon: <UtensilsCrossed className="h-4 w-4" />,
     badgeKey: 'pending' as const,
   },
-  { to: '/staff/tables', label: 'Bàn & phiên', icon: <ClipboardList className="h-4 w-4" /> },
+  {
+    to: '/staff/tables',
+    label: 'Bàn & phiên',
+    icon: <ClipboardList className="h-4 w-4" />,
+    badgeKey: 'awaiting' as const,
+  },
   {
     to: '/staff/service-requests',
     label: 'Yêu cầu',
@@ -57,11 +61,11 @@ const NAV = [
   },
   { to: '/staff/availability', label: 'Hết món', icon: <PackageCheck className="h-4 w-4" /> },
   { to: '/staff/cash-shift', label: 'Ca thu ngân', icon: <WalletCards className="h-4 w-4" /> },
+  { to: '/staff/payments', label: 'Khoản thu', icon: <WalletCards className="h-4 w-4" /> },
 ];
 
 export function StaffLayout(): JSX.Element {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user, accessToken, logout } = useAuth();
   const [connected, setConnected] = useState(false);
   const [soundOn, setSoundOn] = useState<boolean>(isSoundEnabled());
@@ -80,6 +84,13 @@ export function StaffLayout(): JSX.Element {
     refetchInterval: 8_000,
   });
 
+  const awaitingQuery = useQuery({
+    queryKey: ['staff-awaiting-payments'],
+    queryFn: async () =>
+      unwrap(await api.get<{ items: Array<{ _id: string }> }>('/staff/awaiting-payments')),
+    refetchInterval: 5_000,
+  });
+
   const pendingCount = useMemo(
     () => (ordersQuery.data?.items ?? []).filter((o) => o.status === 'PENDING').length,
     [ordersQuery.data],
@@ -92,6 +103,8 @@ export function StaffLayout(): JSX.Element {
   const refresh = useCallback(() => {
     for (const key of [
       'staff-orders',
+      'staff-awaiting-payments',
+      'staff-cancel-requests',
       'staff-table-sessions',
       'staff-bill',
       'staff-service-requests',
@@ -161,89 +174,40 @@ export function StaffLayout(): JSX.Element {
     if (next) playAlert('order');
   }
 
-  function badgeFor(key: 'pending' | 'requests'): number | null {
+  function badgeFor(key: 'pending' | 'requests' | 'awaiting'): number | null {
+    if (key === 'awaiting') return awaitingQuery.data?.items.length || null;
     if (key === 'pending') return pendingCount > 0 ? pendingCount : null;
     return openRequestCount > 0 ? openRequestCount : null;
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-foreground/5 bg-background/85 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-4 py-3">
-          <Link to="/staff" className="flex items-center gap-2">
-            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              <Coffee className="h-4 w-4" />
-            </span>
-            <div>
-              <p className="font-display text-base font-semibold leading-tight">
-                Mây Café — Vận hành
-              </p>
-              <p className="text-xs text-muted-foreground leading-tight">
-                {user?.name ?? 'Nhân viên'} · {user?.role ?? ''} ·{' '}
-                {connected ? (
-                  <Badge tone="success">Trực tuyến</Badge>
-                ) : (
-                  <Badge tone="danger">Mất kết nối</Badge>
-                )}
-                {(pendingCount > 0 || openRequestCount > 0) && (
-                  <span className="ml-2 inline-flex items-center gap-1 text-foreground/70">
-                    <Bell className="h-3 w-3" />
-                    {pendingCount + openRequestCount} chờ
-                  </span>
-                )}
-              </p>
-            </div>
-          </Link>
-          <nav className="flex items-center gap-1">
-            {NAV.map((n) => {
-              const badge = n.badgeKey ? badgeFor(n.badgeKey) : null;
-              return (
-                <Link
-                  key={n.to}
-                  to={n.to}
-                  className={`relative flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                    location.pathname === n.to
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-foreground/70 hover:bg-muted'
-                  }`}
-                >
-                  {n.icon}
-                  {n.label}
-                  {badge !== null && (
-                    <span
-                      aria-label={`${badge} chờ xử lý`}
-                      className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-danger px-1.5 text-[10px] font-bold text-white animate-pulse"
-                    >
-                      {badge}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-            <button
-              onClick={toggleSound}
-              title={soundOn ? 'Tắt âm thanh báo' : 'Bật âm thanh báo'}
-              className="ml-2 btn-ghost text-xs"
-              aria-label={soundOn ? 'Tắt âm thanh báo' : 'Bật âm thanh báo'}
-            >
-              {soundOn ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
-            </button>
-            <button
-              onClick={async () => {
-                await logout();
-                navigate('/auth/login');
-              }}
-              className="ml-1 btn-ghost text-xs"
-            >
-              <LogOut className="h-3 w-3" /> Đăng xuất
-            </button>
-          </nav>
-        </div>
-      </header>
-
-      <main className="mx-auto w-full max-w-7xl px-4 py-4">
-        <Outlet />
-      </main>
-    </div>
+    <InternalShell
+      title="Vận hành"
+      home="/staff"
+      name={user?.name ?? 'Nhân viên'}
+      role={user?.role ?? ''}
+      nav={NAV.map((item) => ({ ...item, badge: item.badgeKey ? badgeFor(item.badgeKey) : null }))}
+      status={
+        <Badge tone={connected ? 'success' : 'danger'}>
+          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+          {connected ? 'Trực tuyến' : 'Mất kết nối'}
+        </Badge>
+      }
+      tools={
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={toggleSound}
+          title={soundOn ? 'Tắt âm thanh báo' : 'Bật âm thanh báo'}
+          aria-label={soundOn ? 'Tắt âm thanh báo' : 'Bật âm thanh báo'}
+        >
+          {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+        </Button>
+      }
+      onLogout={async () => {
+        await logout();
+        navigate('/auth/login');
+      }}
+    />
   );
 }

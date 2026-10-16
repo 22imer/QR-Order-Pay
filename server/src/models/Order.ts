@@ -34,19 +34,39 @@ const statusHistorySchema = new Schema(
 export const orderSchema = new Schema(
   {
     code: { type: String, required: true, unique: true },
-    tableSessionId: { type: Schema.Types.ObjectId, ref: 'TableSession', required: true, index: true },
+    tableSessionId: {
+      type: Schema.Types.ObjectId,
+      ref: 'TableSession',
+      required: true,
+      index: true,
+    },
     participantId: { type: String, required: true, index: true },
     tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
     items: { type: [orderItemSchema], required: true },
     total: { type: Number, required: true, min: 0 },
+    // Null preserves old fully paid orders without a data rewrite.
+    paidAmount: { type: Number, min: 0, default: null },
     status: {
       type: String,
-      enum: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY', 'SERVED', 'CANCELLED'],
+      enum: [
+        'AWAITING_PAYMENT',
+        'PENDING',
+        'CONFIRMED',
+        'PREPARING',
+        'READY',
+        'SERVED',
+        'CANCELLED',
+      ],
       default: 'PENDING',
       required: true,
       index: true,
     },
-    paymentStatus: { type: String, enum: ['UNPAID', 'PAID', 'REFUNDED'], default: 'UNPAID', index: true },
+    paymentStatus: {
+      type: String,
+      enum: ['UNPAID', 'PAID', 'REFUNDED'],
+      default: 'UNPAID',
+      index: true,
+    },
     statusHistory: { type: [statusHistorySchema], default: [] },
     idempotencyKey: { type: String, required: true },
     requestHash: { type: String, required: true },

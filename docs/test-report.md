@@ -1,4 +1,110 @@
-# Test report — cập nhật 24/09/2026
+# Test report — cập nhật 16/10/2026
+
+## Kiểm tra trước checkpoint Git — 16/10/2026
+
+- Lint, typecheck và production build PASS. **200 tests PASS**: server unit 71, integration 85, client 44. Integration sử dụng database test cô lập; không seed/reset dữ liệu quán. Logs `.cache/git-push-{lint,typecheck,test,build}.log`.
+- Kiểm tra whitespace và secret trong phần staged PASS; `.env`, `apikey.txt` và `.cache/` bị Git ignore.
+- `npm audit --audit-level=high` FAIL: **15 vulnerabilities (2 moderate, 12 high, 1 critical)** trên dependency hiện có. Package manifests/lockfile không thay đổi trong checkpoint; chưa thực hiện nâng dependency. CI có bước audit nên có thể thất bại. Log `.cache/git-push-audit.log`. Kết quả audit 0 trong các mục lịch sử không đại diện cho lần kiểm tra này.
+- Sau khi áp dụng cấu hình AI mới: 4 API và 3 worker healthy, các biến AI runtime khớp `.env`, `AI_MODE=live`; chưa gọi thử provider. Local health ở 8080/8081/8082 và public menu/products/health HTTP 200; link public hiện tại lưu trong `.cache/public-url.txt`.
+- Không chạy lại browser suite trong lần checkpoint này; bằng chứng browser ở các mục dưới thuộc các lần kiểm tra trước.
+
+## Public Guest HTTPS — 15/10/2026
+
+- Web Docker build/TypeScript và client lint PASS; client **44 tests PASS**, gồm 2 test runtime portal identity. Nginx -t PASS. Hai Guest APIs có PUBLIC_APP_URL=https public và COOKIE_SECURE=true, hai Internal APIs giữ HTTP local cookie false.
+- Cloudflare tunnel chuyển đúng Guest 8080; HTTPS/menu/API public HTTP 200. Browser mobile secure context, guest portal meta, menu và WebSocket handshake PASS. Negative join nhận đúng lỗi vé đầu vào thay vì CSRF origin; token màn hình sai bị chặn. Public /auth/login, /staff, /admin và API nội bộ trả 404; local 8081/8082 healthy và hiển thị đăng nhập.
+- User tự chọn bàn; không cấp lại khóa màn hình, tạo phiên/đơn/khoản thu hoặc reset database. Camera/4G trên điện thoại thực tế chưa được kiểm tra. Ảnh `.cache/public-browser/menu-phone.png`; logs `.cache/public-{web-build,client-tests,lint,start,production}.log`.
+
+
+## Tài khoản, topping và khoản thu — 15/10/2026
+
+- Typecheck/lint/build PASS; **198 tests PASS**: server unit 71, integration 85, client 42. Logs `.cache/account-{tests,typecheck,lint,build}.log`.
+- Tài khoản: profile chỉ trả trường an toàn; nhân viên chỉ sửa tên mình, không đổi quyền hay quản lý người khác; mật khẩu hiện tại sai bị chặn, đổi đúng thu hồi access/refresh; admin tạo/sửa/khóa/mở/đặt lại mật khẩu, validate email/quyền/ID, chặn cập nhật tùy ý và tự khóa/hạ quyền. Hai admin hạ quyền nhau đồng thời chỉ một thao tác thành công; token cũ không version còn dùng trước lần thay đổi bảo mật đầu tiên.
+- Làm rõ giao diện: bấm tên người dùng mở profile; menu giữ Nhân viên và các mục nghiệp vụ. Xóa nhân viên chỉ ADMIN xóa STAFF, ẩn khỏi list, chặn login/access/refresh và mở khóa lại bằng PATCH; payment snapshot và tên người thu được giữ nguyên. Client kiểm hủy/xác nhận xóa nhân viên. Các kiểm thử nằm trong accountCatalog.test.tsx và accounts.test.ts.
+- Topping: chỉ admin xóa mềm/khôi phục, invalid ID bị chặn, menu loại topping đã xóa, cấu hình AI và giỏ cũ không chấp nhận, snapshot đơn giữ nguyên, audit/outbox đầy đủ.
+- Client: sửa tên/đổi mật khẩu và đăng xuất, khóa mình bị vô hiệu và khóa người khác cần xác nhận, hủy/xác nhận xóa topping/khôi phục, mã khoản thu ẩn mặc định trong Chi tiết nhưng vẫn mở được.
+
+
+- Production-local đã cập nhật toàn stack, mọi dịch vụ healthy. Chromium PASS 18 màn hình ở 375/768/1440 trên hai portal: trang tài khoản, sửa tài khoản Admin, xác nhận xóa topping và khoản thu gọn; không tràn ngang hoặc page error. Mọi hộp sửa/xóa đều hủy; users và topping nghiệp vụ không đổi. Ảnh `.cache/account-browser/`, log `.cache/account-production.log`.
+
+- Bản giao diện làm rõ đã triển khai, mọi dịch vụ healthy. Chromium PASS 9 màn hình profile/xác nhận xóa nhân viên ở 375/768/1440, bấm tên người dùng mở profile và đăng nhập/đăng xuất cho Admin/Staff, route bảo vệ sau logout và refresh 401; các menu tài khoản mới được bỏ. Hủy xóa, users không đổi; không tràn ngang/page error. Artifacts `.cache/profile-browser/`, `.cache/profile-production.log`; typecheck/lint/build và 198 tests PASS, logs `.cache/profile-*.log`.
+
+## Xóa catalog và lọc theo danh mục hiển thị — 13/10/2026
+
+- Server unit **71 PASS**, integration **75 PASS**, client **37 PASS**; tổng **183**. Typecheck/lint/build toàn repo PASS. Thêm 8 integration tests trong `catalogLifecycle.test.ts` với Mongo replica set cô lập.
+- Kiểm xóa mềm/khôi phục món giữ nguyên paid order/payment snapshot; ẩn/hiện danh mục áp dụng menu/featured/search/AI/cấu hình AI/giỏ cũ; count tính archive; chuyển toàn bộ món rồi xóa category có audit/outbox, rollback nhận sai/trùng, ADMIN authorization, tạo/chuyển món đồng thời không orphan.
+- Browser cô lập PASS xác nhận/hủy xóa, archive/restore, form category đúng và giữ ingredient/options/variant, hide/show cập nhật guest qua realtime, xóa danh mục sau chuyển và xóa danh mục trống. Ba viewport 375/768/1440 không tràn ngang/page error. Không ghi dữ liệu thử vào DB quán. Artifacts `.cache/catalog-browser/`.
+- Đã build/recreate toàn stack local, mọi API/workers/web/Mongo/Redis healthy; không cần schema migration mới, không seed/reset. Logs `.cache/catalog-{unit,integration,client-tests,typecheck,lint,build,browser,docker-build,deploy}.log`. Hướng dẫn `docs/catalog-lifecycle.md`.
+- Smoke production chỉ đọc PASS Admin xác nhận xóa món/danh mục ở 3 kích thước, số món từng danh mục khớp danh sách admin, menu khách và health 3 portal; tất cả hộp thoại được hủy, so sánh catalog trước/sau không đổi. Không tạo đơn/khoản thu. Log `.cache/catalog-production.log`, ảnh `.cache/catalog-production/`.
+
+## Đồng bộ cửa sổ và giao diện khách — 13/10/2026
+
+- Client typecheck/lint/build PASS, 37/37 tests PASS. Theme khách xanh đậm/chữ sáng/vàng; AI, tùy chỉnh món, bộ lọc, giỏ/đơn, hủy/đánh giá và vào bàn đồng bộ. Staff/Admin tiếp tục nền kem, in hóa đơn nền trắng/chữ đậm; PWA cache v6.
+- Chromium với API + Mongo replica set cô lập PASS: preset/ngân sách/không sữa → gọi AI thật ở mode fallback → xem thẻ gợi ý/mở cấu hình; đặt Espresso 35k → thu 10k + 25k → KDS phục vụ → gửi đánh giá → đóng phiên/receipt. Ba kích thước 375/768/1440 cho AI, options, cart, orders, cancel/review/receipt; kiểm nút đóng trong viewport, không tràn ngang/page error và màu chữ/nền khi print. Các giao dịch thử chỉ nằm trong DB cô lập.
+- Docker web đã cập nhật, toàn stack healthy. Smoke read-only production PASS menu, AI 3 kích thước/Escape, chọn món/filter/vào bàn; Staff/Admin không nhận theme khách. Không tạo phiên/đơn/khoản thu trên DB quán. Logs `.cache/guest-surfaces-{typecheck,lint,tests,build,browser,production,docker-build,deploy}.log`, ảnh trong `.cache/guest-surfaces-browser/` và `.cache/guest-surfaces-production/`.
+
+## Thực đơn ảnh nền và carousel — 13/10/2026
+
+- Checkpoint `9c27792` đã push lên origin/main trước khi sửa UI theo yêu cầu.
+- Client typecheck/lint/build PASS; **37 tests PASS**. Ba test mới kiểm preview không gọi đặt món, chuyển đúng món sang phần tùy chỉnh, thay danh sách lọc không giữ món ngoài kết quả và chặn chọn món tạm hết.
+- Chromium với API và Mongo replica set cô lập, catalog sao chép từ API đọc: PASS tại 1440/1920/768/390/375, không tràn ngang/lỗi JS. Bấm thẻ đổi đúng URL ảnh, heading, mô tả và giá, không mở modal/gửi đơn; next/previous, danh mục, tìm kiếm tiếng Việt không dấu, kết quả rỗng, ảnh URL không hợp lệ và AI dialog đều hoạt động.
+- Luồng **Chọn món → tùy chỉnh → thêm giỏ → quote → đặt đơn** PASS, tạo một đơn Espresso Mây 35.000 VND, AWAITING_PAYMENT/UNPAID trong DB cô lập. Không đặt/thu tiền thử trên DB quán.
+- Artifacts: `.cache/showcase-browser.log`, `.cache/showcase-browser/`, `.cache/showcase-tests.log`, `.cache/showcase-typecheck.log`, `.cache/showcase-lint.log`, `.cache/showcase-build.log`.
+- Web local đã cập nhật và healthy. Smoke production chỉ đọc PASS tại 1440/768/375, ảnh nền local/mô tả/modal hoạt động, Staff/Admin giữ layout riêng, không lỗi JS; không tạo phiên/đơn/khoản thu. Log `.cache/showcase-production-smoke.log`, ảnh `.cache/showcase-production/`.
+
+## Fantastic cafe và Be Vietnam Pro — 13/10/2026
+
+- Đổi tên trên ba portal, đăng nhập, QR, hóa đơn/in, tab/meta/PWA và CSV. Cả ba giao diện dùng font Be Vietnam Pro, có WOFF2/OFL local và precache service worker phiên bản mới.
+- Build/lint PASS. Chromium production-local kiểm tra 54 màn hình: Staff/Admin đăng nhập và các route, Khách tại 375/768/1440; tên đúng, font thật tải thành công, không tràn ngang, không page error. PWA dùng tên mới và font tiếng Việt vẫn tải từ cache khi offline.
+- Đã cập nhật toàn bộ API/workers/web local, mọi dịch vụ healthy. Kiểm tra chỉ đọc, không tạo/sửa đơn, khoản thu hoặc dữ liệu menu. Artifacts `.cache/fantastic-browser.log`, `.cache/fantastic-browser/`, `.cache/fantastic-build.log`, `.cache/fantastic-lint.log`, `.cache/fantastic-deploy.log`.
+
+## Thu từng phần, quyền thu và điều chỉnh — 13/10/2026
+
+- Server unit: 71 PASS. Client: 34 PASS. Integration: 67 PASS (12 kiểm thử bổ sung cho nghiệp vụ thanh toán).
+- Kiểm chứng có hai tài khoản STAFF tranh quyền cùng bàn, người thua không thu/trả quyền người khác được; hết hạn cho phép nhận quyền mới và chặn chủ cũ.
+- Thu thiếu/nhiều đợt, số dư guest/bill/ca đúng, KDS chờ đủ tiền; chặn thu vượt và hủy trực tiếp sau nhận tiền; hoàn nhiều khoản và hoàn theo yêu cầu hủy sau thu một phần.
+- VOID/METHOD/TRANSFER cần ADMIN khác duyệt; hai quản lý duyệt đồng thời chỉ một lần ghi đảo; giữ khoản thu gốc và Bill đóng phiên bất biến; từ chối mở lại thao tác; phân quyền lịch sử/duyệt.
+- Báo cáo theo ngày thu/hoàn, phân biệt hoàn thực tế và điều chỉnh; ngày chỉ hoàn tiền có thực thu âm. Chốt ca bắt buộc lý do chênh lệch và chặn lúc đang giữ quyền thu.
+- Lint, typecheck và build PASS. Chromium với API/Mongo replica set cô lập PASS luồng thu 10.000 + 25.000 VND, guest thấy số còn thiếu, staff gửi sửa phương thức, admin duyệt, KDS phục vụ và đóng phiên; thực thu ròng 35.000 VND. Sáu màn hình khoản thu tại 375/768/1440 không tràn và không lỗi JS. Dữ liệu quán đang chạy không dùng để đặt/thu/hoàn thử.
+- Smoke đã phát hiện cleanup HTTP có thể bị hủy khi điều hướng ngay sau xác nhận; server nay trả quyền trong transaction khi ghi nhận khoản thu/hoàn/thu gộp, có assertion kiểm quyền đã xóa sau commit.
+- Artifacts: `.cache/payment-integration.log`, `payment-unit.log`, `payment-client.log`, `payment-typecheck.log`, `payment-lint.log`, `payment-build.log`, `payment-browser.log`, ảnh `.cache/payment-browser/`.
+- Đã backup dữ liệu vào `.cache/maycafe-before-payment-safeguards.archive`, build/recreate toàn stack production-local và chạy migration index thành công (exit 0). Mongo/Redis, 4 API, 3 worker và web đều healthy; không seed/reset. Smoke production kiểm ba portal, login Staff/Admin, hai trang Khoản thu, phân quyền, công thức báo cáo và responsive PASS; không tạo/sửa đơn hay khoản thu trên dữ liệu quán. Integration 67 và server typecheck/lint chạy lại sau hai chốt chặn cuối đều PASS.
+
+## Thiết kế theo repo cho Khách/Staff/Admin — 13/10/2026
+
+- Client typecheck, lint, build và Docker web build PASS; client **32/32** test PASS. Lần này thay đổi frontend và tài liệu; không đổi backend/model/schema nghiệp vụ.
+- Browser với production client, API/Mongo replica set cô lập và catalog đọc từ public API thật PASS luồng QR → đặt/thu tiền/phục vụ → đánh giá A → gọi thêm/đánh giá B → đóng phiên/in/receipt. Kiểm tra menu và các trang Staff tại 390/768/1440 không tràn ngang; không có page error. Chỉ tạo đơn/khoản thu/đánh giá thử trong database cô lập.
+- Audit trực tiếp bản Docker mới: **45 tổ hợp trang/kích thước** (14 trang Staff/Admin và trang vào bàn, mỗi trang tại 375/768/1440) PASS không tràn ngang/page error; đăng nhập/đăng xuất Staff/Admin PASS. Audit production không tạo/sửa đơn, thanh toán, đánh giá hoặc catalog.
+- Đã xem ảnh trước/sau của các portal, menu, KDS có đơn và trang bàn trên mobile. Bản web mới healthy, API/Mongo/Redis/workers vẫn healthy.
+- Tài liệu nguồn/nhận diện/file/mục tiêu: `docs/design-context.md`. Logs `.cache/design-typecheck.log`, `design-lint.log`, `design-client-tests.log`, `design-build.log`, `design-runtime.log`, `design-responsive.log`; ảnh `.cache/design-before/`, `.cache/design-after/`, `.cache/design-runtime/`.
+
+## Đánh giá từng đơn trong phiên đang mở — 13/10/2026
+
+- Lint, typecheck và production build PASS. Server unit **71/71**, client **32/32**, integration **55/55** (tổng **158/158**).
+- Client kiểm tra chỉ cho đánh giá SERVED/PAID chưa đánh giá; đơn A và B được đánh giá riêng trong cùng phiên; cache/refetch giữ đánh giá; lỗi mạng giữ nhận xét để thử lại; receipt giữ đánh giá cũ và chỉ cho đánh giá đơn còn thiếu.
+- Integration với Mongo replica set thật kiểm tra đánh giá trước khi đóng không tạo Bill/không đóng phiên, vẫn tạo đơn tiếp; GET list/detail trả đúng summary; thiết bị khác bị chặn; chưa phục vụ/chưa trả tiền bị chặn; gửi đồng thời cùng đơn chỉ một 201, còn lại 409; receipt giữ đánh giá sau đóng và không nhận đánh giá trùng.
+- Chromium trên production client + API/Mongo cô lập PASS luồng đặt/thu tiền/phục vụ A → đánh giá A khi OPEN → gọi thêm/thu tiền/phục vụ B → đánh giá B khi OPEN → reload → đóng phiên → receipt giữ cả hai đánh giá, không page error. Ảnh tại `.cache/order-reviews-browser/`.
+- Log `.cache/order-reviews-client.log`, `order-reviews-unit.log`, `order-reviews-integration.log`, `order-reviews-typecheck.log`, `order-reviews-lint.log`, `order-reviews-build.log`, `order-reviews-browser.log`. Không tạo đánh giá thử trên dữ liệu quán.
+- Đã build/recreate toàn bộ production-local, tất cả dịch vụ healthy và migrate exit 0. Smoke ba portal, login Staff, API chờ thanh toán/KDS và route isolation PASS; asset OrderReview mới trả 200. Log `.cache/order-reviews-production-smoke.log`. Không reset/seed dữ liệu.
+
+## QR động và thanh toán trước — 12/10/2026
+
+| Kiểm tra                                                   | Kết quả                                                                                                                                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint`                                             | PASS                                                                                                                                                                 |
+| `npm run typecheck`                                        | PASS                                                                                                                                                                 |
+| `npm run build`                                            | PASS                                                                                                                                                                 |
+| `npm test`                                                 | PASS: server unit 71, client 28, integration 53; tổng 152/152                                                                                                        |
+| `docker compose -f compose.production.yaml config --quiet` | PASS, dùng `.env` hiện có                                                                                                                                            |
+| Chromium + MongoDB replica set cô lập                      | PASS luồng giao diện đặt món → chờ tiền → Staff xác nhận → KDS → gọi thêm trả tiếp → đóng phiên → hộp hóa đơn in → guest receipt; không page error                   |
+| Docker production-local rebuild và smoke                   | PASS: Mongo/Redis, 4 API, web, 3 worker healthy; migrate exit 0; 3 portal, login Staff, API chờ tiền, KDS chỉ PAID, route isolation và UI mới đúng; không page error |
+
+Các ca mới kiểm tra chữ ký/hạn QR/QR tĩnh bị từ chối, hai participant chung phiên, thu hồi khóa và QR, đơn chưa trả tiền không vào KDS, phiên vẫn mở sau thu tiền, chống thu trùng đồng thời cùng/khác idempotency key, giới hạn 3 đơn chờ, hủy/hoàn tiền và tiền mặt ca, chốt hóa đơn bất biến khi đóng. Client kiểm tra xoay mã sau 60 giây, ẩn QR khi offline, retry tiền cùng key, không đóng khi đang pha và giữ hộp hóa đơn khi thẻ bàn bị loại sau đóng.
+
+Log: `.cache/prepay-tests-final.log`, `.cache/prepay-build.log`, `.cache/prepay-lint.log`, `.cache/prepay-typecheck.log`, `.cache/prepay-browser.log`. Ảnh đã xem: `.cache/prepay-browser/display.png`, `guest-awaiting.png`, `closed-bill.png`; có thêm ảnh Staff nhận tiền và KDS. Smoke dùng build production của client, API thật, MongoDB cô lập; không thay đổi dữ liệu quán. Chưa thử camera/4G/máy in thật, Firefox/WebKit hoặc benchmark lại. Workload k6 đã đổi để lấy QR mới và hủy đơn chờ, nên số đo lịch sử bên dưới không áp dụng trực tiếp.
+
+Các mục sau là kết quả lịch sử trước khi chuyển luồng.
+
+Production-local dùng `.env` hiện có, không reset/seed dữ liệu. Smoke production chỉ đọc dữ liệu nghiệp vụ (có login), không tạo/sửa đơn hoặc khoản thu. Log `.cache/prepay-docker.log`, `.cache/prepay-production-smoke.log`; ảnh `.cache/prepay-browser/production-staff.png`. Staff/Admin cần cấp liên kết màn hình cho từng bàn trước khi sử dụng QR mới.
 
 ## Kết quả đã chạy
 
@@ -21,13 +127,13 @@ Route-level code splitting giữ entry client ở 389,20 kB, gzip 118,78 kB. Chu
 
 Mỗi lỗi có test tái hiện chạy đỏ trên code cũ trước khi sửa:
 
-| Mã | Test | Trước khi sửa | Sau khi sửa |
-| --- | --- | --- | --- |
-| S1 | `lists only unfinished orders of active visits in the staff feed` | feed trả cả đơn phiên đã đóng | chỉ đơn chưa xong của phiên OPEN/CHECKOUT |
-| S2 | `replays an order when the same key races past the idempotency pre-check` | 409 CONFLICT | 200, `created:false`, 1 đơn |
-| S2 | `replays a payment when the same key races past the idempotency pre-check` | 403 "chuyển bàn sang thanh toán" | 200, `replayed:true`, 1 Payment, 1 Bill |
-| S2 | client `keeps the order key after $code only when the order may exist` | giỏ đổi key sau mọi lỗi 4xx | chỉ đổi key khi `IDEMPOTENCY_CONFLICT` |
-| S3 | `never exposes internal order fields to guests or staff` | lộ `idempotencyKey` | DTO `guestOrderSchema`/`staffOrderSchema` |
+| Mã  | Test                                                                       | Trước khi sửa                    | Sau khi sửa                               |
+| --- | -------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------- |
+| S1  | `lists only unfinished orders of active visits in the staff feed`          | feed trả cả đơn phiên đã đóng    | chỉ đơn chưa xong của phiên OPEN/CHECKOUT |
+| S2  | `replays an order when the same key races past the idempotency pre-check`  | 409 CONFLICT                     | 200, `created:false`, 1 đơn               |
+| S2  | `replays a payment when the same key races past the idempotency pre-check` | 403 "chuyển bàn sang thanh toán" | 200, `replayed:true`, 1 Payment, 1 Bill   |
+| S2  | client `keeps the order key after $code only when the order may exist`     | giỏ đổi key sau mọi lỗi 4xx      | chỉ đổi key khi `IDEMPOTENCY_CONFLICT`    |
+| S3  | `never exposes internal order fields to guests or staff`                   | lộ `idempotencyKey`              | DTO `guestOrderSchema`/`staffOrderSchema` |
 
 S4 kiểm tra trên production-local (image `web` build từ HEAD `4e017b0` để khớp backend đang chạy, kèm cấu hình Nginx mới):
 

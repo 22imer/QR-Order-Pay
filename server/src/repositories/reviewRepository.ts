@@ -9,11 +9,22 @@ export interface ReviewListFilters {
 }
 
 export const reviewRepository = {
-  async create(data: { orderId: string; tableSessionId: string; participantId: string; rating: number; comment?: string }) {
+  async create(data: {
+    orderId: string;
+    tableSessionId: string;
+    participantId: string;
+    rating: number;
+    comment?: string;
+  }) {
     return ReviewModel.create(data);
   },
   async findByOrder(orderId: string) {
     return ReviewModel.findOne({ orderId });
+  },
+  async listByParticipant(tableSessionId: string, participantId: string) {
+    return ReviewModel.find({ tableSessionId, participantId })
+      .select('orderId rating comment createdAt')
+      .lean();
   },
   async listBySession(tableSessionId: string) {
     return ReviewModel.find({ tableSessionId }).sort({ createdAt: -1 });
@@ -37,11 +48,20 @@ export const reviewRepository = {
         { $limit: limit },
         { $lookup: { from: 'orders', localField: 'orderId', foreignField: '_id', as: 'order' } },
         { $unwind: { path: '$order', preserveNullAndEmptyArrays: true } },
-        { $lookup: { from: 'tables', localField: 'order.tableId', foreignField: '_id', as: 'table' } },
+        {
+          $lookup: {
+            from: 'tables',
+            localField: 'order.tableId',
+            foreignField: '_id',
+            as: 'table',
+          },
+        },
         { $unwind: { path: '$table', preserveNullAndEmptyArrays: true } },
         {
           $project: {
-            rating: 1, comment: 1, createdAt: 1,
+            rating: 1,
+            comment: 1,
+            createdAt: 1,
             orderCode: '$order.code',
             orderTotal: '$order.total',
             tableName: '$table.name',
@@ -64,7 +84,15 @@ export const reviewRepository = {
         },
       ]),
     ]);
-    const stats = summary[0] ?? { total: 0, averageRating: 0, one: 0, two: 0, three: 0, four: 0, five: 0 };
+    const stats = summary[0] ?? {
+      total: 0,
+      averageRating: 0,
+      one: 0,
+      two: 0,
+      three: 0,
+      four: 0,
+      five: 0,
+    };
     const counts: Record<number, number> = {
       1: stats.one,
       2: stats.two,

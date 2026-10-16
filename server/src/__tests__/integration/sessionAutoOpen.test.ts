@@ -4,6 +4,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import request from 'supertest';
 import type { Express } from 'express';
 import { buildApp } from '../../app.js';
+import { createAdmissionTicket } from '../../services/tableQrService.js';
 import { config } from '../../config/index.js';
 import { UserModel } from '../../models/User.js';
 import { TableModel } from '../../models/Table.js';
@@ -94,7 +95,10 @@ async function seedBasic() {
   otherTableId = otherTable._id.toString();
 }
 
-function joinGuest(token: string = tableToken) {
+async function joinGuest(token: string = tableToken) {
+  const id = token === tableToken ? tableId : otherTableId;
+  const table = (await TableModel.findById(id))!;
+  token = createAdmissionTicket(id, table.qrEpoch ?? 0).token;
   return request(app).post('/api/v1/table-sessions/join').send({ tableToken: token });
 }
 

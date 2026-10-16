@@ -11,6 +11,8 @@ import { useToast } from '../../components/ui/useToast';
 import { getSocket } from '../../lib/socket';
 import { ChevronRight, Eye } from 'lucide-react';
 import { OrderDetailModal } from './OrderDetailModal';
+import { Link } from 'react-router-dom';
+import { WalletCards } from 'lucide-react';
 
 interface OrderItem {
   productId: string;
@@ -37,6 +39,7 @@ interface Order {
   status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED';
   createdAt: string;
+  version: number;
   statusHistory: Array<{ to: Order['status']; at: string }>;
 }
 interface CancelRequest {
@@ -44,7 +47,14 @@ interface CancelRequest {
   reason: string;
   version: number;
   createdAt: string;
-  orderId: { _id: string; code: string; status: string };
+  orderId: {
+    _id: string;
+    code: string;
+    status: string;
+    paymentStatus: string;
+    total: number;
+    paidAmount?: number | null;
+  };
 }
 
 const COLUMNS: Array<{ status: Order['status']; label: string; next?: Order['status'] }> = [
@@ -63,6 +73,12 @@ const LATE_AFTER_MINUTES: Partial<Record<Order['status'], number>> = {
 export function StaffKDS(): JSX.Element {
   useDocumentTitle('KDS');
   const queryClient = useQueryClient();
+  const awaiting = useQuery({
+    queryKey: ['staff-awaiting-payments'],
+    queryFn: async () =>
+      unwrap<{ items: Array<{ _id: string }> }>(await api.get('/staff/awaiting-payments')),
+    refetchInterval: 5_000,
+  });
   const { toast } = useToast();
   const [detailId, setDetailId] = useState<string | null>(null);
   const [, setClock] = useState(0);
@@ -110,6 +126,27 @@ export function StaffKDS(): JSX.Element {
         tone: 'danger',
       }),
   });
+  const refund = useMutation({
+    mutationFn: (order: Order) =>
+      api.post(`/staff/orders/${order._id}/refund`, {
+        expectedVersion: order.version,
+        amount: order.total,
+        method: 'CASH',
+        reason: 'Nhân viên đã hoàn đủ tiền mặt và hủy đơn trước pha chế',
+        refundConfirmed: true,
+      }),
+    onSuccess: () => {
+      for (const key of ['staff-orders', 'staff-cancel-requests', 'staff-bill', 'cash-shift'])
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      toast({ title: 'Đã ghi nhận hoàn tiền và hủy đơn', tone: 'success' });
+    },
+    onError: (error) =>
+      toast({
+        title: 'Chưa ghi nhận được hoàn tiền',
+        description: getErrorMessage(error),
+        tone: 'danger',
+      }),
+  });
   const decideCancel = useMutation({
     mutationFn: ({
       request,
@@ -121,6 +158,10 @@ export function StaffKDS(): JSX.Element {
       api.patch(`/staff/cancel-requests/${request._id}`, {
         decision,
         expectedVersion: request.version,
+        ...(decision === 'APPROVED' &&
+        (request.orderId.paymentStatus === 'PAID' || (request.orderId.paidAmount ?? 0) > 0)
+          ? { refundConfirmed: true, refundMethod: 'CASH' }
+          : {}),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['staff-cancel-requests'] });
@@ -168,12 +209,22 @@ export function StaffKDS(): JSX.Element {
   }
 
   return (
-    <div className="space-y-3">
-      <div>
-        <h1 className="font-display text-2xl font-semibold">Kitchen Display</h1>
-        <p className="text-sm text-muted-foreground">
-          Đơn mới tự cập nhật. Kiểm tra số bàn và tùy chọn trước khi pha chế.
-        </p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold">Kitchen Display</h1>
+          <p className="text-sm text-muted-foreground">
+            Đơn mới tự cập nhật. Kiểm tra số bàn và tùy chọn trước khi pha chế.
+          </p>
+        </div>
+        <Link
+          to="/staff/tables"
+          className="inline-flex min-h-12 items-center gap-3 rounded-2xl border border-accent/40 bg-accent/10 px-4 py-3 text-sm font-semibold text-foreground transition hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        >
+          <WalletCards className="h-5 w-5 text-primary" />
+          Chờ thanh toán
+          {awaiting.data ? <Badge tone="warning">{awaiting.data.items.length}</Badge> : null}
+        </Link>
       </div>
       {(cancelRequests.data?.items.length ?? 0) > 0 ? (
         <Card className="border-warning/50 p-3">
@@ -199,9 +250,21 @@ export function StaffKDS(): JSX.Element {
                   <Button
                     size="sm"
                     disabled={decideCancel.isPending}
-                    onClick={() => decideCancel.mutate({ request, decision: 'APPROVED' })}
+                    onClick={() => {
+                      if (
+                        (request.orderId.paymentStatus !== 'PAID' &&
+                          (request.orderId.paidAmount ?? 0) === 0) ||
+                        window.confirm(
+                          `Chỉ tiếp tục sau khi đã hoàn ${vnd(request.orderId.paidAmount ?? request.orderId.total)} bằng TIỀN MẶT cho khách. Xác nhận đã hoàn đủ tiền?`,
+                        )
+                      )
+                        decideCancel.mutate({ request, decision: 'APPROVED' });
+                    }}
                   >
-                    Duyệt hủy
+                    {request.orderId.paymentStatus === 'PAID' ||
+                    (request.orderId.paidAmount ?? 0) > 0
+                      ? 'Đã hoàn tiền mặt & duyệt hủy'
+                      : 'Duyệt hủy'}
                   </Button>
                 </div>
               </div>
@@ -210,33 +273,56 @@ export function StaffKDS(): JSX.Element {
         </Card>
       ) : null}
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-        {COLUMNS.map((c) => {
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {COLUMNS.map((c, index) => {
           const items = grouped.get(c.status) ?? [];
           return (
-            <div key={c.status} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <h2 className="font-display text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            <section
+              key={c.status}
+              aria-label={c.label}
+              className="min-w-0 rounded-2xl border border-foreground/10 bg-muted/35 p-3"
+            >
+              <div className="mb-4 flex items-center justify-between border-b border-foreground/10 pb-3">
+                <h2 className="flex items-center gap-2 text-sm font-semibold">
+                  <span
+                    aria-hidden="true"
+                    className={`h-2 w-2 rounded-full ${index === 0 ? 'bg-accent' : 'bg-primary'}`}
+                  />
                   {c.label}
                 </h2>
-                <Badge>{items.length}</Badge>
+                <Badge className="tabular-nums" tone={items.length ? 'info' : 'neutral'}>
+                  {items.length}
+                </Badge>
               </div>
               {items.length === 0 ? (
-                <Card className="p-3 text-center text-xs text-muted-foreground">Trống</Card>
+                <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-foreground/15 p-6 text-sm text-muted-foreground lg:min-h-64">
+                  Trống
+                </div>
               ) : (
-                items.map((order) => (
-                  <OrderCard
-                    key={order._id}
-                    order={order}
-                    busy={transition.isPending}
-                    nextStatus={c.next}
-                    onCancel={() => transition.mutate({ id: order._id, status: 'CANCELLED' })}
-                    onAdvance={() => transition.mutate({ id: order._id, status: c.next! })}
-                    onView={() => setDetailId(order._id)}
-                  />
-                ))
+                <div className="space-y-3">
+                  {items.map((order) => (
+                    <OrderCard
+                      key={order._id}
+                      order={order}
+                      busy={transition.isPending || refund.isPending || decideCancel.isPending}
+                      nextStatus={c.next}
+                      onCancel={() => {
+                        if (order.paymentStatus === 'PAID') {
+                          if (
+                            window.confirm(
+                              `Chỉ xác nhận sau khi đã hoàn ${vnd(order.total)} bằng TIỀN MẶT. Hủy đơn ${order.code} và ghi nhận đã hoàn đủ tiền?`,
+                            )
+                          )
+                            refund.mutate(order);
+                        } else transition.mutate({ id: order._id, status: 'CANCELLED' });
+                      }}
+                      onAdvance={() => transition.mutate({ id: order._id, status: c.next! })}
+                      onView={() => setDetailId(order._id)}
+                    />
+                  ))}
+                </div>
               )}
-            </div>
+            </section>
           );
         })}
       </div>
@@ -301,8 +387,14 @@ function OrderCard({
       </ul>
       <div className="flex gap-2">
         {nextStatus ? (
-          <Button onClick={onAdvance} disabled={busy} size="sm" className="flex-1">
-            Chuyển sang {statusLabel(nextStatus)} <ChevronRight className="h-4 w-4" />
+          <Button
+            onClick={onAdvance}
+            disabled={busy}
+            size="sm"
+            className="flex-1"
+            aria-label={`Chuyển sang ${statusLabel(nextStatus)}`}
+          >
+            {statusLabel(nextStatus)} <ChevronRight className="h-4 w-4 shrink-0" />
           </Button>
         ) : null}
         <Button variant="outline" size="sm" onClick={onView} title="Xem chi tiết">
@@ -319,7 +411,7 @@ function OrderCard({
             if (window.confirm(`Hủy đơn ${order.code}?`)) onCancel();
           }}
         >
-          Hủy đơn
+          {order.paymentStatus === 'PAID' ? 'Hủy & xác nhận đã hoàn tiền' : 'Hủy đơn'}
         </Button>
       ) : null}
     </Card>

@@ -38,6 +38,8 @@ export async function decide(req: Request, res: Response, next: NextFunction): P
       req.user!.id,
       input.expectedVersion,
       input.note,
+      input.refundConfirmed,
+      input.refundMethod,
     );
     res.json({ success: true, data: { request, order: toStaffOrder(order) } });
   } catch (error) {

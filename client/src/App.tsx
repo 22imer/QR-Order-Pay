@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Route, Routes, Navigate } from 'react-router-dom';
+import { Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast';
 import { NetworkStatus } from './components/ui/NetworkStatus';
 import { GuestLayout } from './layouts/GuestLayout';
@@ -7,9 +7,15 @@ import { StaffLayout } from './layouts/StaffLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { getPortalMode, portalHome } from './lib/portals';
+import { useGuestTheme } from './features/guest/useGuestTheme';
 
 const JoinPage = lazy(() =>
   import('./features/guest/JoinPage').then((module) => ({ default: module.JoinPage })),
+);
+const TableDisplayPage = lazy(() =>
+  import('./features/guest/TableDisplayPage').then((module) => ({
+    default: module.TableDisplayPage,
+  })),
 );
 const MenuPage = lazy(() =>
   import('./features/guest/MenuPage').then((module) => ({ default: module.MenuPage })),
@@ -43,6 +49,11 @@ const StaffAvailability = lazy(() =>
 const StaffCashShift = lazy(() =>
   import('./features/staff/CashShift').then((module) => ({ default: module.StaffCashShift })),
 );
+const PaymentAccounting = lazy(() =>
+  import('./features/staff/PaymentAccounting').then((module) => ({
+    default: module.PaymentAccounting,
+  })),
+);
 const AdminDashboard = lazy(() =>
   import('./features/admin/Dashboard').then((module) => ({ default: module.AdminDashboard })),
 );
@@ -73,12 +84,18 @@ const AdminBills = lazy(() =>
 const LoginPage = lazy(() =>
   import('./features/auth/LoginPage').then((module) => ({ default: module.LoginPage })),
 );
+const AccountPage = lazy(() =>
+  import('./features/auth/AccountPage').then((module) => ({ default: module.AccountPage })),
+);
 
 export function App(): JSX.Element {
   const portal = getPortalMode();
   const guestEnabled = portal === 'unified' || portal === 'guest';
   const staffEnabled = portal === 'unified' || portal === 'staff';
   const adminEnabled = portal === 'unified' || portal === 'admin';
+  const { pathname } = useLocation();
+  const internalPath = /^\/(staff|admin|auth)(\/|$)/.test(pathname);
+  useGuestTheme(guestEnabled && !internalPath);
 
   return (
     <ToastProvider>
@@ -88,6 +105,7 @@ export function App(): JSX.Element {
           <Route path="/" element={<Navigate to={portalHome(portal)} replace />} />
           {guestEnabled ? (
             <>
+              <Route path="/display" element={<TableDisplayPage />} />
               <Route path="/t" element={<JoinPage />} />
               <Route path="/t/:token" element={<JoinPage />} />
               <Route element={<GuestLayout />}>
@@ -112,6 +130,8 @@ export function App(): JSX.Element {
                 <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
                 <Route path="/staff/availability" element={<StaffAvailability />} />
                 <Route path="/staff/cash-shift" element={<StaffCashShift />} />
+                <Route path="/staff/payments" element={<PaymentAccounting />} />
+                <Route path="/staff/account" element={<AccountPage />} />
               </Route>
             </Route>
           ) : null}
@@ -123,11 +143,13 @@ export function App(): JSX.Element {
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
                 <Route path="/admin/bills" element={<AdminBills />} />
+                <Route path="/admin/payments" element={<PaymentAccounting admin />} />
                 <Route path="/admin/products" element={<AdminProducts />} />
                 <Route path="/admin/categories" element={<AdminCategories />} />
                 <Route path="/admin/toppings" element={<AdminToppings />} />
                 <Route path="/admin/tables" element={<AdminTables />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/account" element={<AccountPage />} />
                 <Route path="/admin/reviews" element={<AdminReviews />} />
               </Route>
             </Route>

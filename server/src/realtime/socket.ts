@@ -61,7 +61,8 @@ export function createSocketServer(
         if (
           !user?.isActive ||
           !['STAFF', 'ADMIN'].includes(user.role) ||
-          user.role !== payload.role
+          user.role !== payload.role ||
+          (user.authVersion ?? 0) !== (payload.authVersion ?? 0)
         )
           return next(new Error('UNAUTHENTICATED'));
         (socket.data as { role?: string; userId?: string }).role = payload.role;
@@ -102,16 +103,35 @@ export function createSocketServer(
       tableSessionId?: string;
       participantId?: string;
     };
+    let authCheck: ReturnType<typeof setInterval> | undefined;
     if (data.role === 'ADMIN' || data.role === 'STAFF') {
       socket.join('staff');
       socket.join(`staff:${data.userId}`);
       socketConnected('staff');
+      authCheck = setInterval(() => {
+        void (async () => {
+          try {
+            const payload = verifyAccessToken(socket.handshake.auth.accessToken as string);
+            const user = await UserModel.findById(data.userId);
+            if (
+              !user?.isActive ||
+              user.role !== payload.role ||
+              (user.authVersion ?? 0) !== (payload.authVersion ?? 0)
+            )
+              socket.disconnect(true);
+          } catch {
+            socket.disconnect(true);
+          }
+        })();
+      }, 10_000);
+      authCheck.unref();
     } else if (data.tableSessionId && data.participantId) {
       socket.join(`guest:${data.tableSessionId}:${data.participantId}`);
       socket.join(`session:${data.tableSessionId}`);
       socketConnected('guest');
     }
     socket.on('disconnect', () => {
+      if (authCheck) clearInterval(authCheck);
       if (data.role === 'ADMIN' || data.role === 'STAFF') socketDisconnected('staff');
       else if (data.tableSessionId && data.participantId) socketDisconnected('guest');
     });

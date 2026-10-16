@@ -5,6 +5,10 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import type { OrderDoc } from '../models/Order.js';
+import { recordOrderRefund } from './orderRefundService.js';
+import { OrderModel } from '../models/Order.js';
+import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
+import { guardUnpaidCancellation } from './paymentClaimService.js';
 
 export async function createCancelRequest(orderId: string, participantId: string, reason: string) {
   try {
@@ -13,7 +17,10 @@ export async function createCancelRequest(orderId: string, participantId: string
       if (!order) throw new NotFoundError('Đơn không tồn tại.');
       if (order.participantId !== participantId)
         throw new ForbiddenError('Bạn không thể yêu cầu hủy đơn của khách khác.');
-      if (order.status !== 'CONFIRMED')
+      if (
+        !['PENDING', 'CONFIRMED'].includes(order.status) &&
+        !(order.status === 'AWAITING_PAYMENT' && (order.paidAmount ?? 0) > 0)
+      )
         throw new ConflictError(
           'STATE_TRANSITION_INVALID',
           'Chỉ có thể yêu cầu hủy khi đơn đã xác nhận và chưa pha chế.',
@@ -23,6 +30,13 @@ export async function createCancelRequest(orderId: string, participantId: string
         status: 'REQUESTED',
       }).session(session);
       if (existing) return existing;
+      await assertNoPaymentCorrection(order.id, session);
+      const guarded = await OrderModel.updateOne(
+        { _id: order._id, version: order.version },
+        { $inc: { version: 1 } },
+        { session },
+      );
+      if (!guarded.modifiedCount) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
       const [created] = await CancelRequestModel.create(
         [
           {
@@ -77,7 +91,7 @@ export async function createCancelRequest(orderId: string, participantId: string
 export async function listOpenCancelRequests() {
   return CancelRequestModel.find({ status: 'REQUESTED' })
     .sort({ createdAt: 1 })
-    .populate('orderId', 'code tableId status items total version');
+    .populate('orderId', 'code tableId status items total paidAmount version paymentStatus');
 }
 
 export async function decideCancelRequest(
@@ -86,6 +100,8 @@ export async function decideCancelRequest(
   actorId: string,
   expectedVersion: number,
   note?: string,
+  refundConfirmed?: boolean,
+  refundMethod?: 'CASH' | 'BANK_TRANSFER' | 'OTHER',
 ) {
   return unitOfWork.withTransaction(async (session) => {
     const request = await CancelRequestModel.findById(id).session(session);
@@ -94,11 +110,22 @@ export async function decideCancelRequest(
       throw new ConflictError('CONFLICT', 'Yêu cầu đã được nhân viên khác xử lý.');
     const order = await orderRepository.findById(request.orderId.toString(), session);
     if (!order) throw new NotFoundError('Đơn không tồn tại.');
-    if (decision === 'APPROVED' && order.status !== 'CONFIRMED')
+    if (
+      decision === 'APPROVED' &&
+      !['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(order.status)
+    )
       throw new ConflictError(
         'STATE_TRANSITION_INVALID',
         'Đơn đã chuyển sang pha chế nên không thể duyệt hủy.',
       );
+    if (
+      decision === 'APPROVED' &&
+      (order.paymentStatus === 'PAID' || (order.paidAmount ?? 0) > 0)
+    ) {
+      if (!refundConfirmed || !refundMethod)
+        throw new ForbiddenError('Cần xác nhận đã hoàn đủ tiền trước khi duyệt hủy.');
+      await recordOrderRefund(order, actorId, request.reason, refundMethod, session);
+    }
     const updatedRequest = await CancelRequestModel.findOneAndUpdate(
       { _id: id, status: 'REQUESTED', version: expectedVersion },
       {
@@ -115,6 +142,8 @@ export async function decideCancelRequest(
     if (!updatedRequest) throw new ConflictError('CONFLICT', 'Yêu cầu đã được xử lý.');
     let updatedOrder = order;
     if (decision === 'APPROVED') {
+      if (order.paymentStatus !== 'PAID' && (order.paidAmount ?? 0) === 0)
+        await guardUnpaidCancellation(order.tableSessionId.toString(), session);
       const cancelled = await orderRepository.transitionStatus(
         order.id,
         order.version,

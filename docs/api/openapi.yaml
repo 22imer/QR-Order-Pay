@@ -1,6 +1,6 @@
 openapi: 3.0.3
 info:
-  title: Mây Café API
+  title: Fantastic cafe API
   version: 1.0.0
   description: |
     REST API cho hệ thống đặt đồ uống qua QR tích hợp AI Barista.
@@ -10,6 +10,214 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /table-displays/qr:
+    get:
+      summary: Lấy QR vào bàn còn hạn trong chu kỳ 60 giây
+      description: Thiết bị tại bàn dùng khóa riêng. Trả data gồm tableId, tableName, url, expiresAt và serverTime (milliseconds); Cache-Control no-store. Khóa màn hình không phải vé vào bàn.
+      parameters:
+        - in: header
+          name: X-Table-Display-Token
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: QR có chữ ký và thời hạn }
+        '403': { description: Khóa không hợp lệ hoặc đã thu hồi }
+  /staff/tables/{id}/display:
+    post:
+      summary: STAFF hoặc ADMIN cấp lại liên kết riêng cho màn hình QR
+      description: Thu hồi khóa màn hình và QR cũ ngay; giữ quyền khách đã tham gia phiên.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: data chứa tableId và url /display với khóa trong fragment }
+        '403': { description: Không đủ quyền }
+  /admin/tables/{id}/display:
+    post:
+      summary: ADMIN cấp lại liên kết riêng cho màn hình QR
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: data chứa tableId và url cấu hình màn hình }
+        '403': { description: Chỉ ADMIN }
+  /staff/awaiting-payments:
+    get:
+      summary: Đơn chưa thu tiền của phiên OPEN hoặc CHECKOUT
+      responses:
+        '200': { description: data.items theo staffOrderSchema, có tableName }
+        '403': { description: Chỉ STAFF hoặc ADMIN }
+  /staff/orders/{id}/payments:
+    post:
+      summary: Ghi nhận tiền thực nhận của một đơn, hỗ trợ thu từng phần
+      description: Bắt buộc giữ quyền thu của phiên bàn. Thu thiếu giữ AWAITING_PAYMENT/UNPAID; đủ tiền chuyển PENDING/PAID và vào KDS. Không đóng phiên. Cùng key/payload/người thu trả khoản cũ kể cả quyền hết hạn. Chưa tích hợp cổng thanh toán.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 64 }
+        - in: header
+          name: X-Payment-Claim
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, method, expectedVersion]
+              properties:
+                amount: { type: integer, minimum: 0 }
+                method: { type: string, enum: [CASH, BANK_TRANSFER, OTHER] }
+                expectedVersion: { type: integer, minimum: 0 }
+                note: { type: string, maxLength: 280 }
+      responses:
+        '201': { description: Đã thu tiền }
+        '200': { description: Idempotent replay }
+        '409': { description: Version hoặc idempotency conflict }
+        '422': { description: Số tiền vượt phần còn thiếu, không dương với đơn có dư nợ, hoặc dữ liệu không hợp lệ }
+  /staff/table-sessions/{id}/payment-claim:
+    post:
+      summary: STAFF hoặc ADMIN giữ/gia hạn quyền thu toàn phiên bàn trong 120 giây
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 16, maxLength: 128 }
+      responses:
+        '200': { description: data.expiresAt và version phiên mới; gia hạn bằng cùng token và tài khoản }
+        '409': { description: Bàn đã đóng hoặc người/cửa sổ khác giữ quyền }
+  /staff/table-sessions/{id}/payment-claim/release:
+    post:
+      summary: Trả quyền thu; chỉ tài khoản và token sở hữu được trả quyền
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, minLength: 16, maxLength: 128 }
+      responses:
+        '200': { description: Đã xử lý; không trả quyền của người khác }
+  /staff/payments:
+    get:
+      summary: STAFF hoặc ADMIN tra cứu khoản thu và yêu cầu điều chỉnh
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: data.items (30/trang), total, corrections (200 yêu cầu, ưu tiên đang chờ), targets (200 đơn chờ) }
+  /admin/payments:
+    get:
+      summary: ADMIN tra cứu khoản thu và hàng chờ duyệt
+      responses:
+        '200': { description: Cùng cấu trúc GET /staff/payments }
+  /staff/payments/{id}/corrections:
+    post:
+      summary: STAFF hoặc ADMIN lập yêu cầu điều chỉnh một khoản thu
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, reason]
+              properties:
+                kind: { type: string, enum: [VOID, METHOD, TRANSFER] }
+                reason: { type: string, minLength: 3, maxLength: 280 }
+                method: { type: string, enum: [CASH, BANK_TRANSFER, OTHER], description: Bắt buộc cho METHOD }
+                targetOrderId: { type: string, description: ObjectId đơn nhận, bắt buộc cho TRANSFER }
+      responses:
+        '201': { description: Đã lập yêu cầu chờ quản lý khác duyệt }
+        '409': { description: Khoản thu đã thay đổi, đang giữ quyền thu hoặc có yêu cầu khác }
+  /admin/payments/{id}/corrections:
+    post:
+      summary: ADMIN lập yêu cầu như STAFF; quản lý khác phải duyệt
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '201': { description: 'Body và quy tắc như POST /staff/payments/{id}/corrections' }
+  /admin/payment-corrections/{id}/decision:
+    post:
+      summary: ADMIN duyệt/từ chối yêu cầu điều chỉnh, có version guard
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, approve, note]
+              properties:
+                expectedVersion: { type: integer, minimum: 0 }
+                approve: { type: boolean }
+                note: { type: string, minLength: 3, maxLength: 280 }
+      responses:
+        '200': { description: Đã xử lý và ghi audit; duyệt ghi đảo/thay thế trong transaction }
+        '403': { description: Người lập không tự duyệt; chỉ ADMIN được quyết định }
+        '409': { description: Yêu cầu đã xử lý hoặc trạng thái khoản thu/đơn đã thay đổi }
+  /staff/orders/{id}/refund:
+    post:
+      summary: Ghi nhận đã hoàn đủ tiền thủ công và hủy đơn chưa pha chế
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount, method, expectedVersion, reason, refundConfirmed]
+              properties:
+                amount: { type: integer, minimum: 0 }
+                method: { type: string, enum: [CASH, BANK_TRANSFER, OTHER] }
+                expectedVersion: { type: integer, minimum: 0 }
+                reason: { type: string, minLength: 3, maxLength: 280 }
+                refundConfirmed: { type: boolean, enum: [true] }
+      responses:
+        '200': { description: Đơn CANCELLED và REFUNDED; ca ghi nhận tiền hoàn }
+        '409': { description: Đơn đã thay đổi hoặc không thể hoàn }
   /admin/anomalies:
     get:
       summary: Trạng thái detector và cảnh báo vận hành cho ADMIN
@@ -166,12 +374,13 @@ paths:
         '429': { description: Vượt giới hạn tần suất }
   /table-sessions/join:
     post:
-      summary: Khách vào bàn bằng token QR
+      summary: Khách vào bàn bằng vé QR động còn hạn
       description: |
         Bàn chưa có phiên thì server tự mở phiên mới (`created: true`, `source: GUEST`);
         bàn đang có phiên thì đưa khách vào đúng phiên đó (`created: false`).
         Idempotent và an toàn khi nhiều request đồng thời (chỉ một phiên được tạo).
-        `403` chỉ xảy ra khi cấu hình `GUEST_AUTO_OPEN=false`.
+        `403` xảy ra khi QR hết hạn/bị thu hồi/không hợp lệ, phiên tạm dừng hoặc bàn chưa mở với `GUEST_AUTO_OPEN=false`.
+        Token QR tĩnh và khóa cấu hình màn hình không được dùng để vào bàn.
       requestBody:
         required: true
         content:
@@ -287,6 +496,7 @@ paths:
   /orders/{id}/review:
     post:
       summary: Đánh giá đơn (sau SERVED + PAID)
+      description: Khách có thể đánh giá khi phiên vẫn OPEN hoặc CHECKOUT, rồi tiếp tục gọi món khi OPEN. Mỗi đơn có một đánh giá riêng, chỉ thiết bị/phiên sở hữu đơn được gửi. GET /orders/mine và /orders/{id} trả review gồm rating, comment, createdAt hoặc null; đánh giá không đóng phiên. Sau đóng phiên dùng endpoint receipt để đánh giá các đơn còn thiếu.
       parameters:
         - in: path
           name: id
@@ -304,7 +514,10 @@ paths:
                 comment: { type: string, maxLength: 500 }
       responses:
         '201': { description: OK }
+        '403': { description: Đơn không thuộc thiết bị hoặc phiên hiện tại }
         '409': { description: Đã đánh giá }
+        '422':
+          { description: Đơn chưa phục vụ hoặc chưa thanh toán, hoặc rating/comment không hợp lệ }
   /service-requests:
     post:
       summary: Gửi yêu cầu (gọi nhân viên / thanh toán)
@@ -367,7 +580,7 @@ paths:
     get:
       summary: Đơn cho KDS
       description: >-
-        Chỉ gồm đơn của phiên OPEN/CHECKOUT. Mặc định lọc PENDING, CONFIRMED, PREPARING, READY;
+        Chỉ gồm đơn PAID của phiên OPEN/CHECKOUT. Mặc định lọc PENDING, CONFIRMED, PREPARING, READY;
         truyền status để lấy một trạng thái cụ thể (vẫn giới hạn trong phiên đang hoạt động).
         Mỗi phần tử theo staffOrderSchema, không có idempotencyKey/requestHash/__v.
       parameters:
@@ -492,19 +705,94 @@ paths:
         '201': { description: OK }
   /admin/products/{id}:
     patch: { summary: Cập nhật món, responses: { '200': { description: OK } } }
-    delete: { summary: Ẩn món, responses: { '200': { description: OK } } }
+    delete: { summary: Xóa mềm món (giữ lịch sử và có thể khôi phục), responses: { '200': { description: OK } } }
   /admin/categories:
     get: { summary: Danh mục, responses: { '200': { description: OK } } }
     post: { summary: Tạo danh mục, responses: { '201': { description: OK } } }
+  /admin/categories/{id}:
+    patch:
+      summary: Cập nhật danh mục; ẩn danh mục cũng ẩn món khỏi menu, tìm kiếm và AI
+      responses:
+        '200': { description: OK }
+    delete:
+      summary: Xóa danh mục trống hoặc chuyển tất cả món rồi xóa trong cùng transaction (ADMIN)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reassignTo:
+                  type: string
+                  description: ID danh mục nhận; bắt buộc nếu còn món, gồm món đã xóa mềm
+      responses:
+        '200': { description: Đã chuyển món và xóa danh mục; data.category.movedProductCount ghi số món }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Danh mục nguồn hoặc nhận không tồn tại }
+        '409': { description: CATEGORY_NOT_EMPTY khi còn món mà chưa chọn danh mục nhận }
+        '422': { description: ID không hợp lệ hoặc danh mục nhận trùng nguồn }
   /admin/toppings:
     get: { summary: Topping, responses: { '200': { description: OK } } }
     post: { summary: Tạo topping, responses: { '201': { description: OK } } }
   /admin/toppings/{id}:
     patch: { summary: Cập nhật topping, responses: { '200': { description: OK } } }
+    delete:
+      summary: Xóa mềm topping (ADMIN); khôi phục bằng PATCH isArchived=false
+      responses:
+        '200': { description: 'Ẩn topping khỏi menu và chặn giỏ cũ, giữ nguyên đơn cũ' }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Không tìm thấy topping }
   /admin/tables:
     get: { summary: Danh sách bàn, responses: { '200': { description: OK } } }
   /admin/users:
-    get: { summary: Danh sách nhân viên, responses: { '200': { description: OK } } }
+    get: { summary: Danh sách tài khoản (ADMIN), responses: { '200': { description: Không trả passwordHash } } }
+    post:
+      summary: Tạo tài khoản STAFF hoặc ADMIN
+      responses:
+        '201': { description: 'Tài khoản mới; name, email, password 8–72 ký tự, role STAFF hoặc ADMIN' }
+        '409': { description: Email đã được sử dụng }
+  /admin/users/{id}:
+    patch:
+      summary: Sửa tài khoản hoặc đặt lại mật khẩu (ADMIN)
+      description: Chỉ nhận name, email, role, isActive, password. Không tự khóa hoặc hạ quyền. Đổi quyền/trạng thái/mật khẩu thu hồi access và refresh cũ; socket bị ngắt trong tối đa 10 giây.
+      responses:
+        '200': { description: 'Tài khoản sau cập nhật, không trả passwordHash' }
+        '403': { description: Chỉ ADMIN }
+        '409': { description: Email trùng hoặc tự khóa/hạ quyền }
+        '422': { description: Dữ liệu không hợp lệ }
+    delete:
+      summary: Xóa nhân viên (ADMIN)
+      description: Chỉ xóa STAFF. Gỡ khỏi danh sách và ngừng đăng nhập; giữ bản ghi phục vụ lịch sử ca làm/khoản thu. Thu hồi access/refresh cũ; không thể mở khóa lại bằng PATCH.
+      responses:
+        '200': { description: Đã xóa nhân viên }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Không tìm thấy nhân viên hoặc đã xóa }
+        '409': { description: Không thể xóa quản trị viên }
+        '422': { description: ID không hợp lệ }
+  /auth/me:
+    get:
+      summary: Tài khoản hiện tại
+      responses:
+        '200': { description: 'id, name, email, role, isActive, createdAt' }
+    patch:
+      summary: Sửa họ tên của tài khoản hiện tại
+      responses:
+        '200': { description: data.user chứa thông tin đã cập nhật }
+        '422': { description: 'Tên trống, quá 80 ký tự hoặc trường ngoài name' }
+  /auth/password:
+    post:
+      summary: Đổi mật khẩu bằng currentPassword và newPassword
+      description: Mật khẩu mới 8–72 ký tự, khác mật khẩu hiện tại. Thu hồi mọi phiên đăng nhập và xóa cookie; cần đăng nhập lại.
+      responses:
+        '200': { description: Đã đổi mật khẩu }
+        '401': { description: Chưa đăng nhập }
+        '422': { description: Mật khẩu hiện tại sai hoặc mật khẩu mới không hợp lệ }
   /orders/quote:
     post:
       {
@@ -519,7 +807,7 @@ paths:
   /orders/{id}/cancel-requests:
     post:
       {
-        summary: Guest yêu cầu hủy đơn CONFIRMED trước khi pha,
+        summary: Guest yêu cầu hủy đơn PENDING hoặc CONFIRMED trước khi pha,
         responses:
           {
             '201': { description: Đang chờ duyệt },

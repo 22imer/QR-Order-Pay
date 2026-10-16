@@ -1,12 +1,10 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   Coffee,
-  ShoppingCart,
+  ShoppingBag,
   ListChecks,
   Sparkles,
   LogOut,
-  Wifi,
-  WifiOff,
   BellRing,
   ReceiptText,
   QrCode,
@@ -14,15 +12,22 @@ import {
 import { useCart, cartTotals } from '../store/cart';
 import { api, unwrap, vnd, getErrorMessage } from '../lib/api';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { connectGuestSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/useToast';
+import { cn } from '../lib/cn';
+import { CloudMark } from '../features/guest/CloudMark';
+import type { GuestContext } from '../features/guest/guestContext';
 import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
+
+const dockItem =
+  'relative flex flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50';
 
 export function GuestLayout(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const showcase = location.pathname === '/menu';
   const qc = useQueryClient();
   const { toast } = useToast();
   const items = useCart((s) => s.items);
@@ -60,9 +65,11 @@ export function GuestLayout(): JSX.Element {
   useSocketEvent('order.created', refreshOrders);
   useSocketEvent('menu.availabilityChanged', () => {
     void qc.invalidateQueries({ queryKey: ['menu'] });
+    void qc.invalidateQueries({ queryKey: ['menu-search'] });
   });
   useSocketEvent('tableSession.statusChanged', refreshSession);
   useSocketEvent('payment.confirmed', () => {
+    refreshOrders();
     refreshSession();
     void qc.invalidateQueries({ queryKey: ['receipt'] });
     navigate('/receipt');
@@ -116,77 +123,86 @@ export function GuestLayout(): JSX.Element {
       toast({ title: 'Chưa rời được bàn', description: getErrorMessage(e), tone: 'danger' }),
   });
 
+  const showCartPill = count > 0 && !!activeSession && location.pathname !== '/cart';
+  const context: GuestContext = { tableName: activeSession?.table?.name ?? null };
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <header className="sticky top-0 z-30 bg-background/95 border-b border-foreground/5 print:hidden">
-        <div className="mx-auto max-w-5xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Coffee className="h-7 w-7 text-primary" />
-            <div>
-              <p className="font-display font-semibold">Mây Café</p>
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                {connected ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
-                {activeSession?.table?.name ??
-                  (receiptAvailable ? 'Đã kết thúc phiên' : 'Chưa vào bàn')}
-                {activeSession?.status === 'CHECKOUT' ? ' · Đang thanh toán' : ''}
-              </p>
-            </div>
+    <div
+      className={cn(
+        'guest-shell flex min-h-dvh flex-col bg-background',
+        showcase && 'guest-showcase',
+      )}
+    >
+      <header className="guest-header sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
+        <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 lg:h-20 lg:gap-6 lg:px-6">
+          <CloudMark className="h-6 w-8 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="g-title text-lg lg:text-xl">Fantastic cafe</p>
+            <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+              {activeSession ? (
+                <>
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      'h-2 w-2 shrink-0 rounded-full',
+                      connected ? 'bg-success' : 'bg-foreground/25',
+                    )}
+                  />
+                  <span className="sr-only">{connected ? 'Đã kết nối' : 'Đang kết nối lại'}</span>
+                  <span className="font-semibold text-foreground">
+                    {activeSession.table?.name ?? 'Đang vào bàn'}
+                  </span>
+                  {activeSession.status === 'CHECKOUT' ? (
+                    <span className="rounded-full bg-accent/30 px-2 py-0.5 font-medium text-foreground">
+                      Đang thanh toán
+                    </span>
+                  ) : null}
+                </>
+              ) : receiptAvailable ? (
+                'Đã kết thúc phiên'
+              ) : (
+                'Chưa vào bàn'
+              )}
+            </p>
           </div>
-          <nav className="flex gap-1">
-            <NavTab to="/menu" label="Menu" icon={<Coffee className="h-4 w-4" />} />
-            <NavTab to="/ai" label="AI" icon={<Sparkles className="h-4 w-4" />} />
-            <NavTab
-              to={receiptAvailable ? '/receipt' : '/orders'}
-              label={receiptAvailable ? 'Hóa đơn' : 'Đơn'}
-              icon={
-                receiptAvailable ? (
-                  <ReceiptText className="h-4 w-4" />
-                ) : (
-                  <ListChecks className="h-4 w-4" />
-                )
-              }
-            />
-          </nav>
-        </div>
-      </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4 pb-40 print:pb-0">
-        <Outlet />
-      </main>
-      <footer className="fixed bottom-0 inset-x-0 z-30 border-t bg-card safe-bottom print:hidden">
-        <div className="mx-auto max-w-5xl px-4 py-3 space-y-3">
-          {count > 0 && activeSession ? (
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs">Giỏ hàng ({count} món)</p>
-                <p className="font-semibold">{vnd(subtotal)}</p>
-              </div>
-              <Button onClick={() => navigate('/cart')} disabled={activeSession.status !== 'OPEN'}>
-                <ShoppingCart className="h-4 w-4" /> Xem giỏ
-              </Button>
-            </div>
-          ) : null}
-          <div className="flex justify-between items-center gap-2">
+          <nav
+            aria-label="Điều hướng chính"
+            className="guest-header-nav hidden items-center gap-1 lg:flex"
+          >
+            {[
+              { to: '/menu', label: 'Thực đơn' },
+              { to: '/ai', label: 'AI Barista' },
+              {
+                to: receiptAvailable ? '/receipt' : '/orders',
+                label: receiptAvailable ? 'Hóa đơn' : 'Đơn của tôi',
+              },
+            ].map((item) => (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-card hover:text-foreground',
+                  )
+                }
+              >
+                {item.label}
+              </NavLink>
+            ))}
             {activeSession ? (
               <Button
-                size="sm"
-                variant="outline"
+                variant="ghost"
                 onClick={() => callStaff.mutate()}
                 disabled={callStaff.isPending}
               >
                 <BellRing className="h-4 w-4" /> Gọi nhân viên
               </Button>
-            ) : (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => navigate('/t')}>
-                  Vào bàn
-                </Button>
-                {receiptAvailable ? (
-                  <Button size="sm" onClick={() => navigate('/t')}>
-                    <QrCode className="h-4 w-4" /> Quét lại QR để mở phiên mới
-                  </Button>
-                ) : null}
-              </div>
-            )}
+            ) : null}
+          </nav>
+          {activeSession || receiptAvailable ? (
             <Button
               size="sm"
               variant="ghost"
@@ -195,36 +211,130 @@ export function GuestLayout(): JSX.Element {
             >
               <LogOut className="h-4 w-4" /> Rời bàn
             </Button>
-          </div>
-          {receiptAvailable ? (
-            <p className="text-xs text-muted-foreground">
-              Phiên trước đã thanh toán. Quét QR tại bàn để mở phiên mới.
-            </p>
           ) : null}
         </div>
-      </footer>
+      </header>
+
+      <main
+        className={cn(
+          showcase
+            ? 'w-full flex-1'
+            : 'mx-auto w-full max-w-6xl flex-1 px-4 pt-5 lg:px-6 lg:pt-8 print:pb-0',
+          !showcase && (showCartPill ? 'pb-56 lg:pb-32' : 'pb-36 lg:pb-12'),
+        )}
+      >
+        {receiptAvailable ? (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-l-4 border-accent bg-card py-3 pl-4 pr-3 text-sm print:hidden">
+            <p>Phiên trước đã thanh toán. Quét QR tại bàn để mở phiên mới.</p>
+            <Button size="sm" onClick={() => navigate('/t')}>
+              <QrCode className="h-4 w-4" /> Quét lại QR
+            </Button>
+          </div>
+        ) : null}
+        <Outlet context={context} />
+      </main>
+
+      <div className="safe-bottom pointer-events-none fixed inset-x-0 bottom-0 z-30 print:hidden">
+        <div className="mx-auto max-w-md space-y-2 px-3 pb-3 lg:mr-6 lg:max-w-sm lg:pb-6">
+          {showCartPill ? (
+            <button
+              type="button"
+              onClick={() => navigate('/cart')}
+              disabled={activeSession?.status !== 'OPEN'}
+              className="pill-in pointer-events-auto flex h-14 w-full items-center gap-3 rounded-full bg-primary pl-2 pr-5 text-primary-foreground shadow-soft transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 disabled:opacity-60"
+            >
+              <span className="relative grid h-10 w-10 place-items-center rounded-full bg-primary-foreground/15">
+                <ShoppingBag className="h-5 w-5" />
+                <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1 text-xs font-bold text-accent-foreground tabular-nums">
+                  {count}
+                </span>
+              </span>
+              <span className="flex-1 text-left leading-tight">
+                <span className="block text-xs opacity-80">
+                  {activeSession?.status === 'OPEN'
+                    ? `${count} món trong giỏ`
+                    : 'Bàn đang thanh toán'}
+                </span>
+                <span className="block font-semibold tabular-nums">{vnd(subtotal)}</span>
+              </span>
+              <span className="font-semibold">Xem giỏ</span>
+            </button>
+          ) : null}
+          <nav
+            aria-label="Điều hướng chính"
+            className="guest-dock pointer-events-auto flex rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden"
+          >
+            <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
+            <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />
+            <DockLink
+              to={receiptAvailable ? '/receipt' : '/orders'}
+              label={receiptAvailable ? 'Hóa đơn' : 'Đơn của tôi'}
+              icon={
+                receiptAvailable ? (
+                  <ReceiptText className="h-5 w-5" />
+                ) : (
+                  <ListChecks className="h-5 w-5" />
+                )
+              }
+            />
+            {activeSession ? (
+              <button
+                type="button"
+                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
+                onClick={() => callStaff.mutate()}
+                disabled={callStaff.isPending}
+              >
+                <BellRing className="h-5 w-5" />
+                Gọi nhân viên
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
+                onClick={() => navigate('/t')}
+              >
+                <QrCode className="h-5 w-5" />
+                Vào bàn
+              </button>
+            )}
+          </nav>
+        </div>
+      </div>
     </div>
   );
 }
 
-function NavTab({
+function DockLink({
   to,
   label,
   icon,
 }: {
   to: string;
   label: string;
-  icon: JSX.Element;
+  icon: ReactNode;
 }): JSX.Element {
   return (
     <NavLink
       to={to}
       className={({ isActive }) =>
-        `flex items-center gap-1 rounded-full px-3 py-2 text-xs ${isActive ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`
+        cn(
+          dockItem,
+          isActive ? 'font-semibold text-primary' : 'text-muted-foreground hover:text-foreground',
+        )
       }
     >
-      {icon}
-      {label}
+      {({ isActive }) => (
+        <>
+          {isActive ? (
+            <span
+              aria-hidden="true"
+              className="absolute left-1/2 top-0 h-1 w-8 -translate-x-1/2 rounded-b-full bg-accent"
+            />
+          ) : null}
+          {icon}
+          {label}
+        </>
+      )}
     </NavLink>
   );
 }

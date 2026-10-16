@@ -7,6 +7,8 @@ export const userSchema = new Schema(
     passwordHash: { type: String, required: true },
     role: { type: String, enum: ['ADMIN', 'STAFF'], required: true },
     isActive: { type: Boolean, default: true },
+    isDeleted: { type: Boolean, default: false },
+    authVersion: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

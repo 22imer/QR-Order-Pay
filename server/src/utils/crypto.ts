@@ -8,6 +8,7 @@ export interface AccessTokenPayload extends JwtPayload {
   sub: string;
   role: Role;
   name: string;
+  authVersion?: number;
 }
 
 export function hashPassword(plain: string): Promise<string> {
@@ -49,6 +50,7 @@ export function parseTtlToMs(ttl: string): number {
   if (!match) return 15 * 60 * 1000;
   const value = Number(match[1]);
   const unit = match[2];
-  const multiplier = unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
+  const multiplier =
+    unit === 's' ? 1000 : unit === 'm' ? 60_000 : unit === 'h' ? 3_600_000 : 86_400_000;
   return value * multiplier;
 }

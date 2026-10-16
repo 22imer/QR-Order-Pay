@@ -4,7 +4,7 @@ These scripts target the isolated `maycafe-benchmark` Compose project by default
 
 - `menu.js`: fixed arrival-rate steps 25 → 50 → 100 → 200 → 400 → 600 → 700 RPS.
 - `menu-constant.js`: one fixed RPS level, used to locate the highest level that passes every threshold.
-- `guest-flow.js`: valid per-VU guest cookies, 80% order reads and 20% idempotent order writes.
+- `guest-flow.js`: valid per-VU guest cookies, 80% order reads and 20% idempotent order writes; new unpaid orders are cancelled to free the pending-payment cap.
 - `realtime.js`: authenticated Socket.IO-over-WebSocket connections held for a configured duration.
 
 Production limits remain the default. The benchmark project sets only `RATE_LIMIT_GUEST_MUTATION_MAX` high enough for many synthetic clients sharing the load-generator IP. This difference must be disclosed with results.
@@ -19,7 +19,8 @@ Create a Git-ignored `.env.benchmark` with `WEB_PORT=8081`, `MONGO_DATABASE=mayc
 
 ```powershell
 docker compose -p maycafe-benchmark -f compose.production.yaml --env-file .env.benchmark up -d --build
-docker exec maycafe-benchmark-server-a-1 node server/dist/src/seeds/benchmark.js
+$env:BENCHMARK_DISPLAY_TOKEN = node -e "process.stdout.write(require('crypto').randomBytes(32).toString('base64url'))"
+docker compose -p maycafe-benchmark -f compose.production.yaml --env-file .env.benchmark exec -e BENCHMARK_DISPLAY_TOKEN server-guest-a node server/dist/src/seeds/benchmark.js
 
 docker run --rm --network maycafe-benchmark_default `
   -v "${PWD}/scripts/load:/scripts:ro" -v "${PWD}/.cache/load:/results" `
@@ -28,11 +29,13 @@ docker run --rm --network maycafe-benchmark_default `
 
 docker run --rm --network maycafe-benchmark_default `
   -v "${PWD}/scripts/load:/scripts:ro" -v "${PWD}/.cache/load:/results" `
-  -e BASE_URL=http://web:8080 -e TABLE_TOKEN=benchmark-table-token-local-only `
+  -e BASE_URL=http://web:8080 -e TABLE_DISPLAY_TOKEN=$env:BENCHMARK_DISPLAY_TOKEN `
   -e VUS=20 -e DURATION=60s -e THINK_TIME_SECONDS=1 `
   grafana/k6:latest run --summary-export=/results/guest-flow-20-users.json /scripts/guest-flow.js
 
-docker exec maycafe-benchmark-server-a-1 node server/dist/scripts/benchmark-invariants.js
+docker compose -p maycafe-benchmark -f compose.production.yaml --env-file .env.benchmark exec server-guest-a node server/dist/scripts/benchmark-invariants.js
 ```
 
 Run each comparison after a fresh `seed:benchmark`, keep warm-up/duration identical, and sample `docker stats` during the measurement rather than only after it. The ramp command substitutes `/scripts/menu.js`; realtime substitutes `/scripts/realtime.js` with `CONNECTIONS` and `HOLD_MS`.
+
+Guest and realtime workloads obtain fresh rotating QR tickets with the private display credential. Never use a production display credential. The additional QR requests and unpaid-order cancellations change the workload; old performance figures are historical and must not be presented as measurements of this implementation.

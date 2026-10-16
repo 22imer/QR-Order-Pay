@@ -1,9 +1,9 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { Rate } from 'k6/metrics';
+import { freshTableToken } from './table-qr.js';
 
 const baseUrl = __ENV.BASE_URL || 'http://web:8080';
-const tableToken = __ENV.TABLE_TOKEN || 'benchmark-table-token-local-only';
 export const unexpectedErrors = new Rate('unexpected_errors');
 let joined = false;
 let guestCookie = '';
@@ -33,14 +33,22 @@ export function setup() {
 
 export default function (data) {
   if (!joined) {
-    const joinResponse = http.post(`${baseUrl}/api/v1/table-sessions/join`, JSON.stringify({ tableToken }), {
-      headers: { 'Content-Type': 'application/json' },
-      tags: { endpoint: 'guest-join' },
-    });
+    const tableToken = freshTableToken(baseUrl);
+    const joinResponse = http.post(
+      `${baseUrl}/api/v1/table-sessions/join`,
+      JSON.stringify({ tableToken }),
+      {
+        headers: { 'Content-Type': 'application/json' },
+        tags: { endpoint: 'guest-join' },
+      },
+    );
     const joinedOk = check(joinResponse, { 'guest joined': (value) => value.status === 200 });
     unexpectedErrors.add(!joinedOk);
     if (!joinedOk) return;
-    const cookie = joinResponse.cookies.mc_guest && joinResponse.cookies.mc_guest[0] && joinResponse.cookies.mc_guest[0].value;
+    const cookie =
+      joinResponse.cookies.mc_guest &&
+      joinResponse.cookies.mc_guest[0] &&
+      joinResponse.cookies.mc_guest[0].value;
     if (!cookie) {
       unexpectedErrors.add(true);
       return;
@@ -50,21 +58,51 @@ export default function (data) {
   }
 
   if (Math.random() < 0.8) {
-    const response = http.get(`${baseUrl}/api/v1/orders/mine`, { headers: { Cookie: guestCookie }, tags: { endpoint: 'guest-read' } });
+    const response = http.get(`${baseUrl}/api/v1/orders/mine`, {
+      headers: { Cookie: guestCookie },
+      tags: { endpoint: 'guest-read' },
+    });
     const ok = check(response, { 'guest orders HTTP 200': (value) => value.status === 200 });
     unexpectedErrors.add(!ok);
     sleep(Number(__ENV.THINK_TIME_SECONDS || 1));
     return;
   }
 
-  const response = http.post(`${baseUrl}/api/v1/orders`, JSON.stringify({
-    items: [{ productId: data.productId, variantId: null, sugarLevel: '50%', iceLevel: 'normal-ice', toppingIds: [], quantity: 1 }],
-    note: 'synthetic benchmark',
-  }), {
-    headers: { 'Content-Type': 'application/json', Cookie: guestCookie, 'Idempotency-Key': `k6-${__VU}-${__ITER}-${Date.now()}` },
-    tags: { endpoint: 'guest-write' },
-  });
+  const response = http.post(
+    `${baseUrl}/api/v1/orders`,
+    JSON.stringify({
+      items: [
+        {
+          productId: data.productId,
+          variantId: null,
+          sugarLevel: '50%',
+          iceLevel: 'normal-ice',
+          toppingIds: [],
+          quantity: 1,
+        },
+      ],
+      note: 'synthetic benchmark',
+    }),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        Cookie: guestCookie,
+        'Idempotency-Key': `k6-${__VU}-${__ITER}-${Date.now()}`,
+      },
+      tags: { endpoint: 'guest-write' },
+    },
+  );
   const ok = check(response, { 'guest order HTTP 201': (value) => value.status === 201 });
   unexpectedErrors.add(!ok);
+  // Keep this workload below the per-device pending-payment cap without
+  // fabricating a staff receipt or sending unpaid orders into the KDS.
+  if (ok) {
+    const orderId = response.json().data.order._id;
+    const cancelled = http.post(`${baseUrl}/api/v1/orders/${orderId}/cancel`, null, {
+      headers: { Cookie: guestCookie },
+      tags: { endpoint: 'guest-cancel' },
+    });
+    unexpectedErrors.add(cancelled.status !== 200);
+  }
   sleep(Number(__ENV.THINK_TIME_SECONDS || 1));
 }

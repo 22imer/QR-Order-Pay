@@ -5,6 +5,9 @@ import { overviewToCsv } from '../../services/reportExportService.js';
 describe('overviewToCsv', () => {
   it('creates a UTF-8 CSV and neutralizes spreadsheet formulas', () => {
     const overview: DashboardOverview = {
+      grossCollected: 100000,
+      totalRefunded: 0,
+      adjustmentAmount: 0,
       totalRevenue: 100_000,
       orderCount: 2,
       averageOrderValue: 50_000,

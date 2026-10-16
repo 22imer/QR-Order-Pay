@@ -7,6 +7,7 @@ import { Input } from '../../components/ui/Input';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useToast } from '../../components/ui/useToast';
+import { ErrorState } from '../../components/ui/EmptyState';
 
 interface Shift {
   id: string;
@@ -16,6 +17,8 @@ interface Shift {
   openedAt: string;
   openingCash: number;
   paymentsByMethod: Record<string, { total: number; count: number }>;
+  refundsByMethod?: Record<string, { total: number; count: number }>;
+  reversalsByMethod?: Record<string, { total: number; count: number }>;
   openSessions: number;
   unpaidSessions: Array<{
     id: string;
@@ -56,23 +59,30 @@ export function StaffCashShift(): JSX.Element {
         tone: 'success',
       });
     },
-    onError: (error) =>
+    onError: (error) => {
+      void qc.invalidateQueries({ queryKey: ['cash-shift'] });
       toast({
         title: 'Không thể cập nhật ca',
         description: getErrorMessage(error),
         tone: 'danger',
-      }),
+      });
+    },
   });
   if (query.isLoading) return <Skeleton className="h-72" />;
+  if (query.isError)
+    return <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />;
   const shift = query.data?.shift;
   const cashReceived = shift?.paymentsByMethod.CASH?.total ?? 0;
-  const expected = (shift?.openingCash ?? 0) + cashReceived;
+  const cashRefunded = shift?.refundsByMethod?.CASH?.total ?? 0;
+  const cashReversed = shift?.reversalsByMethod?.CASH?.total ?? 0;
+  const expected = (shift?.openingCash ?? 0) + cashReceived - cashRefunded - cashReversed;
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <div>
         <h1 className="font-display text-2xl font-semibold">Đối soát ca thu ngân</h1>
         <p className="text-sm text-muted-foreground">
-          Khoản thu lấy từ Payment thành công theo ca; chênh lệch được lưu riêng, không sửa hóa đơn.
+          Tiền dự kiến = đầu ca + khoản vào − hoàn tiền − đảo ghi nhận. Khoản thay thế được tính vào
+          ca điều chỉnh; chênh lệch phải có lý do.
         </p>
       </div>
       <Card className="space-y-4 p-4">
@@ -86,7 +96,9 @@ export function StaffCashShift(): JSX.Element {
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <Stat label="Tiền đầu ca" value={vnd(shift.openingCash)} />
-              <Stat label="Tiền mặt đã thu" value={vnd(cashReceived)} />
+              <Stat label="Tiền mặt ghi nhận vào" value={vnd(cashReceived)} />
+              <Stat label="Tiền mặt đã hoàn" value={vnd(cashRefunded)} />
+              <Stat label="Tiền mặt đảo ghi nhận" value={vnd(cashReversed)} />
               <Stat label="Tiền mặt dự kiến" value={vnd(expected)} />
               <Stat
                 label="Chuyển khoản"
@@ -125,7 +137,11 @@ export function StaffCashShift(): JSX.Element {
             </p>
             <Button
               className="w-full"
-              disabled={action.isPending || Number(amount) < 0}
+              disabled={
+                action.isPending ||
+                Number(amount) < 0 ||
+                (Number(amount) !== expected && note.trim().length < 3)
+              }
               onClick={() => action.mutate()}
             >
               Chốt ca và lưu đối soát

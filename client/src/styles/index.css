@@ -2,12 +2,92 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Màu là bộ số RGB để Tailwind ghép được độ trong suốt (bg-primary/90).
+ * :root giữ giao diện Staff/Admin; :root.theme-guest chỉ bật ở cổng khách (xem useGuestTheme).
+ */
 :root {
   color-scheme: light;
+  --c-background: 250 247 242;
+  --c-foreground: 43 33 24;
+  --c-primary: 40 89 67;
+  --c-primary-fg: 250 247 242;
+  --c-accent: 200 138 77;
+  --c-accent-fg: 43 33 24;
+  --c-muted: 239 234 226;
+  --c-muted-fg: 107 94 82;
+  --c-card: 255 255 255;
+  --c-card-fg: 43 33 24;
+  --c-danger: 192 57 43;
+  --c-success: 45 143 78;
+  --c-shadow: 43 33 24;
+  --shimmer-hi: #f7f2ea;
+  --font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --font-display: 'Be Vietnam Pro', system-ui, sans-serif;
+}
+
+:root.theme-guest {
+  color-scheme: dark;
+  --c-background: 16 29 24;
+  --c-foreground: 246 243 235;
+  --c-primary: 244 162 29;
+  --c-primary-fg: 19 39 31;
+  --c-accent: 244 162 29;
+  --c-accent-fg: 19 39 31;
+  --c-muted: 35 56 46;
+  --c-muted-fg: 179 194 184;
+  --c-card: 27 43 35;
+  --c-card-fg: 246 243 235;
+  --c-danger: 244 143 131;
+  --c-success: 145 211 165;
+  --c-shadow: 0 0 0;
+  --shimmer-hi: #304a3d;
 }
 
 body {
-  font-family: 'Inter', 'Be Vietnam Pro', system-ui, sans-serif;
+  font-family: var(--font-sans);
+}
+
+html {
+  scroll-padding-top: 7rem;
+}
+::selection {
+  background: rgb(var(--c-primary) / 0.16);
+}
+.internal-main > div {
+  min-width: 0;
+}
+.internal-main h1 {
+  font-size: clamp(1.75rem, 2.4vw, 2.25rem);
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+}
+.internal-main h1 + p {
+  margin-top: 0.65rem;
+  line-height: 1.6;
+  max-width: 65ch;
+}
+.internal-main th {
+  font-weight: 500;
+}
+.internal-main th,
+.internal-main td {
+  padding: 0.9rem 0.75rem;
+}
+.internal-main tbody tr {
+  transition: background-color 0.15s;
+}
+.internal-main tbody tr:hover {
+  background: rgb(var(--c-muted) / 0.45);
+}
+.internal-main :is(select, input[type='date']) {
+  max-width: 100%;
+}
+@media print {
+  .internal-main {
+    padding: 0;
+    max-width: none;
+  }
 }
 
 @layer components {
@@ -32,23 +112,173 @@ body {
   .chip {
     @apply inline-flex items-center gap-1 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground;
   }
+
+  /* Tiêu đề dùng Be Vietnam Pro, giữ dấu tiếng Việt thoáng và rõ. */
+  .g-display {
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.12;
+  }
+  .g-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.012em;
+    line-height: 1.2;
+  }
+
+  /*
+   * Phiếu gọi món: tờ giấy có mép răng cưa ở đáy, đường chấm dẫn từ tên món tới giá.
+   * Bóng đổ đặt ở .slip-wrap vì mask trên .slip sẽ cắt mất bóng của chính nó.
+   */
+  .slip-wrap {
+    filter: drop-shadow(0 10px 12px rgb(var(--c-shadow) / 0.12));
+  }
+  .slip {
+    --tooth: 14px;
+    background: rgb(var(--c-card));
+    color: rgb(var(--c-card-fg));
+    border-radius: 1.25rem 1.25rem 0 0;
+    padding-bottom: calc(1.25rem + var(--tooth));
+    -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% /
+      var(--tooth) 100%;
+    mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% /
+      var(--tooth) 100%;
+  }
+  .slip-rule {
+    border-top: 2px dashed rgb(var(--c-foreground) / 0.16);
+  }
+  .leader {
+    flex: 1 1 1rem;
+    min-width: 1rem;
+    align-self: end;
+    margin-bottom: 0.4em;
+    border-bottom: 2px dotted rgb(var(--c-foreground) / 0.3);
+  }
 }
 
 .safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom), 0px);
 }
 
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Bảng chọn món: trượt lên từ đáy trên điện thoại, hiện dần ở giữa trên màn hình rộng. */
+.g-sheet.g-sheet {
+  left: 50%;
+  right: auto;
+  top: auto;
+  bottom: 0;
+  width: 100%;
+  max-width: 34rem;
+  max-height: 92dvh;
+  transform: translateX(-50%);
+  border-radius: 1.75rem 1.75rem 0 0;
+  animation: sheet-up 0.32s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (min-width: 640px) {
+  .g-sheet.g-sheet {
+    top: 50%;
+    bottom: auto;
+    width: calc(100vw - 2rem);
+    max-height: 88dvh;
+    transform: translate(-50%, -50%);
+    border-radius: 1.75rem;
+    animation: sheet-fade 0.2s ease-out;
+  }
+}
+
+@keyframes sheet-up {
+  from {
+    transform: translateX(-50%) translateY(100%);
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+  }
+}
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 12px));
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* Hóa đơn "in ra" từ trên xuống một lần khi mở trang. */
+@keyframes slip-print {
+  from {
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    clip-path: inset(0 0 -32px 0);
+  }
+}
+.slip-print {
+  animation: slip-print 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes pill-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.pill-in {
+  animation: pill-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @keyframes shimmer {
-  0% { background-position: -200px 0; }
-  100% { background-position: calc(200px + 100%) 0; }
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
 }
 
 .shimmer {
-  background: linear-gradient(90deg, #EFEAE2 0px, #F7F2EA 40px, #EFEAE2 80px);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--c-muted)) 0px,
+    var(--shimmer-hi) 40px,
+    rgb(var(--c-muted)) 80px
+  );
   background-size: 200px 100%;
   animation: shimmer 1.4s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shimmer { animation: none; }
+  .shimmer,
+  .slip-print,
+  .pill-in,
+  .g-sheet.g-sheet {
+    animation: none;
+  }
+}
+
+@media print {
+  .slip-wrap {
+    filter: none;
+  }
+  .slip {
+    -webkit-mask: none;
+    mask: none;
+    padding-bottom: 1.25rem;
+    border-radius: 0;
+  }
+  .slip-print {
+    animation: none;
+  }
 }

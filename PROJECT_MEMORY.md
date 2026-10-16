@@ -1,6 +1,139 @@
-# Bộ nhớ dự án — Mây Café
+# Bộ nhớ dự án — Fantastic cafe
 
-Cập nhật: 23/09/2026.
+Cập nhật: 16/10/2026.
+
+## Trạng thái mới nhất — đã bật lại local và public, 16/10/2026
+
+- Theo yêu cầu user, đã bật lại toàn bộ stack `maycafe-production`; 4 API, 3 worker, web, MongoDB và Redis healthy. Guest `http://localhost:8080`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Mục tắt web ngày 15/10 bên dưới là lịch sử.
+- Tunnel `fantastic-public-tunnel` đang chạy tại `https://newspaper-horses-gtk-checkout.trycloudflare.com`; đã đồng bộ `PUBLIC_APP_URL` và giữ cookie Guest Secure qua `compose.public.yaml`. Public menu, products và health trả HTTP 200. User tự chọn bàn và mở màn hình QR; chưa xác nhận camera/4G thật.
+- User đã sửa cấu hình AI trong `.env`; đã recreate 4 API và 3 worker bằng cả hai file Compose, xác nhận các biến AI runtime khớp cấu hình hiện tại và `AI_MODE=live`. Chưa gọi thử provider với cấu hình mới; không coi AI live đã đạt chỉ vì dịch vụ healthy.
+- Không seed/reset, không tạo đơn/khoản thu thử, không xoay khóa QR và không in secret. `.env`, `apikey.txt` và `.cache/` tiếp tục bị Git ignore.
+- Trước checkpoint Git theo yêu cầu user: lint/typecheck/build PASS; **200 tests PASS** (71 server unit, 85 integration, 44 client). Kiểm tra secret và whitespace của phần staged PASS. Logs `.cache/git-push-{lint,typecheck,test,build}.log`.
+- `npm audit --audit-level=high` ngày 16/10 báo **15 vulnerabilities (2 moderate, 12 high, 1 critical)** với dependency hiện có; package manifests/lockfile không thay đổi trong checkpoint này. CI có bước audit nên có thể thất bại. Chưa nâng dependency; không dùng `npm audit fix --force`. Log `.cache/git-push-audit.log`; các ghi chú audit 0 ở mục lịch sử không còn phản ánh kết quả mới.
+
+## Trạng thái khi kết thúc — đã tắt web, 15/10/2026
+
+- Theo yêu cầu user, đã tắt container public `fantastic-public-tunnel` và toàn bộ stack `maycafe-production` (web, 4 API, 3 worker, MongoDB, Redis; migration cũng đã dừng). Chỉ stop, giữ container/volume/dữ liệu và mọi thay đổi code; không seed/reset, không commit/push.
+- `.env` đã phục hồi `PUBLIC_APP_URL=http://localhost:8080` từ `.cache/public-original-url.txt`; không sửa secret. Link `https://officials-emissions-ryan-vinyl.trycloudflare.com` là link demo đã dùng và hiện không còn phục vụ ứng dụng.
+- Mở lại local: `docker compose -f compose.production.yaml up -d --wait`. Ba portal Guest 8080, Staff 8081, Admin 8082. Mở lại public: `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/public-web.ps1`; script lấy URL tunnel mới và đồng bộ QR. User tự chọn bàn ở Nhân viên/Admin; không tự cấp lại khóa hoặc tạo phiên/đơn thử trên dữ liệu quán.
+- Trạng thái tính năng đã lưu: bấm tên Admin Mây/nhân viên để mở profile, đổi mật khẩu/đăng xuất; menu giữ Nhân viên, có xóa nhân viên; topping xóa/khôi phục; mã khoản thu ở Chi tiết. Runtime portal meta và cookie Guest Secure cho public HTTPS đã triển khai.
+- Kết quả trước khi tắt: toàn bộ suite 198 PASS (71 server unit, 85 integration, 42 client); sau thay đổi public, client 44 PASS, web Docker build/TypeScript và lint PASS, public HTTPS/menu/ảnh/secure context/WebSocket và chặn route nội bộ PASS. Camera/4G thực tế chưa được user xác nhận. Chi tiết/log nằm trong các mục bên dưới.
+
+## Public HTTPS cho điện thoại quét QR — 15/10/2026
+
+- User yêu cầu public web để điện thoại quét; user tự chọn bàn trong Nhân viên/Admin. Đã mở **cổng Guest 8080** qua Cloudflare Quick Tunnel, container `fantastic-public-tunnel` trên network `maycafe-production_default`; URL đã dùng `https://officials-emissions-ryan-vinyl.trycloudflare.com` (đã tắt theo yêu cầu; sẽ đổi khi tunnel khởi động lại). Không mở public Staff/Admin/Mongo/Redis.
+- Script `scripts/public-web.ps1` khởi động/tái sử dụng tunnel, lấy URL của lần chạy hiện tại qua docker logs --since StartedAt, cập nhật PUBLIC_APP_URL trong `.env`, giữ secret và dữ liệu; URL lưu `.cache/public-url.txt`, URL cũ lưu `.cache/public-original-url.txt`. Chạy `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/public-web.ps1`; dừng/khôi phục local bằng cùng lệnh thêm `-Stop`. Dùng image đã build, không tự seed/reset.
+- `compose.public.yaml` đặt COOKIE_SECURE=true riêng 2 Guest APIs; Internal tiếp tục false cho local HTTP. Cả 4 APIs/worker nhận PUBLIC_APP_URL mới nên vé QR và link /display do Staff/Admin cấp dùng HTTPS public. SERVER_ORIGIN local giữ để màn hình localhost cũng lấy QR mới; không xoay khóa QR hoặc chọn/thay đổi bàn thay user.
+- Nginx inject meta fantastic-cafe-portal ở server scope (kế thừa cả location=/index.html khi SPA redirect); client getPortalMode đọc meta để nhận đúng Guest trên hostname tunnel bất kỳ. Tránh rebuild frontend mỗi lần hostname đổi; route/API nội bộ vẫn bị Nginx/backend chặn. Cache PWA v10.
+- Web Docker build/TypeScript và client lint PASS; client **44 tests PASS** (2 test nhận diện portal mới). Nginx -t PASS. Public HTTPS/menu đọc được, browser mobile kiểm secure context, menu, API origin được chấp nhận, WebSocket handshake thành công; Staff/Admin route/API từ public trả 404, local portal vẫn chạy. Không tạo phiên/đơn/khoản thu; chưa kiểm camera/4G thực tế trên điện thoại của user. Logs `.cache/public-{web-build,client-tests,lint,start,production}.log`, ảnh `.cache/public-browser/`.
+- Đây là URL demo tạm thời: giữ PC, Docker và tunnel bật. Tunnel không tự restart để tránh đổi URL mà app chưa đồng bộ; sau khi bật lại dùng script để cập nhật URL và mở lại màn hình QR. Chưa có hosting cloud luôn bật/domain cố định.
+
+## Tài khoản, xóa topping và khoản thu gọn — 15/10/2026
+
+- Lối vào **Tài khoản của tôi** là bấm tên người dùng ở cuối sidebar (Admin Mây hoặc nhân viên); mobile bấm tên dưới thương hiệu. Route `/staff/account`, `/admin/account` xem tên/email/vai trò, sửa tên, đổi mật khẩu bằng mật khẩu hiện tại và đăng xuất; đổi mật khẩu cần đăng nhập lại. Menu Admin giữ **Nhân viên**, menu Staff giữ các mục nghiệp vụ; không thêm mục Tài khoản của tôi/Quản lý tài khoản vào navigation theo yêu cầu đã làm rõ của user.
+- Mục **Nhân viên** giữ tạo/sửa/khóa/mở/đặt lại mật khẩu, thêm **Xóa** có xác nhận tên. DELETE `/admin/users/:id` chỉ ADMIN xóa STAFF, đánh isDeleted=true/isActive=false, tăng authVersion, revoke refresh và ghi audit trong transaction. List bỏ nhân viên đã xóa; PATCH không mở lại người đã xóa. Bản ghi User còn để giữ tên/người thu trong lịch sử ca làm, đơn và khoản thu.
+- `accountService` dùng Zod strict, chỉ cho cập nhật trường hợp lệ; chặn tự khóa/hạ quyền. Transaction khóa actor và target, chống hai admin đồng thời hạ quyền nhau. `authVersion` User/RefreshSession mặc định 0 để tương thích dữ liệu/token cũ; đổi mật khẩu/quyền/trạng thái tăng version và revoke refresh trong cùng transaction. HTTP kiểm người dùng active/quyền/version tại mỗi request; socket kiểm khi vào và mỗi 10 giây. Không trả hash mật khẩu; audit không lưu mật khẩu.
+- Admin Topping thêm **Xóa** có xác nhận, nhóm **Topping đã xóa** và **Khôi phục**; `DELETE /admin/toppings/:id` xóa mềm qua catalogMutationService nên có audit/outbox/cache invalidation. Giữ liên kết topping trên món và snapshot đơn cũ; menu/cấu hình AI/giỏ cũ chặn topping đã xóa; phục hồi dùng PATCH isArchived=false.
+- Khoản thu ở cả hai portal rút gọn tiêu đề/hướng dẫn; mã khoản thu và mã thay thế nằm trong **Chi tiết**, hướng dẫn trong **Quy định điều chỉnh**. Danh sách giữ bàn, mã đơn, số tiền, phương thức, thời gian, trạng thái; lịch sử điều chỉnh có bàn/đơn/số tiền để đối chiếu. PWA cache v9.
+- Lint/typecheck/build PASS. Toàn bộ test **198 PASS** = server unit 71, integration 85, client 42. Account integration có 9 tests, thêm 1 topping lifecycle integration và 5 client tests; DB test cô lập, không seed/reset dữ liệu quán. Logs `.cache/account-{tests,lint,typecheck,build}.log`.
+
+- Đã build/recreate toàn stack production-local; Mongo/Redis, 4 API, 3 workers và web healthy, migrate exit 0. Chromium trực tiếp PASS 18 màn hình ở 375/768/1440: tài khoản Admin/Staff, sửa tài khoản/xác nhận xóa topping, khoản thu gọn; không tràn ngang/lỗi JS. Hủy mọi hộp sửa/xóa; users và dữ liệu topping nghiệp vụ trước/sau bằng nhau (bỏ qua `_id` mặc định được Mongoose sinh cho ingredientMetadata chưa lưu). Không seed/reset hay thay đổi giao dịch quán. Logs `.cache/account-{docker,production}.log`, ảnh `.cache/account-browser/`.
+
+- Bản theo yêu cầu làm rõ đã build/recreate production-local và toàn stack healthy. Typecheck/lint/build PASS; **198 tests PASS**. Chromium PASS bấm tên mở profile, form đổi mật khẩu và đăng xuất về login (route bảo vệ và refresh 401 sau logout) cho Admin/Staff; navigation giữ Nhân viên, không có mục tài khoản mới. Xác nhận xóa nhân viên được hủy ở 375/768/1440, users trước/sau bằng nhau; không tràn ngang/page error. Ảnh `.cache/profile-browser/`, logs `.cache/profile-{tests,lint,typecheck,build,docker,production}.log`.
+
+## Xóa catalog và ẩn danh mục xuyên suốt — 13/10/2026
+
+- User yêu cầu bổ sung xóa món/danh mục và hỏi ý nghĩa mã khoản thu. Trang Món có **Xóa** kèm xác nhận tên, dùng API DELETE xóa mềm `isArchived`; mục **Món đã xóa** có Khôi phục. Giữ đơn/khoản thu/hóa đơn và doanh thu cũ. Trang Danh mục có số món tính cả archive và xác nhận xóa: danh mục trống xóa được; còn món phải chọn nơi nhận, chuyển toàn bộ món rồi xóa danh mục nguồn trong cùng transaction.
+- `DELETE /admin/categories/:id`, body `{reassignTo?}` chỉ ADMIN. Chặn `CATEGORY_NOT_EMPTY`, nhận trùng nguồn/ID sai/không còn. `catalogMutationService` ghi cùng Category.version với create/update product để tránh tạo/chuyển món vào danh mục bị xóa khi thao tác đồng thời; audit `category.productsMoved`/`category.deleted`, outbox realtime và invalidate cache ngay sau commit. Không thêm schema/index/migration mới.
+- Public product repository và featured lọc Category.isActive; menu, search, AI fallback/live cùng nguồn. PriceOrderItems kiểm danh mục trong session để từ chối giỏ cũ; API cấu hình AI/detail cũng kiểm active. Guest realtime invalidate cả menu và menu-search; AISheet loại gợi ý cũ không còn trong catalog. Ẩn danh mục không sửa isArchived/isAvailable của món; hiện lại khôi phục khả năng xem/bán theo trạng thái món.
+- Form sửa món điền đúng categoryId, giữ ID variant/đường/đá/topping/ingredientMetadata khi đổi danh mục; trước đó form khởi tạo category rỗng và ghi đè các trường tùy chọn. PWA cache v7. Hướng dẫn `docs/catalog-lifecycle.md`; OpenAPI có DELETE category. `docs/payment-safeguards.md` giải thích Payment._id là ID từng lần thu, khác mã đơn/mã ngân hàng và khóa idempotency.
+- Typecheck/lint/build PASS; unit server **71**, integration **75** (8 test lifecycle mới), client **37** = **183** PASS. Integration kiểm phân quyền, giữ paid order/payment snapshot, hide/show menu/search/AI/old cart, count archive, reassignment/rollback và delete-vs-create không orphan. Chromium/API/Mongo cô lập PASS xác nhận/hủy, xóa/khôi phục món, đổi danh mục giữ cấu hình, hide/show realtime, chuyển+xóa và xóa danh mục trống; 3 viewport 375/768/1440 không tràn/page error. Logs/ảnh `.cache/catalog-*`.
+- Đã build/recreate toàn API/workers/web production-local, mọi service healthy; không seed/reset hay sửa catalog/đơn/khoản thu thật. Mở Admin 8082, Ctrl+F5. Các thay đổi sau Git checkpoint `9c27792` vẫn ở working tree, chưa push.
+- Smoke production read-only PASS hộp xác nhận xóa ở 3 viewport, productCount đúng, menu khách và 3 portal healthy; hủy hộp thoại, catalog trước/sau bằng nhau. Log/ảnh `.cache/catalog-production*`.
+
+## Đồng bộ các thành phần khách với nền thực đơn — 13/10/2026
+
+- Theo ảnh/user feedback, cửa sổ AI sáng cũ lệch với thực đơn nền ảnh tối. Đổi token `:root.theme-guest` sang nền `#101D18`, card `#1B2B23`, chữ `#F6F3EB`, primary/accent vàng `#F4A21D`; muted/success/danger đủ tương phản trên nền tối. `styles/guest-surfaces.css` áp cho sheet, overlay, header/đóng, dock, phiếu giỏ/đơn và trang vào bàn; theme ở html nên Radix portals cũng kế thừa. Staff/Admin giữ theme nền kem.
+- AISheet có icon/header, nhóm ngân sách và tùy chọn, nhãn mô tả, preset hai cột có trạng thái chọn, spinner lúc chờ, thẻ gợi ý với MenuPhoto cache/error fallback và giá/nút hướng đến cấu hình. Kết quả mới cuộn vào vùng xem; header sheet AI/chọn món giữ nút đóng khi cuộn. Giữ nội dung menu/preset/API/fallback hiện có và bước xác thực cấu hình AI trước thêm giỏ.
+- Tùy chỉnh size/đường/đá/topping, nút/checkbox/input, bộ lọc, giỏ nổi, điều hướng, đơn, hủy và đánh giá dùng cùng màu. Cart dùng ảnh local qua MenuPhoto và chiều rộng đọc 3xl. Hóa đơn in chuyển token về nền trắng/chữ đậm (kể cả chữ phụ), QR vẫn ảnh đen trắng trên trắng. Meta/PWA màu nền đồng bộ, cache `fantastic-cafe-shell-v6`.
+- Client typecheck/lint/build và 37 tests PASS. Chromium/API/Mongo replica set cô lập PASS AI thực sự trả gợi ý fallback từ catalog → mở món, tùy chỉnh/giỏ/đặt đơn 35k → thu 10k + 25k → KDS phục vụ → gửi đánh giá → đóng phiên/hóa đơn. Kiểm ba viewport 375/768/1440 cho các cửa sổ/giỏ/đơn/receipt, nút đóng trong vùng xem, không tràn ngang/page error; in giấy trắng và chữ phụ đủ đậm. Không tạo dữ liệu thử trên DB quán.
+- Đã build/recreate web local; toàn stack healthy. Smoke trực tiếp production PASS AI sheet 3 kích thước, Escape, ảnh/thẻ/chọn món/bộ lọc/vào bàn và theme Staff/Admin; chỉ đọc. Artifacts/log `.cache/guest-surfaces-*`. Xem `http://localhost:8080/menu`, Ctrl+F5. Các thay đổi sau checkpoint `9c27792` vẫn chưa commit/push.
+
+## Checkpoint Git và thực đơn dạng ảnh nền — 13/10/2026
+
+- Theo yêu cầu, đã commit/push toàn bộ code hiện tại trước khi sửa giao diện mới: `9c27792` trên `origin/main` (`longdxam/QR-Order-Pay`), commit `feat: secure prepaid ordering and rebrand Fantastic cafe`. Workspace sạch tại checkpoint; code thực đơn dưới đây được làm sau checkpoint.
+- Trang khách `/menu` nay dùng `MenuShowcase.tsx` + `menu-showcase.css`: ảnh món phủ nền, lớp gradient, nội dung tên/mô tả/giá ở trái và carousel thẻ món ở phải. Bấm thẻ/next/previous đổi preview, không mở modal hoặc gửi đơn. **Chọn món** mới mở ProductDetailModal để size/đường/đá/topping, thêm giỏ và đặt như trước.
+- MenuPage giữ API menu, tìm kiếm câu tự nhiên, bộ lọc ngân sách/caffeine/sữa, danh mục và AI Barista. Chỉ route `/menu` bật `guest-showcase` trong GuestLayout để header trong suốt/phủ ảnh và main toàn chiều rộng; trang giỏ/đơn/hóa đơn vẫn dùng layout cũ. Mobile xếp mô tả trên, thẻ vuốt ngang dưới, giữ dock và giỏ nổi. Có trạng thái tải/rỗng/lỗi, tạm hết, focus keyboard và reduced motion.
+- Ảnh lấy từ Product.image thật trong catalog đang chạy; cache 18 nguồn hợp lệ tại `client/public/menu-images/` (có SOURCES.md), ánh xạ theo URL trong `menu-image-cache.json`. Hai URL không phải ảnh (Drive home và nguồn lỗi) dùng nền/icon dự phòng; không thay ảnh hoặc nội dung database. MenuPhoto dùng chung cho preview/card/modal, hỗ trợ ảnh mới không có cache và onError. Cache PWA tăng `fantastic-cafe-shell-v5`.
+- Typecheck/lint/build client PASS; client **37/37** tests, thêm 3 kiểm tra chọn-preview/tùy chỉnh, lọc và chặn chọn món tạm hết. Chromium/API/Mongo replica set cô lập PASS 5 viewport, đổi ảnh/mô tả/giá, arrows/danh mục/tìm kiếm/rỗng/ảnh lỗi/AI, mở cấu hình/thêm giỏ và đặt đơn thật `AWAITING_PAYMENT / UNPAID` 35k; không dùng dữ liệu quán để đặt thử. Artifacts `.cache/showcase-*`.
+- Đã build/recreate web production-local, web và toàn stack healthy. Smoke trên web đã triển khai PASS 3 kích thước, ảnh local tải thật, đổi món/mô tả và mở cấu hình; Staff/Admin không nhận theme menu. Không tạo phiên/đơn/khoản thu trên DB quán. Mở `http://localhost:8080/menu`, Ctrl+F5. Bản giao diện mới còn ở working tree, chưa push sau checkpoint `9c27792`.
+
+## Đổi tên hiển thị và font — 13/10/2026
+
+- Người dùng yêu cầu đổi tên thành **Fantastic cafe**, đổi kiểu chữ cho giao diện. Tên hiển thị được cập nhật trên Khách/Staff/Admin, đăng nhập, QR, hóa đơn/in, lời cảm ơn, document title/meta/PWA và tiêu đề CSV. README và design-context dùng tên mới; các ghi chú lịch sử phía dưới còn tên cũ.
+- Cả ba portal dùng **Be Vietnam Pro**, WOFF2 400/500/600/700/800, có bộ ký tự tiếng Việt, Latin và Latin extended. Font và OFL được lưu tại `client/public/fonts/`, không phụ thuộc Google Fonts khi mở app. Service worker `fantastic-cafe-shell-v4` precache cả font/CSS và đổi phiên bản cache.
+- CSS tiêu đề bỏ font-stretch và weight 650 của Bricolage, chuyển 700/600 và line-height 1.12 cho dấu tiếng Việt. Shared sidebar giảm tên brand xuống 18px, cho phép xuống dòng trong khung hiện tại.
+- Các định danh kỹ thuật/database, tài khoản demo và tên món trong menu vẫn là dữ liệu hiện hữu. Không reset/seed khi đổi thương hiệu hiển thị.
+- Build/lint PASS. Đã build/recreate toàn stack local và kiểm tra **54 màn hình** trên ba portal tại 375/768/1440: tên Fantastic cafe, font Be Vietnam Pro tải từ local, không tràn ngang, không lỗi JS. PWA/manifest dùng tên mới; font tiếng Việt được cache và dùng được khi offline. Các dịch vụ healthy. Log/ảnh `.cache/fantastic-*`; Ctrl+F5 để tải bundle mới.
+
+## Bảo vệ thanh toán và điều chỉnh khoản thu — 13/10/2026
+
+- Theo yêu cầu bổ sung: thu từng phần (`Order.paidAmount`, DTO `balanceDue`), chỉ đủ tiền mới vào KDS; khách đã trả một phần phải yêu cầu nhân viên hoàn/hủy. Hoàn trước pha chế xử lý tất cả khoản thu còn hiệu lực của một đơn trong cùng transaction.
+- `paymentClaimService.ts`: khóa thu ở cấp phiên bàn trong 120 giây, client gia hạn 30 giây, token hash gắn tài khoản/cửa sổ. Thu từng đơn và thu gộp cũ bắt buộc header `X-Payment-Claim`. Xác nhận tiền/hoàn/thu gộp thành công trả quyền ngay ở server trong transaction, không phụ thuộc cleanup của trình duyệt. Bàn giữ quyền chặn chuyển bàn/đóng phiên/chốt ca; hủy đơn chưa thu cũng được bảo vệ.
+- `PaymentCorrection` + `paymentCorrectionService.ts`: VOID (đảo ghi nhận nhầm), METHOD (đổi phương thức), TRANSFER (chuyển sang đơn đúng); giữ nguyên amount/method/paidAt/người thu gốc, ghi trường đảo và khoản thay thế liên kết `replacesPaymentId`. Nhân viên lập lý do, ADMIN khác duyệt/từ chối; expectedVersion + unique pending index chống hai người duyệt/ghi trùng. Đơn nguồn/đích đang chờ duyệt bị giữ các thao tác tài chính/công đoạn/đóng phiên.
+- Hai portal có trang **Khoản thu**: `/staff/payments`, `/admin/payments`, dùng `PaymentAccounting.tsx`. Bàn/đơn/số tiền/phương thức và lý do hiện khi duyệt. Sửa phương thức sau đóng phiên được lưu riêng; Bill snapshot giữ nguyên. VOID/TRANSFER chỉ trước pha chế và phiên còn hoạt động; khoản cũ gộp nhiều đơn chưa được tự chia.
+- `paymentAnalyticsService.ts` tính grossCollected, totalRefunded, adjustmentAmount, thực thu ròng và ngày/giờ theo paidAt/refundedAt, có thể âm ngày chỉ hoàn tiền. CSV cùng nguồn. Top món vẫn theo ngày tạo đơn đã thanh toán, UI ghi rõ. Ca tách hoàn thực tế và đảo ghi nhận, tính số còn thiếu theo số thực thu; chênh lệch phải có lý do, chưa có bước quản lý duyệt chênh lệch riêng.
+- Client giữ payload/idempotency key khi mất kết nối để thử lại, khóa sửa tiền/phương thức khi chưa rõ kết quả. Các API không tự chuyển tiền hoặc xác minh ngân hàng.
+- Migration mới `20261013-001-payment-correction-indexes`: index unique pending và lookup Payment; thêm schema, không backfill/sửa khoản thu cũ hay reset DB. Dữ liệu Order cũ đọc tương thích paidAmount null.
+- Hướng dẫn đầy đủ: `docs/payment-safeguards.md`; OpenAPI đã thêm claim, lịch sử khoản thu, yêu cầu và quyết định điều chỉnh.
+- Kiểm chứng trước cập nhật runtime: unit 71, client 34, integration 67 đều PASS; typecheck/lint/build PASS. Chromium với Mongo replica set cô lập PASS thu 10k + 25k, hiển thị dư nợ khách, sửa 10k tiền mặt thành chuyển khoản có quản lý duyệt, KDS và đóng phiên; thực thu ròng giữ 35k. Sáu màn hình khoản thu Staff/Admin tại 375/768/1440 không tràn, không page error. Log/ảnh `.cache/payment-*`. Trạng thái chạy cuối cùng ghi tại `docs/test-report.md`.
+- Đã cập nhật production-local toàn bộ API/workers/web, migration exit 0 và mọi service healthy. Backup trước cập nhật: `.cache/maycafe-before-payment-safeguards.archive`. Hai trang Khoản thu, login, báo cáo và phân quyền production đã smoke PASS bằng thao tác đọc, không tạo/sửa khoản thu/đơn thật. Ctrl+F5 Staff/Admin/Guest để nhận bundle mới. Chốt chặn cuối bảo vệ cả mở lại phiên CHECKOUT và duyệt hủy khi không còn tiền đã thu; integration 67 và server typecheck/lint kiểm lại PASS.
+
+## Thiết kế theo repo cho cả ba giao diện — 13/10/2026
+
+- Người dùng yêu cầu đọc README/logic/schema/style trước khi thiết kế, dùng nội dung thật và kế thừa nhận diện; đã xác nhận áp dụng cho cả Khách, Nhân viên và Quản trị.
+- Tạo `docs/design-context.md`: mục đích hệ thống, thứ bậc QR/catalog/pipeline, file quan trọng, token màu/font chính xác, nhãn thật, các mục tiêu và điều kiện nghiệp vụ cần giữ. Đã đọc cả public menu và chụp các portal trước thay đổi; không dùng số liệu/nội dung marketing giả.
+- Khách: trang vào bàn rõ QR/link, bỏ ví dụ token tĩnh và hướng dẫn seed lỗi thời; menu nhấn mạnh danh mục/món và ảnh thật, AI là hỗ trợ chọn món; header có điều hướng desktop, dock tiếp tục dùng trên mobile. Đơn/hóa đơn giới hạn chiều rộng để đọc; giữ phiếu mép răng cưa, đánh giá từng đơn và luồng gọi thêm.
+- Staff/Admin: `client/src/components/layout/InternalShell.tsx` dùng chung sidebar desktop, navigation cuộn trên mobile, tài khoản/đăng xuất và trạng thái thật. Kế thừa nền kem/primary xanh/Playfair + Inter; Guest tiếp tục dùng nền xanh nhạt/Bricolage. Card/input/border thống nhất qua token hiện có; warning ánh xạ sang accent đã có.
+- Staff: badge chờ tiền của Bàn & phiên lấy API thật, KDS có lối vào hàng chờ thanh toán và các cột công đoạn rõ; điều chỉnh thẻ bàn/nhận tiền. Nút chuyển công đoạn hiển thị tên trạng thái tiếp theo, aria-label giữ đầy đủ “Chuyển sang …”. Nút thu gộp legacy chỉ hiện khi có đơn legacy đã phục vụ/chưa thu.
+- Admin: Bàn & QR/cấu hình màn hình và quản lý menu được ưu tiên trong điều hướng; Dashboard đặt các lối quản lý thật trước số liệu. Bỏ report job chỉ để hiện số đơn trong header; bộ lọc/báo cáo chính vẫn hoạt động. Trang bàn, danh sách món, chart và table kế thừa hệ nhận diện.
+- Kiểm chứng: client typecheck/lint/build PASS, client 32/32 test PASS. Chromium + Mongo cô lập với catalog đọc từ API thật PASS QR → đặt/thu tiền/KDS → đánh giá A → gọi thêm/đánh giá B → đóng/in/receipt; menu và Staff kiểm tra 390/768/1440. Browser trên production-local PASS 45 tổ hợp route/viewport (375/768/1440) của 14 trang Staff/Admin và trang vào bàn; không tràn ngang/page error, login/logout đúng. Không tạo/sửa dữ liệu nghiệp vụ trong audit production.
+- Đã build/recreate riêng web; toàn stack vẫn healthy. Logs `.cache/design-*.log`; ảnh trước/sau `.cache/design-before/`, `.cache/design-after/`, ảnh luồng khách/staff `.cache/design-runtime/`. Ctrl+F5 các portal để thấy giao diện mới.
+
+## Đánh giá từng đơn khi phiên vẫn mở — 13/10/2026
+
+- Theo yêu cầu người dùng, trang **Đơn của bạn** hiện nút **Đánh giá đơn** cho đơn `SERVED + PAID` chưa đánh giá. Hộp chọn 1–5 sao và nhận xét dùng chung component `client/src/features/guest/OrderReview.tsx` với trang hóa đơn. Gửi xong hiển thị số sao/nhận xét, không đóng phiên; khách gọi thêm đơn mới và đánh giá riêng đơn đó.
+- GET `/orders/mine` và `/orders/:id` nay trả `review: { rating, comment, createdAt } | null`; serializer và contracts lọc field đánh giá. List truy vấn các đánh giá của đúng participant/phiên một lần. Tải lại trang vẫn thấy đánh giá đã gửi.
+- POST `/orders/:id/review` đã có từ trước, nay được dùng trên giao diện khi phiên OPEN/CHECKOUT. Service kiểm cả participant và tableSessionId, yêu cầu SERVED/PAID; unique orderId vẫn ngăn gửi trùng. Race duplicate key được chuyển thành 409, không trả 500.
+- Trang receipt sau đóng phiên giữ đánh giá đã gửi và cho gửi những đánh giá còn thiếu qua `/receipts/orders/:id/review`. Review không sửa Bill snapshot, quyền gọi món hoặc trạng thái phiên.
+- Kiểm chứng source: lint/typecheck/build PASS; server unit 71/71, client 32/32, integration 55/55 (158 tests). Chromium dùng API và Mongo replica set cô lập PASS đánh giá A khi OPEN → gọi thêm và đánh giá B khi OPEN → reload giữ cả hai → đóng phiên và receipt giữ cả hai, không có page error. Log `.cache/order-reviews-*.log`, ảnh `.cache/order-reviews-browser/`.
+- Đã build và cập nhật toàn bộ production-local bằng Compose, dùng `.env` hiện có; tất cả API/web/worker/Mongo/Redis healthy và migrate exit 0. Ba portal/login Staff/API chờ tiền/KDS/route isolation smoke PASS, bundle OrderReview mới đang phục vụ. Không seed/reset dữ liệu hoặc tạo review thử trên dữ liệu quán. Khách Ctrl+F5 trang Đơn của bạn để dùng UI mới.
+
+## Link vào bàn trên màn hình QR — 13/10/2026
+
+- Bổ sung **Mở link vào bàn**, **Sao chép link** và ô link chỉ đọc dưới QR tại `/display#…`, để test/gọi món trên cùng máy. Link lấy đúng `data.url` của QR ngắn hạn, tự đổi và được ẩn khi QR hết hạn/mất mạng; không dùng khóa cấu hình màn hình làm link khách.
+- Clipboard lỗi/không hỗ trợ thì chọn sẵn ô link và hướng dẫn sao chép thủ công. Mở link dùng tab mới để giữ màn hình QR hoạt động.
+- Client lint và 28/28 test PASS; test QR hiện kiểm tra link khách đúng và bị ẩn khi hết hạn. Docker web đã build/recreate, healthy, bundle mới được xác nhận đang phục vụ và ba portal trả 200. Hướng dẫn `docs/qr-prepayment.md` đã cập nhật.
+- Khi khởi chạy lại dự án cần bật toàn stack bằng `docker compose -f compose.production.yaml up -d --wait`; chỉ restart web khi API/Mongo/Redis đang dừng sẽ khiến trang vẫn mở nhưng login trả 502. Đã bật lại toàn stack và kiểm tra login Staff/Admin HTTP 200 ngày 13/10/2026.
+
+## Luồng hiện tại — QR động và thanh toán trước (12/10/2026)
+
+Mục này thay thế mô tả QR tĩnh/thu tiền cuối phiên trong các ghi chú lịch sử bên dưới.
+
+- Yêu cầu đã triển khai: màn hình tại bàn đổi QR mỗi 60 giây → khách quét mã còn hạn (Wi-Fi/4G) → đơn `AWAITING_PAYMENT / UNPAID` → nhân viên xác nhận tiền từng đơn → `PENDING / PAID` mới xuất hiện tại KDS → khách gọi thêm trả tiếp → đóng phiên mới thu hồi quyền gọi món.
+- Staff `/staff/tables` và Admin quản lý bàn có nút **Cấu hình màn hình QR**. Liên kết `/display#…` là khóa riêng của thiết bị, không đưa cho khách; QR bên trong là vé HMAC ngắn hạn. Khóa lưu hash, API nhận header được redact trong log và trả `no-store`. QR tĩnh cũ không còn cấp quyền vào bàn.
+- Chu kỳ theo phút của server, lần mở đầu có thể còn ít hơn 60 giây. Tablet ẩn mã hết hạn khi mất mạng. Đóng/chuyển phiên hoặc cấp lại khóa tăng `qrEpoch`; các API instance cần dùng chung secret và đồng hồ đồng bộ.
+- API mới: `GET /table-displays/qr`, `POST /staff/tables/:id/display`, `POST /admin/tables/:id/display`, `GET /staff/awaiting-payments`, `POST /staff/orders/:id/payments`, `POST /staff/orders/:id/refund`. Prefix `/api/v1`.
+- Xác nhận tiền dùng transaction và idempotency, kiểm số tiền/version; không phát `payment.confirmed` của luồng đóng phiên cũ. Phát `order.statusChanged` nên guest vẫn được gọi thêm. KDS và API chuyển công đoạn đều chặn đơn chưa trả tiền.
+- Đóng phiên yêu cầu đơn đã phục vụ/hủy, không còn nợ/yêu cầu hủy chờ; chốt `Bill` snapshot trong cùng transaction, revoke guest/QR, giải quyết service request, rồi mở hộp hóa đơn cho Staff in. Receipt của khách tiếp tục chỉ đọc/đánh giá.
+- Đơn đã trả tiền chưa pha chế chỉ được hủy sau xác nhận đã hoàn đủ tiền thủ công; ghi Payment REFUNDED, phương thức/ca/nhân viên/lý do hoàn và đối soát ca. UI hiện xác nhận hoàn tiền mặt; không tự chuyển tiền ngân hàng.
+- Mỗi participant tối đa 3 đơn chờ thanh toán; hủy đơn chưa trả tiền giải phóng giới hạn. Rate limit hiện có vẫn áp dụng. Thanh toán gộp cuối phiên được giữ cho dữ liệu legacy đã phục vụ/chưa trả.
+- Không ràng buộc IP/GPS/Wi-Fi. Khách đã vào phiên vẫn có thể gửi đơn chưa trả tiền/yêu cầu phục vụ từ xa đến lúc Staff đóng phiên; QR động và thu tiền trước không chứng minh hiện diện tại quán.
+- 4G cần `PUBLIC_APP_URL` công khai và HTTPS/proxy/origin tương ứng. Chưa kiểm tra điện thoại 4G hoặc camera thật.
+- Playwright đổi sang `E2E_DISPLAY_TOKEN`; benchmark seed dùng `BENCHMARK_DISPLAY_TOKEN`, k6 dùng `TABLE_DISPLAY_TOKEN` để lấy QR mới. Không dùng số hiệu năng cũ làm bằng chứng cho workload mới.
+- Kiểm chứng source: lint/typecheck/build PASS; server unit 71/71, client 28/28, integration 53/53 (tổng 152). Chromium với Mongo replica set cô lập PASS luồng đặt/nhận tiền/KDS/gọi thêm/đóng/in/xem receipt, không có page error. Ảnh và log tại `.cache/prepay-browser/`, `.cache/prepay-*.log`.
+- Hướng dẫn: `docs/qr-prepayment.md`; OpenAPI và README đã cập nhật. Không chạy lại seed hoặc xóa dữ liệu đang sử dụng.
+- Đã build/recreate toàn bộ production-local bằng `docker compose -f compose.production.yaml up -d --build`, dùng `.env` gốc hiện có (không cần `.env.production`). Mongo/Redis, 4 API, web và 3 worker healthy; migrate exit 0. Smoke ba portal 8080/8081/8082, login Staff, API chờ tiền, KDS chỉ PAID, route isolation và giao diện cấu hình QR PASS, không page error. Không thay đổi đơn/khoản thu trong smoke production. Log `.cache/prepay-production-smoke.log`, ảnh `.cache/prepay-browser/production-staff.png`. Liên kết màn hình từng bàn cần cấp qua Staff/Admin trước khi khách dùng luồng mới.
 
 ## Ý định và phạm vi của người dùng
 
@@ -16,7 +149,7 @@ Cập nhật: 23/09/2026.
 - npm workspaces: client (React/Vite/TypeScript), server (Express/Mongoose/TypeScript), packages/contracts (Zod).
 - MongoDB phải chạy replica set để dùng transaction; compose.yaml đã có cấu hình.
 - Khách không đăng ký tài khoản. Mỗi thiết bị có participantId riêng trong tableSession.
-- Staff xử lý và thu tiền chung theo phiên bàn; khách chỉ xem đơn/hóa đơn của thiết bị mình.
+- Staff thu tiền từng đơn trước pha chế, đóng phiên để chốt hóa đơn toàn bàn; khách chỉ xem đơn/hóa đơn của thiết bị mình.
 - Socket.IO dùng room staff, session:<sessionId>, guest:<sessionId>:<participantId>.
 - Backend là nơi quyết định giá, trạng thái và quyền truy cập.
 
@@ -77,7 +210,7 @@ Cập nhật: 23/09/2026.
 - Thu hồi quyền đặt món trong cùng transaction thanh toán.
 - Cookie mc_receipt là token độc lập, lưu hash receiptTokenHash trong GuestSession; chỉ cấp quyền xem hóa đơn và đánh giá sau CLOSED.
 - GET /receipts/current chỉ trả đơn SERVED/PAID của chính participant; POST /receipts/orders/:id/review kiểm tra ownership và đánh giá một lần.
-- Trang /receipt hiển thị chi tiết, tổng tiền, in bằng trình duyệt, form 1–5 sao/nhận xét và trạng thái đã đánh giá.
+- Trang /receipt hiển thị chi tiết, tổng tiền, form 1–5 sao/nhận xét và trạng thái đã đánh giá. Theo cập nhật 27/09/2026, thao tác in sau thanh toán thuộc phía nhân viên.
 - Admin có trang /admin/reviews: danh sách đánh giá, điểm trung bình, phân bố 1–5 sao, lọc theo số sao/ngày và phân trang 20 mục. API GET /admin/reviews chỉ cho ADMIN.
 - Receipt hết hạn theo GuestSession (12 giờ kể từ join), bị xóa quyền khi rời bàn. Không dùng để gọi thêm món hay mở socket.
 - GuestSession cũ từ trước thay đổi chưa có receiptTokenHash: rời bàn và vào một phiên mới để demo trọn luồng.
@@ -136,7 +269,7 @@ Cập nhật: 23/09/2026.
 7. Staff vào Bàn & phiên và thấy phiên mới xuất hiện realtime, không cần mở bàn trước.
 8. KDS: nhận → đang pha → sẵn sàng → đã phục vụ.
 9. Khách yêu cầu thanh toán; staff chuyển CHECKOUT → kiểm tra & thu tiền → xác nhận số tiền đã nhận.
-10. Khách tự chuyển /receipt → xem/in hóa đơn → đánh giá.
+10. Nhân viên mở hóa đơn toàn bàn đã chốt sau thu tiền → in hóa đơn. Khách tự chuyển /receipt → xem hóa đơn trên thiết bị → đánh giá.
 11. Có thể thử hai browser profile/thiết bị cùng bàn để kiểm tra phân tách đơn.
 
 Demo LAN: PUBLIC_APP_URL phải là địa chỉ frontend mà điện thoại truy cập (ví dụ http://192.168.1.10:5173); COOKIE_DOMAIN để trống; VITE_API_BASE_URL=/api/v1 và VITE_SOCKET_URL=/ dùng proxy. Khởi động lại server/client khi đổi env. Không đưa secret vào file này.
@@ -230,3 +363,18 @@ Phần này thay thế các ghi chú cũ nói P5/chạy responsive/load/AI live 
 - Production-local đã dựng lại từ source hiện tại ngày 24/09/2026 theo topology mới (API guest/internal A/B, `worker-scheduler/realtime/report`, migrate); container `worker` cũ đã gỡ. Migration 001–003 áp dụng rồi skip khi chạy lại; số document nghiệp vụ không đổi (101 đơn, 43 payment, 2 bill). Backup trước nâng cấp: `.cache/backup/maycafe-20260924-002643.archive.gz` (SHA-256 `35958d84…31fc6`).
 - JWT secret của production-local nằm trong `.env` ở thư mục gốc (bị Git ignore, tạo ngày 24/09/2026 từ giá trị stack đang chạy). `docker compose -f compose.production.yaml up -d` tự đọc file này; không xóa hay đổi giá trị nếu không muốn mọi phiên staff/admin hết hiệu lực. Không in nội dung file.
 - Lỗi phát hiện khi chạy stack mới: trang Admin → Hóa đơn gửi bộ lọc rỗng và bị 422. Đã sửa `billHistoryQuerySchema` coi chuỗi rỗng là không lọc; unit test `billHistoryQuery.test.ts`. Server unit nay 69/69.
+
+## Chuyển thao tác in hóa đơn sang nhân viên — 27/09/2026
+
+- Theo yêu cầu người dùng, bỏ nút in trên trang hóa đơn khách; khách vẫn xem đơn của thiết bị mình và đánh giá.
+- Staff → Bàn & phiên: thanh toán thành công tự mở hộp hóa đơn toàn bàn, nhân viên bấm “In hóa đơn”. Dữ liệu lấy lại từ API bill của phiên CLOSED (snapshot đã chốt), không dùng bản xem trước khi thu tiền.
+- Hộp hóa đơn nằm ở cấp trang, không biến mất khi phiên đã đóng bị loại khỏi danh sách bàn đang phục vụ. Có nút mở lại hóa đơn vừa thanh toán trong lần mở trang hiện tại; Admin vẫn có lịch sử/in lại hóa đơn.
+- Lỗi tải hóa đơn có nút thử lại độc lập, không gửi lại thanh toán. CSS in chỉ hiển thị hóa đơn, bỏ giao diện vận hành và nút thao tác.
+- Kiểm chứng source: client 21/21 test PASS (bao gồm realtime xóa thẻ bàn trước phản hồi thanh toán, tải lại hóa đơn sau lỗi, in toàn bàn và khách không có nút in); lint client và production client build PASS. Chưa rebuild container production-local hoặc kiểm tra máy in thật trong lần này.
+- Sau đó đã rebuild và recreate riêng service `web` theo yêu cầu chạy lại để test (27/09/2026). Container healthy, ba portal 8080/8081/8082 và `/healthz` trả HTTP 200; bundle Staff đang phục vụ đã xác nhận có chức năng in mới. Giữ nguyên backend và dữ liệu; chưa kiểm tra máy in thật.
+
+## Gọi món bằng một nút — 27/09/2026
+
+- Giỏ khách chỉ cần bấm “Đặt món”: frontend tự lấy quote kiểm tra giá/tình trạng món rồi gửi đơn ngay khi giá không đổi. Chỉ yêu cầu đồng ý thêm nếu tổng giá mới khác giá trong giỏ; hết món/lỗi kiểm tra thì giữ giỏ và không gửi đơn.
+- Khóa sửa giỏ và nút đặt trong cả thời gian lấy quote lẫn gửi đơn. Retry lỗi mạng giữ quote và Idempotency-Key để lấy lại đơn đã tạo, tránh đơn trùng; QUOTE_CHANGED xóa quote để lần thử tiếp theo kiểm tra lại.
+- Client 24/24 test, lint và build PASS. Đã rebuild/recreate riêng web, xác nhận bundle Cart mới đang được phục vụ; container healthy, ba health endpoint 8080/8081/8082 trả 200.

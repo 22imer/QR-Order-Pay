@@ -1,0 +1,9 @@
+# Apply after compose.production.yaml to keep guest cookies secure over the public HTTPS URL.
+# Staff/Admin stay on their local HTTP portals.
+services:
+  server-guest-a:
+    environment:
+      COOKIE_SECURE: 'true'
+  server-guest-b:
+    environment:
+      COOKIE_SECURE: 'true'

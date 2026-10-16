@@ -1,13 +1,13 @@
 {
-  "name": "Mây Café — Gọi món tại bàn",
-  "short_name": "Mây Café",
-  "description": "Quét QR, gọi món và theo dõi đơn tại Mây Café.",
+  "name": "Fantastic cafe — Gọi món tại bàn",
+  "short_name": "Fantastic cafe",
+  "description": "Quét QR, gọi món và theo dõi đơn tại Fantastic cafe.",
   "lang": "vi",
   "start_url": "/t",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#FAF7F2",
-  "theme_color": "#285943",
+  "background_color": "#101d18",
+  "theme_color": "#101d18",
   "icons": [
     {
       "src": "/favicon.svg",

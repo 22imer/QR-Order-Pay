@@ -1,4 +1,15 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
+
+async function freshGuestLink(request: APIRequestContext): Promise<string> {
+  const displayToken = process.env.E2E_DISPLAY_TOKEN;
+  test.skip(!displayToken, 'Set E2E_DISPLAY_TOKEN to obtain a fresh 60-second QR.');
+  const response = await request.get('/api/v1/table-displays/qr', {
+    headers: { 'X-Table-Display-Token': displayToken! },
+  });
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as { data: { url: string } };
+  return new URL(body.data.url).pathname;
+}
 
 const viewports = [
   { name: 'mobile', width: 375, height: 812 },
@@ -34,9 +45,10 @@ for (const viewport of viewports) {
       const pageErrors: string[] = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
 
-      const staffBaseUrl = process.env.E2E_STAFF_BASE_URL
-        ?? (process.env.E2E_BASE_URL ? baseURL : 'http://localhost:8081')
-        ?? 'http://localhost:8081';
+      const staffBaseUrl =
+        process.env.E2E_STAFF_BASE_URL ??
+        (process.env.E2E_BASE_URL ? baseURL : 'http://localhost:8081') ??
+        'http://localhost:8081';
       await page.goto(new URL('/auth/login', staffBaseUrl).toString());
       await expect(page.getByRole('heading', { name: 'Đăng nhập nội bộ' })).toBeVisible();
       await expect(page.getByLabel('Email')).toBeVisible();
@@ -47,12 +59,11 @@ for (const viewport of viewports) {
     });
 
     test('guest menu stays usable after a simulated QR link', async ({ page }) => {
-      const tableToken = process.env.E2E_TABLE_TOKEN;
-      test.skip(!tableToken, 'Set E2E_TABLE_TOKEN to exercise the guest menu.');
+      const guestLink = await freshGuestLink(page.request);
 
       const pageErrors: string[] = [];
       page.on('pageerror', (error) => pageErrors.push(error.message));
-      await page.goto(`/t/${tableToken}`);
+      await page.goto(guestLink);
       await expect(page).toHaveURL(/\/menu$/, { timeout: 15_000 });
       await expect(page.getByRole('main')).toBeVisible();
       await expectNoHorizontalOverflow(page);
@@ -99,16 +110,16 @@ test.describe('network and multi-device resilience', () => {
   test('two isolated devices share a table session but keep separate participants', async ({
     browser,
     baseURL,
+    request,
   }) => {
-    const tableToken = process.env.E2E_TABLE_TOKEN;
-    test.skip(!tableToken, 'Set E2E_TABLE_TOKEN to exercise multiple guest devices.');
+    const guestLink = await freshGuestLink(request);
 
     const firstContext = await browser.newContext({ baseURL });
     const secondContext = await browser.newContext({ baseURL });
     try {
       const firstPage = await firstContext.newPage();
       const secondPage = await secondContext.newPage();
-      await Promise.all([firstPage.goto(`/t/${tableToken}`), secondPage.goto(`/t/${tableToken}`)]);
+      await Promise.all([firstPage.goto(guestLink), secondPage.goto(guestLink)]);
       await Promise.all([
         expect(firstPage).toHaveURL(/\/menu$/, { timeout: 15_000 }),
         expect(secondPage).toHaveURL(/\/menu$/, { timeout: 15_000 }),

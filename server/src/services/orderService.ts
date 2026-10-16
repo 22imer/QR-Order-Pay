@@ -11,10 +11,13 @@ import {
 import type { OrderStatus } from '@may-cafe/contracts';
 import { randomShortCode } from '../utils/crypto.js';
 import type { OrderDoc } from '../models/Order.js';
+import { OrderModel } from '../models/Order.js';
 import { TableSessionModel } from '../models/TableSession.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
 import { priceOrderItems, validateQuote } from './orderPricingService.js';
+import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
+import { guardUnpaidCancellation } from './paymentClaimService.js';
 
 export interface PlaceOrderItemInput {
   productId: string;
@@ -105,6 +108,15 @@ async function createOrder(
     );
     if (!open)
       throw new ForbiddenError('Phiên đang thanh toán hoặc đã đóng, không thể đặt thêm món.');
+    const awaiting = await OrderModel.countDocuments({
+      tableSessionId: input.tableSessionId,
+      participantId: input.participantId,
+      status: 'AWAITING_PAYMENT',
+    }).session(mongoSession);
+    if (awaiting >= 3)
+      throw new ForbiddenError(
+        'Bạn có 3 đơn đang chờ thanh toán. Vui lòng thanh toán hoặc hủy đơn trước khi gọi thêm.',
+      );
     const priced = await priceOrderItems(input.items, mongoSession);
     validateQuote(
       {
@@ -123,10 +135,15 @@ async function createOrder(
         tableId: open.tableId,
         items: priced.items.map((it) => ({ ...it })),
         total: priced.total,
-        status: 'PENDING' as OrderStatus,
+        status: 'AWAITING_PAYMENT' as OrderStatus,
         paymentStatus: 'UNPAID' as const,
         statusHistory: [
-          { from: null, to: 'PENDING', at: new Date(), byParticipantId: input.participantId },
+          {
+            from: null,
+            to: 'AWAITING_PAYMENT',
+            at: new Date(),
+            byParticipantId: input.participantId,
+          },
         ],
         idempotencyKey,
         requestHash,
@@ -171,14 +188,20 @@ export async function cancelOrderByGuest(
     if (!order) throw new NotFoundError('Đơn không tồn tại.');
     if (order.participantId !== participantId)
       throw new ForbiddenError('Bạn không thể hủy đơn của khách khác.');
-    if (order.status !== 'PENDING')
+    await assertNoPaymentCorrection(order.id, session);
+    if (
+      !['AWAITING_PAYMENT', 'PENDING'].includes(order.status) ||
+      order.paymentStatus !== 'UNPAID' ||
+      (order.paidAmount ?? 0) > 0
+    )
       throw new ConflictError('STATE_TRANSITION_INVALID', 'Đơn đã được nhận, không thể hủy.');
+    await guardUnpaidCancellation(order.tableSessionId.toString(), session);
     const updated = await orderRepository.transitionStatus(
       orderId,
       order.version,
       'CANCELLED',
       {
-        from: 'PENDING',
+        from: order.status,
         byParticipantId: participantId,
         reason: 'Khách hủy',
       },
@@ -212,13 +235,20 @@ export async function transitionByStaff(
   return unitOfWork.withTransaction(async (session) => {
     const order = await orderRepository.findById(orderId, session);
     if (!order) throw new NotFoundError('Đơn không tồn tại.');
+    await assertNoPaymentCorrection(order.id, session);
     const allowed = allowedNext(order.status);
+    if (next !== 'CANCELLED' && order.paymentStatus !== 'PAID')
+      throw new ForbiddenError('Phải xác nhận đã nhận đủ tiền trước khi chuyển đơn sang pha chế.');
+    if (next === 'CANCELLED' && (order.paymentStatus === 'PAID' || (order.paidAmount ?? 0) > 0))
+      throw new ForbiddenError('Đơn đã thu tiền. Hãy dùng thao tác hủy và xác nhận hoàn tiền.');
     if (!allowed.includes(next)) {
       throw new ConflictError(
         'STATE_TRANSITION_INVALID',
         `Không thể chuyển đơn từ ${order.status} sang ${next}.`,
       );
     }
+    if (next === 'CANCELLED')
+      await guardUnpaidCancellation(order.tableSessionId.toString(), session);
     const updated = await orderRepository.transitionStatus(
       orderId,
       order.version,
@@ -254,7 +284,7 @@ export async function transitionByStaff(
   });
 }
 
-function orderRealtimeEvents(
+export function orderRealtimeEvents(
   order: OrderDoc,
   eventType: 'order.created' | 'order.statusChanged',
 ): RealtimeOutboxInput[] {
@@ -279,6 +309,7 @@ function orderRealtimeEvents(
 }
 
 function allowedNext(from: OrderStatus): OrderStatus[] {
+  if (from === 'AWAITING_PAYMENT') return ['CANCELLED'];
   if (from === 'PENDING') return ['CONFIRMED', 'CANCELLED'];
   if (from === 'CONFIRMED') return ['PREPARING', 'CANCELLED'];
   if (from === 'PREPARING') return ['READY'];

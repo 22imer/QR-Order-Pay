@@ -19,7 +19,15 @@ import {
 import { useMemo, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
-import { Download, Printer } from 'lucide-react';
+import {
+  ArrowUpRight,
+  Download,
+  Printer,
+  QrCode,
+  ReceiptText,
+  UtensilsCrossed,
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { createOverviewReport } from '../../lib/reportJobs';
 import { useToast } from '../../components/ui/useToast';
 
@@ -38,29 +46,36 @@ export function AdminDashboard(): JSX.Element {
 
   if (overviewQuery.isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-32" />
-        ))}
+      <div className="space-y-6">
+        <AdminQuickLinks />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
       </div>
     );
   }
   if (overviewQuery.isError) {
     return (
-      <ErrorState
-        message={getErrorMessage(overviewQuery.error)}
-        onRetry={() => overviewQuery.refetch()}
-      />
+      <div className="space-y-6">
+        <AdminQuickLinks />
+        <ErrorState
+          message={getErrorMessage(overviewQuery.error)}
+          onRetry={() => overviewQuery.refetch()}
+        />
+      </div>
     );
   }
   const data = overviewQuery.data!;
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      <AdminQuickLinks />
       <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
         <div>
           <h1 className="font-display text-2xl font-semibold">Tổng quan kinh doanh</h1>
           <p className="text-sm text-muted-foreground">
-            Số liệu đơn đã thanh toán, theo múi giờ Việt Nam.
+            Tiền thu, hoàn và điều chỉnh tính theo thời điểm giao dịch, múi giờ Việt Nam.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
@@ -125,50 +140,79 @@ export function AdminDashboard(): JSX.Element {
       </h2>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard title="Doanh thu" value={vnd(data.totalRevenue)} tone="success" />
-        <KpiCard title="Số đơn" value={data.orderCount.toString()} tone="info" />
-        <KpiCard title="Giá trị TB/đơn" value={vnd(data.averageOrderValue)} tone="success" />
+        <KpiCard title="Thực thu ròng" value={vnd(data.totalRevenue)} tone="success" />
+        <KpiCard title="Tiền đã thu" value={vnd(data.grossCollected ?? 0)} tone="info" />
+        <KpiCard title="Tiền đã hoàn" value={vnd(data.totalRefunded ?? 0)} tone="warning" />
         <KpiCard
-          title="Sản phẩm bán chạy"
-          value={data.topProducts[0]?.name ?? '—'}
+          title="Điều chỉnh khoản thu"
+          value={vnd(data.adjustmentAmount ?? 0)}
           tone="warning"
         />
       </div>
 
+      <p className="text-sm text-muted-foreground">
+        Thực thu ròng = tiền đã thu − tiền đã hoàn + điều chỉnh. {data.orderCount} đơn có thu tiền;
+        thu trung bình {vnd(data.averageOrderValue)}/đơn.
+      </p>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-        <Card className="p-4">
-          <h3 className="font-display font-semibold">Doanh thu theo ngày</h3>
+        <Card className="p-5 sm:p-6">
+          <h3 className="font-display font-semibold">Thực thu ròng theo ngày</h3>
           <div className="h-72 mt-3">
             <ResponsiveContainer>
               <LineChart data={data.revenueByDay}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EFEAE2" />
-                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#EFEAE2" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                />
                 <Tooltip formatter={(v: number) => vnd(v)} />
-                <Line type="monotone" dataKey="revenue" stroke="#285943" strokeWidth={2} />
+                <Line
+                  type="monotone"
+                  dataKey="revenue"
+                  stroke="#285943"
+                  strokeWidth={2.5}
+                  isAnimationActive={false}
+                />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </Card>
 
-        <Card className="p-4">
-          <h3 className="font-display font-semibold">Doanh thu theo giờ</h3>
+        <Card className="p-5 sm:p-6">
+          <h3 className="font-display font-semibold">Thực thu ròng theo giờ</h3>
           <div className="h-72 mt-3">
             <ResponsiveContainer>
               <BarChart data={data.revenueByHour}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EFEAE2" />
-                <XAxis dataKey="hour" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                <CartesianGrid vertical={false} strokeDasharray="3 3" stroke="#EFEAE2" />
+                <XAxis dataKey="hour" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                <YAxis
+                  tick={{ fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                />
                 <Tooltip formatter={(v: number) => vnd(v)} />
-                <Bar dataKey="revenue" fill="#C88A4D" radius={[8, 8, 0, 0]} />
+                <Bar
+                  dataKey="revenue"
+                  fill="#C88A4D"
+                  radius={[8, 8, 0, 0]}
+                  isAnimationActive={false}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </Card>
       </div>
 
-      <Card className="p-4">
+      <Card className="overflow-x-auto p-5 sm:p-6">
         <h3 className="font-display font-semibold mb-2">Top 5 sản phẩm</h3>
+        <p className="mb-3 text-sm text-muted-foreground">
+          Theo ngày tạo đơn đã thanh toán; giá trị món trước điều chỉnh tài chính.
+        </p>
         <table className="w-full text-sm">
           <thead className="text-xs text-muted-foreground">
             <tr className="text-left">
@@ -189,6 +233,57 @@ export function AdminDashboard(): JSX.Element {
         </table>
       </Card>
     </div>
+  );
+}
+
+function AdminQuickLinks(): JSX.Element {
+  return (
+    <nav
+      aria-label="Quản trị"
+      className="grid gap-3 print:hidden sm:grid-cols-2 xl:grid-cols-[1.5fr_1fr_1fr]"
+    >
+      <Link
+        to="/admin/tables"
+        className="group flex items-start gap-4 rounded-2xl bg-primary p-5 text-primary-foreground transition hover:bg-primary/95 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent sm:col-span-2 xl:col-span-1"
+      >
+        <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-foreground/10">
+          <QrCode className="h-6 w-6" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-display text-2xl font-semibold">Bàn & QR động</span>
+          <span className="mt-2 block text-xs leading-relaxed text-primary-foreground/70">
+            Cấp liên kết riêng cho màn hình tại bàn. Màn hình tự đổi QR mỗi 60 giây.
+          </span>
+        </span>
+        <ArrowUpRight className="h-4 w-4 shrink-0" />
+      </Link>
+      <Link
+        to="/admin/products"
+        className="flex items-start gap-3 rounded-2xl border border-foreground/10 bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
+          <UtensilsCrossed className="h-5 w-5" />
+        </span>
+        <span className="flex-1">
+          <span className="block font-display text-xl font-semibold">Món</span>
+          <span className="mt-2 block text-xs text-muted-foreground">Danh mục · Topping</span>
+        </span>
+        <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
+      <Link
+        to="/admin/bills"
+        className="flex items-start gap-3 rounded-2xl border border-foreground/10 bg-card p-5 transition hover:border-primary/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-muted text-primary">
+          <ReceiptText className="h-5 w-5" />
+        </span>
+        <span className="flex-1">
+          <span className="block font-display text-xl font-semibold">Hóa đơn</span>
+          <span className="mt-2 block text-xs text-muted-foreground">Lịch sử · In / PDF</span>
+        </span>
+        <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+      </Link>
+    </nav>
   );
 }
 

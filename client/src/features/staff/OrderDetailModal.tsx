@@ -39,7 +39,8 @@ interface OrderDetail {
   tableCode: string;
   items: OrderItem[];
   total: number;
-  status: 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
+  status:
+    'AWAITING_PAYMENT' | 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'SERVED' | 'CANCELLED';
   paymentStatus: 'UNPAID' | 'PAID' | 'REFUNDED';
   statusHistory: StatusEntry[];
   createdAt: string;
@@ -63,9 +64,16 @@ export function OrderDetailModal({ orderId, onClose }: Props): JSX.Element {
   });
 
   return (
-    <Modal open={open} onOpenChange={(o) => !o && onClose()} title={query.data ? `Đơn ${query.data.order.code}` : 'Chi tiết đơn'} className="max-w-2xl">
+    <Modal
+      open={open}
+      onOpenChange={(o) => !o && onClose()}
+      title={query.data ? `Đơn ${query.data.order.code}` : 'Chi tiết đơn'}
+      className="max-w-2xl"
+    >
       {query.isLoading && <Skeleton className="h-64" />}
-      {query.isError && <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />}
+      {query.isError && (
+        <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />
+      )}
       {query.data && <Detail order={query.data.order} />}
     </Modal>
   );
@@ -77,13 +85,20 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="info">{order.tableCode} · {order.tableName}</Badge>
+        <Badge tone="info">
+          {order.tableCode} · {order.tableName}
+        </Badge>
         <Badge tone={statusTone(order.status)}>{statusLabel(order.status)}</Badge>
         <Badge tone={order.paymentStatus === 'PAID' ? 'success' : 'warning'}>
-          {order.paymentStatus === 'PAID' ? 'Đã thanh toán' : order.paymentStatus === 'REFUNDED' ? 'Đã hoàn' : 'Chưa thanh toán'}
+          {order.paymentStatus === 'PAID'
+            ? 'Đã thanh toán'
+            : order.paymentStatus === 'REFUNDED'
+              ? 'Đã hoàn'
+              : 'Chưa thanh toán'}
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {created.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · {ageMin} phút trước
+          {created.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} · {ageMin}{' '}
+          phút trước
         </span>
       </div>
 
@@ -105,7 +120,9 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
               {it.toppingNamesSnapshot && it.toppingNamesSnapshot.length > 0 ? (
                 <div className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</div>
               ) : null}
-              {it.note ? <div className="text-xs italic text-accent">Ghi chú: {it.note}</div> : null}
+              {it.note ? (
+                <div className="text-xs italic text-accent">Ghi chú: {it.note}</div>
+              ) : null}
             </li>
           ))}
         </ul>
@@ -120,7 +137,13 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
         <ol className="space-y-1 text-xs">
           {order.statusHistory.map((s, i) => (
             <li key={i} className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">{new Date(s.at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+              <span className="text-muted-foreground w-24 shrink-0">
+                {new Date(s.at).toLocaleTimeString('vi-VN', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })}
+              </span>
               <span>
                 {s.from ? `${statusLabel(s.from as OrderDetail['status'])} → ` : ''}
                 <strong>{statusLabel(s.to as OrderDetail['status'])}</strong>
@@ -140,25 +163,41 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
 
 function statusLabel(s: string): string {
   switch (s) {
-    case 'PENDING': return 'Chờ xác nhận';
-    case 'CONFIRMED': return 'Đã nhận';
-    case 'PREPARING': return 'Đang pha';
-    case 'READY': return 'Sẵn sàng';
-    case 'SERVED': return 'Đã phục vụ';
-    case 'CANCELLED': return 'Đã huỷ';
-    default: return s;
+    case 'AWAITING_PAYMENT':
+      return 'Chờ thanh toán';
+    case 'PENDING':
+      return 'Chờ xác nhận';
+    case 'CONFIRMED':
+      return 'Đã nhận';
+    case 'PREPARING':
+      return 'Đang pha';
+    case 'READY':
+      return 'Sẵn sàng';
+    case 'SERVED':
+      return 'Đã phục vụ';
+    case 'CANCELLED':
+      return 'Đã huỷ';
+    default:
+      return s;
   }
 }
 
 function statusTone(s: string): 'success' | 'warning' | 'danger' | 'info' | 'neutral' {
   switch (s) {
-    case 'PENDING': return 'warning';
-    case 'CONFIRMED': return 'info';
-    case 'PREPARING': return 'info';
-    case 'READY': return 'success';
-    case 'SERVED': return 'success';
-    case 'CANCELLED': return 'danger';
-    default: return 'neutral';
+    case 'PENDING':
+      return 'warning';
+    case 'CONFIRMED':
+      return 'info';
+    case 'PREPARING':
+      return 'info';
+    case 'READY':
+      return 'success';
+    case 'SERVED':
+      return 'success';
+    case 'CANCELLED':
+      return 'danger';
+    default:
+      return 'neutral';
   }
 }
 

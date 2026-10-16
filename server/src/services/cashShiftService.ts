@@ -1,5 +1,5 @@
 import type { ClientSession } from 'mongoose';
-import { ConflictError, NotFoundError } from '../errors/AppError.js';
+import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { CashShiftModel, type CashShiftDoc } from '../models/CashShift.js';
 import { PaymentModel } from '../models/Payment.js';
@@ -121,11 +121,27 @@ export async function closeShift(
     if (!shift) throw new NotFoundError('Không tìm thấy ca.');
     if (shift.status !== 'OPEN' || shift.version !== expectedVersion)
       throw new ConflictError('CONFLICT', 'Ca đã được người khác chốt.');
+    if (
+      await TableSessionModel.exists({
+        status: { $in: ['OPEN', 'CHECKOUT'] },
+        collectionExpiresAt: { $gt: new Date() },
+      }).session(session)
+    )
+      throw new ConflictError(
+        'PAYMENT_CLAIMED',
+        'Còn bàn đang được thu tiền. Hãy kết thúc thu tiền trước khi chốt ca.',
+      );
     const [cash] = await PaymentModel.aggregate<{ total: number }>([
-      { $match: { shiftId: shift._id, status: 'SUCCESS', method: 'CASH' } },
+      { $match: { shiftId: shift._id, status: { $in: ['SUCCESS', 'REFUNDED'] }, method: 'CASH' } },
       { $group: { _id: null, total: { $sum: '$amount' } } },
     ]).session(session);
-    const expectedCash = shift.openingCash + (cash?.total ?? 0);
+    const [refunded] = await PaymentModel.aggregate<{ total: number }>([
+      { $match: { refundShiftId: shift._id, status: 'REFUNDED', refundMethod: 'CASH' } },
+      { $group: { _id: null, total: { $sum: '$amount' } } },
+    ]).session(session);
+    const expectedCash = shift.openingCash + (cash?.total ?? 0) - (refunded?.total ?? 0);
+    if (countedCash !== expectedCash && (!note || note.trim().length < 3))
+      throw new ValidationError('Phải nhập lý do chênh lệch tiền khi chốt ca (ít nhất 3 ký tự).');
     const user = await UserModel.findById(actorId).session(session);
     const closed = await CashShiftModel.findOneAndUpdate(
       { _id: id, status: 'OPEN', version: expectedVersion },
@@ -178,9 +194,9 @@ export async function listShifts(page = 1, limit = 20) {
 }
 
 async function shiftSummary(shift: RawShift) {
-  const [byMethod, unpaidSessions] = await Promise.all([
+  const [byMethod, unpaidSessions, refunds, reversals] = await Promise.all([
     PaymentModel.aggregate<{ _id: string; total: number; count: number }>([
-      { $match: { shiftId: shift._id, status: 'SUCCESS' } },
+      { $match: { shiftId: shift._id, status: { $in: ['SUCCESS', 'REFUNDED'] } } },
       { $group: { _id: '$method', total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
     TableSessionModel.aggregate<{
@@ -224,10 +240,32 @@ async function shiftSummary(shift: RawShift) {
           tableName: { $ifNull: [{ $first: '$table.name' }, 'Bàn'] },
           status: 1,
           startedAt: 1,
-          unpaidTotal: { $sum: '$unpaidOrders.total' },
+          unpaidTotal: {
+            $sum: {
+              $map: {
+                input: '$unpaidOrders',
+                as: 'order',
+                in: { $subtract: ['$$order.total', { $ifNull: ['$$order.paidAmount', 0] }] },
+              },
+            },
+          },
         },
       },
       { $sort: { startedAt: 1 } },
+    ]),
+    PaymentModel.aggregate<{ _id: string; total: number; count: number }>([
+      { $match: { refundShiftId: shift._id, status: 'REFUNDED', reversalKind: null } },
+      { $group: { _id: '$refundMethod', total: { $sum: '$amount' }, count: { $sum: 1 } } },
+    ]),
+    PaymentModel.aggregate<{ _id: string; total: number; count: number }>([
+      {
+        $match: {
+          refundShiftId: shift._id,
+          status: 'REFUNDED',
+          reversalKind: { $in: ['VOID', 'METHOD', 'TRANSFER'] },
+        },
+      },
+      { $group: { _id: '$refundMethod', total: { $sum: '$amount' }, count: { $sum: 1 } } },
     ]),
   ]);
   return {
@@ -248,6 +286,12 @@ async function shiftSummary(shift: RawShift) {
     version: shift.version,
     paymentsByMethod: Object.fromEntries(
       byMethod.map((row) => [row._id, { total: row.total, count: row.count }]),
+    ),
+    refundsByMethod: Object.fromEntries(
+      refunds.map((row) => [row._id, { total: row.total, count: row.count }]),
+    ),
+    reversalsByMethod: Object.fromEntries(
+      reversals.map((row) => [row._id, { total: row.total, count: row.count }]),
     ),
     openSessions: unpaidSessions.length,
     unpaidSessions,
