@@ -2,8 +2,10 @@ import type { ClientSession } from 'mongoose';
 import { CategoryModel, type CategoryDoc } from '../models/Category.js';
 
 export const categoryRepository = {
-  async listActive(): Promise<CategoryDoc[]> {
-    return CategoryModel.find({ isActive: true }).sort({ sortOrder: 1, name: 1 });
+  async listActive(session?: ClientSession | null): Promise<CategoryDoc[]> {
+    return CategoryModel.find({ isActive: true })
+      .sort({ sortOrder: 1, name: 1 })
+      .session(session ?? null);
   },
   async listAll(): Promise<CategoryDoc[]> {
     return CategoryModel.find().sort({ sortOrder: 1, name: 1 });
@@ -30,7 +32,7 @@ export const categoryRepository = {
       { new: true, session: session ?? undefined },
     );
   },
-  async delete(id: string) {
-    return CategoryModel.findByIdAndDelete(id);
+  async delete(id: string, session: ClientSession) {
+    return CategoryModel.findByIdAndDelete(id, { session });
   },
 };

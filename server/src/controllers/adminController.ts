@@ -10,7 +10,7 @@ import { userRepository } from '../repositories/userRepository.js';
 import { AppError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import * as catalogMutation from '../services/catalogMutationService.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
-import { hashPassword } from '../utils/crypto.js';
+import { createAccount, editAccount, deleteEmployee } from '../services/accountService.js';
 import { operationsSummary } from '../services/operationsService.js';
 import { anomalyDashboard, updateAnomalyStatus } from '../services/anomalyService.js';
 import {
@@ -334,7 +334,7 @@ export async function listTables(_req: Request, res: Response, next: NextFunctio
 
 export async function listUsers(_req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const users = await userRepository.list();
+    const users = await userRepository.list({ isDeleted: { $ne: true } });
     res.json({
       success: true,
       data: {
@@ -476,80 +476,69 @@ export async function updateCategory(
   }
 }
 
+export async function deleteCategory(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const category = await catalogMutation.deleteCategory(
+      String(req.params['id'] ?? ''),
+      req.body?.reassignTo,
+      req.user!.id,
+    );
+    res.json({ success: true, data: { category } });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function createStaff(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const body = req.body as {
-      name?: string;
-      email?: string;
-      password?: string;
-      role?: 'STAFF' | 'ADMIN';
-    };
-    if (!body.name || !body.email || !body.password)
-      throw new ValidationError('Thiếu tên, email hoặc mật khẩu.');
-    if (body.password.length < 8) throw new ValidationError('Mật khẩu tối thiểu 8 ký tự.');
-    const existing = await userRepository.findByEmail(body.email);
-    if (existing) {
-      res.status(409).json({
-        success: false,
-        error: { code: 'EMAIL_TAKEN', message: 'Email đã được sử dụng.' },
-      });
-      return;
-    }
-    const passwordHash = await hashPassword(body.password);
-    const user = await userRepository.create({
-      name: body.name,
-      email: body.email,
-      passwordHash,
-      role: body.role ?? 'STAFF',
-    });
-    res.status(201).json({
-      success: true,
-      data: {
-        user: {
-          id: user._id.toString(),
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          isActive: user.isActive,
-        },
-      },
-    });
-  } catch (e) {
-    next(e);
+    res
+      .status(201)
+      .json({ success: true, data: { user: await createAccount(req.body, req.user!.id) } });
+  } catch (error) {
+    next(error);
   }
 }
 
 export async function updateUser(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const id = String(req.params['id'] ?? '');
-    const body = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof body.password === 'string') {
-      if (body.password.length < 8) throw new ValidationError('Mật khẩu tối thiểu 8 ký tự.');
-      body.passwordHash = await hashPassword(body.password);
-      delete body.password;
-    }
-    const updated = await userRepository.update(id, body);
-    if (!updated) {
-      res.status(404).json({
-        success: false,
-        error: { code: 'USER_NOT_FOUND', message: 'Không tìm thấy nhân viên.' },
-      });
-      return;
-    }
+    res.json({
+      success: true,
+      data: { user: await editAccount(String(req.params['id'] ?? ''), req.body, req.user!.id) },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteUser(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    res.json({
+      success: true,
+      data: await deleteEmployee(String(req.params['id'] ?? ''), req.user!.id),
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteTopping(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
     res.json({
       success: true,
       data: {
-        user: {
-          id: updated._id.toString(),
-          name: updated.name,
-          email: updated.email,
-          role: updated.role,
-          isActive: updated.isActive,
-        },
+        topping: await catalogMutation.archiveTopping(String(req.params['id'] ?? ''), req.user!.id),
       },
     });
-  } catch (e) {
-    next(e);
+  } catch (error) {
+    next(error);
   }
 }
 

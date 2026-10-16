@@ -2,6 +2,8 @@
 
 ## Quy trình tại quán
 
+**Mã khoản thu** trên trang Khoản thu là ID nội bộ của từng lần ghi nhận tiền (`Payment._id`), không phải mã giao dịch ngân hàng hay mã đơn. Một đơn 90.000đ thu hai lần 40.000đ và 50.000đ có hai mã khoản thu cùng gắn với mã đơn đó. ID này giúp xác định đúng lần thu cần hoàn/đảo/sửa phương thức/chuyển đơn, liên kết khoản thay thế với khoản gốc và đối soát người thu/thời điểm/ca. `Idempotency-Key` là khóa kỹ thuật riêng để việc gửi lại request không ghi trùng tiền; mã khoản thu hiển thị không tự xác nhận tiền vào ngân hàng.
+
 1. **Staff → Bàn & phiên → Kiểm tra & nhận tiền**: server cấp quyền thu tiền của phiên bàn cho đúng tài khoản và cửa sổ đang thao tác. Quyền có hạn 120 giây, giao diện gia hạn mỗi 30 giây khi hộp thoại mở. Nhân viên khác nhận thông báo bàn đang được thu. Đóng hộp thoại trả quyền; server cũng trả quyền trong transaction khi ghi nhận thu/hoàn thành công. Mất kết nối/đóng trình duyệt trước xác nhận thì quyền tự hết hạn.
 2. Nhập **Số tiền thực nhận (VND)**, chọn phương thức đã kiểm tra. Server không nhận số tiền âm, lẻ hoặc vượt số còn thiếu. Khoản thu một phần được lưu ngay; `paidAmount` và `balanceDue` hiển thị cho khách và nhân viên. Đơn giữ `AWAITING_PAYMENT / UNPAID` đến khi đủ tổng tiền, rồi chuyển `PENDING / PAID` vào KDS. Một đơn có thể có nhiều khoản thu/phương thức.
 3. Hủy đơn chưa nhận tiền dùng thao tác hủy thông thường. Đơn đã nhận một phần không được hủy trực tiếp: khách gửi yêu cầu nhân viên hủy; nhân viên xác nhận đã hoàn lại số tiền thực nhận. Tất cả khoản thu còn hiệu lực của đơn được hoàn trong cùng transaction, đơn chuyển `CANCELLED / REFUNDED`. Chỉ áp dụng khi chưa pha chế. Việc hoàn tiền ngân hàng/tiền mặt do nhân viên thực hiện; phần mềm ghi nhận sau khi kiểm tra.
@@ -43,3 +45,7 @@
 - `server/src/services/paymentAnalyticsService.ts`, `cashShiftService.ts`: dòng tiền theo thời gian và ca.
 - `client/src/features/staff/AwaitingPayments.tsx`, `PaymentAccounting.tsx`, `usePaymentClaim.ts`: giao diện thu/điều chỉnh.
 - `server/scripts/migrate.ts`: index bổ sung, không reset dữ liệu; `paidAmount: null` của dữ liệu cũ được đọc tương thích.
+
+## Hiển thị gọn — 15/10/2026
+
+Trang Khoản thu ưu tiên bàn, mã đơn, số tiền, phương thức, thời gian và trạng thái. Mã khoản thu đầy đủ và mã khoản bị thay thế nằm trong **Chi tiết**; dữ liệu và yêu cầu duyệt được giữ nguyên. Hướng dẫn dài nằm trong **Quy định điều chỉnh**.

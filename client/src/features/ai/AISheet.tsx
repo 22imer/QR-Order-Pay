@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Sparkles, Send } from 'lucide-react';
+import { Sparkles, Send, ArrowUpRight, LoaderCircle } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -11,6 +11,7 @@ import { useToast } from '../../components/ui/useToast';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { Skeleton } from '../../components/ui/Skeleton';
+import { MenuPhoto } from '../guest/MenuPhoto';
 import type { ReactNode } from 'react';
 import {
   ProductDetailModal,
@@ -71,6 +72,14 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
   const [prompt, setPrompt] = useState(PRESETS[0]?.prompt ?? '');
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<AIRecommendResponse | null>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!response) return;
+    resultsRef.current?.scrollIntoView({
+      block: 'start',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    });
+  }, [response]);
   const { toast } = useToast();
   const [selected, setSelected] = useState<MenuProduct | null>(null);
   const [selectedConstraints, setSelectedConstraints] = useState<{
@@ -118,46 +127,53 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
         open={open}
         onOpenChange={onOpenChange}
         title="AI Barista"
+        titleIcon={<Sparkles className="h-5 w-5" />}
         description="Mô tả khẩu vị, AI sẽ gợi ý món phù hợp từ thực đơn."
-        className="g-sheet"
+        className="g-sheet ai-sheet"
       >
         <div className="space-y-4">
-          <label className="block text-sm font-semibold">
-            Ngân sách mỗi món (VND)
-            <Input
-              type="number"
-              min="1000"
-              step="1000"
-              value={budget}
-              onChange={(e) => setBudget(e.target.value)}
-              placeholder="Ví dụ: 50000"
-              className="mt-2 h-11 rounded-xl font-normal"
+          <div className="ai-preferences">
+            <label className="block text-xs font-semibold">
+              Ngân sách mỗi món (VND)
+              <Input
+                type="number"
+                min="1000"
+                step="1000"
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                placeholder="Ví dụ: 50000"
+                className="mt-2 h-11 rounded-xl font-normal"
+              />
+            </label>
+            <div className="ai-preference-toggles">
+              <ToggleCheck checked={noCaffeine} onChange={setNoCaffeine}>
+                Không caffeine
+              </ToggleCheck>
+              <ToggleCheck checked={noDairy} onChange={setNoDairy}>
+                Không sữa
+              </ToggleCheck>
+            </div>
+          </div>
+          <label className="block text-xs font-semibold">
+            Mô tả khẩu vị
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              maxLength={500}
+              aria-label="Mô tả khẩu vị"
+              className="ai-prompt mt-2 w-full rounded-2xl border border-foreground/15 p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="Bạn thích vị gì? Ngân sách bao nhiêu?"
             />
           </label>
-          <div className="flex flex-wrap gap-2">
-            <ToggleCheck checked={noCaffeine} onChange={setNoCaffeine}>
-              Không caffeine
-            </ToggleCheck>
-            <ToggleCheck checked={noDairy} onChange={setNoDairy}>
-              Không sữa
-            </ToggleCheck>
-          </div>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            maxLength={500}
-            aria-label="Mô tả khẩu vị"
-            className="w-full rounded-2xl border border-foreground/15 bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-            placeholder="Bạn thích vị gì? Ngân sách bao nhiêu?"
-          />
-          <div className="flex flex-wrap gap-2">
+          <div className="ai-presets">
             {PRESETS.map((p) => (
               <button
                 key={p.label}
                 type="button"
                 onClick={() => setPrompt(p.prompt)}
-                className="h-9 rounded-full border border-foreground/15 px-3 text-sm transition hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                aria-pressed={prompt === p.prompt}
+                className="ai-preset"
               >
                 {p.label}
               </button>
@@ -169,58 +185,76 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
             onClick={() => void ask()}
             disabled={busy || prompt.trim().length === 0}
           >
-            <Send className="h-4 w-4" /> {busy ? 'AI đang phản hồi...' : 'Hỏi AI'}
+            {busy ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="h-4 w-4 animate-spin motion-reduce:animate-none"
+              />
+            ) : (
+              <Send aria-hidden="true" className="h-4 w-4" />
+            )}
+            {busy ? 'AI đang phản hồi...' : 'Hỏi AI'}
           </Button>
 
           {response ? (
-            <div className="space-y-2 border-t border-foreground/10 pt-4" aria-live="polite">
-              <div className="flex items-start gap-2">
+            <div
+              ref={resultsRef}
+              className="space-y-3 border-t border-foreground/10 pt-4"
+              aria-live="polite"
+            >
+              <div className="ai-result-heading">
                 <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                 <p className="flex-1 text-sm">{response.message}</p>
                 <Badge tone={response.mode === 'llm' ? 'success' : 'warning'}>
                   {response.mode === 'llm' ? 'AI' : 'Gợi ý theo menu'}
                 </Badge>
               </div>
-              <ul className="divide-y divide-foreground/10">
-                {response.recommendations.map((rec) => (
-                  <li key={`${rec.productId}-${rec.variantId ?? ''}`}>
-                    <button
-                      type="button"
-                      className="flex w-full items-start gap-3 py-3 text-left transition hover:bg-muted/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      onClick={() => addRec(rec)}
-                    >
-                      <img
-                        src={rec.image}
-                        alt=""
-                        className="h-16 w-16 shrink-0 rounded-xl bg-muted object-cover"
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="g-title block">{rec.name}</span>
-                        <span className="block text-sm text-muted-foreground">{rec.reason}</span>
-                        <span className="mt-1 block text-xs text-muted-foreground">
-                          {[
-                            rec.evidence.variant ? `Size ${rec.evidence.variant}` : null,
-                            rec.evidence.caffeine === false
-                              ? 'Không caffeine'
-                              : rec.evidence.caffeine === true
-                                ? 'Có caffeine'
-                                : 'Chưa rõ caffeine',
-                            rec.evidence.dairy === false
-                              ? 'Không sữa'
-                              : rec.evidence.dairy === true
-                                ? 'Có sữa'
-                                : 'Chưa rõ sữa',
-                          ]
-                            .filter(Boolean)
-                            .join(', ')}
+              <ul className="space-y-2">
+                {response.recommendations
+                  .filter((rec) =>
+                    products.some(
+                      (product) => product._id === rec.productId && product.isAvailable,
+                    ),
+                  )
+                  .map((rec) => (
+                    <li key={`${rec.productId}-${rec.variantId ?? ''}`}>
+                      <button
+                        type="button"
+                        className="ai-recommendation"
+                        onClick={() => addRec(rec)}
+                      >
+                        <MenuPhoto source={rec.image} className="h-16 w-16 shrink-0 rounded-xl" />
+                        <span className="min-w-0 flex-1">
+                          <span className="g-title block">{rec.name}</span>
+                          <span className="block text-sm text-muted-foreground">{rec.reason}</span>
+                          <span className="mt-1 block text-xs text-muted-foreground">
+                            {[
+                              rec.evidence.variant ? `Size ${rec.evidence.variant}` : null,
+                              rec.evidence.caffeine === false
+                                ? 'Không caffeine'
+                                : rec.evidence.caffeine === true
+                                  ? 'Có caffeine'
+                                  : 'Chưa rõ caffeine',
+                              rec.evidence.dairy === false
+                                ? 'Không sữa'
+                                : rec.evidence.dairy === true
+                                  ? 'Có sữa'
+                                  : 'Chưa rõ sữa',
+                            ]
+                              .filter(Boolean)
+                              .join(', ')}
+                          </span>
+                          <span className="mt-2 block text-sm font-semibold tabular-nums text-primary">
+                            {vnd(rec.unitPrice)}
+                          </span>
                         </span>
-                        <span className="mt-1 block text-sm font-semibold tabular-nums">
-                          {vnd(rec.unitPrice)}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                        <ArrowUpRight
+                          aria-hidden="true"
+                          className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                        />
+                      </button>
+                    </li>
+                  ))}
               </ul>
               {response.followUpQuestion ? (
                 <p className="text-sm text-muted-foreground">{response.followUpQuestion}</p>

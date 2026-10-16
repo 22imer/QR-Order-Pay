@@ -3,20 +3,28 @@ import { categoryRepository } from '../repositories/categoryRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
 import { NotFoundError } from '../errors/AppError.js';
 import { config } from '../config/index.js';
-import { cacheGeneration, cachedJson, incrementCacheGeneration } from '../infrastructure/jsonCache.js';
+import {
+  cacheGeneration,
+  cachedJson,
+  incrementCacheGeneration,
+} from '../infrastructure/jsonCache.js';
 
 const MENU_CACHE_GENERATION_KEY = 'maycafe:cache:menu:generation';
 
 export async function listPublicMenu() {
   const generation = await cacheGeneration(MENU_CACHE_GENERATION_KEY);
-  return cachedJson(`maycafe:cache:menu:${generation}:full`, config.menuCacheTtlSeconds, async () => {
-    const [categories, products, toppings] = await Promise.all([
-      categoryRepository.listActive(),
-      productRepository.listPublic({}),
-      toppingRepository.listAvailable(),
-    ]);
-    return { categories, products, toppings };
-  });
+  return cachedJson(
+    `maycafe:cache:menu:${generation}:full`,
+    config.menuCacheTtlSeconds,
+    async () => {
+      const [categories, products, toppings] = await Promise.all([
+        categoryRepository.listActive(),
+        productRepository.listPublic({}),
+        toppingRepository.listAvailable(),
+      ]);
+      return { categories, products, toppings };
+    },
+  );
 }
 
 export async function listFeatured(limit?: number) {
@@ -35,7 +43,12 @@ export async function invalidatePublicMenuCache(): Promise<void> {
 
 export async function getProductDetail(id: string) {
   const product = await productRepository.findById(id);
-  if (!product || product.isArchived) throw new NotFoundError('Món không tồn tại.');
+  if (
+    !product ||
+    product.isArchived ||
+    !(await categoryRepository.findById(String(product.categoryId)))?.isActive
+  )
+    throw new NotFoundError('Món không tồn tại.');
   return product;
 }
 
@@ -44,7 +57,14 @@ export async function listAdminProducts() {
 }
 
 export async function listAdminCategories() {
-  return categoryRepository.listAll();
+  const [categories, counts] = await Promise.all([
+    categoryRepository.listAll(),
+    productRepository.countsByCategory(),
+  ]);
+  return categories.map((category) => ({
+    ...category.toObject(),
+    productCount: counts.get(category.id) ?? 0,
+  }));
 }
 
 export async function listAdminToppings() {

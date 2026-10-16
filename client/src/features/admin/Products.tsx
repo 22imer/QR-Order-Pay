@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Pencil, Plus, Archive, ArchiveRestore } from 'lucide-react';
+import { Pencil, Plus, Trash2, ArchiveRestore } from 'lucide-react';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
@@ -20,6 +20,7 @@ interface Variant {
 
 interface AdminProduct {
   _id: string;
+  categoryId: string;
   name: string;
   description: string;
   image: string;
@@ -29,6 +30,14 @@ interface AdminProduct {
   isArchived: boolean;
   isFeatured: boolean;
   tags: string[];
+  toppingIds?: string[];
+  ingredientMetadata?: {
+    caffeine: boolean;
+    dairy: boolean;
+    flavorProfile: string[];
+    allergens?: string[];
+    notes?: string;
+  };
   allowedOptions?: {
     sizes?: string[];
     sugarLevels?: string[];
@@ -41,6 +50,7 @@ interface Category {
   _id: string;
   name: string;
   slug: string;
+  isActive: boolean;
 }
 
 interface FormState {
@@ -75,6 +85,7 @@ export function AdminProducts(): JSX.Element {
   const { toast } = useToast();
   const [editing, setEditing] = useState<AdminProduct | 'new' | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [deleting, setDeleting] = useState<AdminProduct | null>(null);
 
   const productsQuery = useQuery({
     queryKey: ['admin-products'],
@@ -101,7 +112,7 @@ export function AdminProducts(): JSX.Element {
         isAvailable: p.isAvailable,
         isFeatured: p.isFeatured,
         isArchived: p.isArchived,
-        categoryId: '',
+        categoryId: p.categoryId,
         tagInput: p.tags.join(', '),
       });
     }
@@ -119,6 +130,7 @@ export function AdminProducts(): JSX.Element {
         image: form.image,
         basePrice: Number(form.basePrice),
         variants: form.variants.map((v) => ({
+          ...(v._id ? { _id: v._id } : {}),
           name: v.name,
           price: Number(v.price),
           isAvailable: v.isAvailable,
@@ -130,18 +142,28 @@ export function AdminProducts(): JSX.Element {
         categoryId: form.categoryId || undefined,
         allowedOptions: {
           sizes: Array.from(new Set(form.variants.map((v) => v.name))),
-          sugarLevels: ['0%', '30%', '50%', '70%', '100%'],
-          iceLevels: ['no-ice', 'less-ice', 'normal-ice'],
-          toppingIds: [],
+          sugarLevels:
+            editing && editing !== 'new'
+              ? (editing.allowedOptions?.sugarLevels ?? [])
+              : ['0%', '30%', '50%', '70%', '100%'],
+          iceLevels:
+            editing && editing !== 'new'
+              ? (editing.allowedOptions?.iceLevels ?? [])
+              : ['no-ice', 'less-ice', 'normal-ice'],
+          toppingIds:
+            editing && editing !== 'new' ? (editing.allowedOptions?.toppingIds ?? []) : [],
         },
-        toppingIds: [],
-        ingredientMetadata: {
-          caffeine: false,
-          dairy: false,
-          flavorProfile: [],
-          allergens: [],
-          notes: '',
-        },
+        toppingIds: editing && editing !== 'new' ? (editing.toppingIds ?? []) : [],
+        ingredientMetadata:
+          editing && editing !== 'new'
+            ? editing.ingredientMetadata
+            : {
+                caffeine: false,
+                dairy: false,
+                flavorProfile: [],
+                allergens: [],
+                notes: '',
+              },
       };
       if (editing === 'new') {
         return unwrap(await api.post('/admin/products', payload));
@@ -151,6 +173,7 @@ export function AdminProducts(): JSX.Element {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-products'] });
+      qc.invalidateQueries({ queryKey: ['admin-categories'] });
       toast({ title: 'Đã lưu', tone: 'success' });
       setEditing(null);
     },
@@ -161,7 +184,9 @@ export function AdminProducts(): JSX.Element {
     mutationFn: async (id: string) => unwrap(await api.delete(`/admin/products/${id}`)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin-products'] });
-      toast({ title: 'Đã ẩn món', tone: 'success' });
+      for (const key of ['menu', 'menu-search']) void qc.invalidateQueries({ queryKey: [key] });
+      setDeleting(null);
+      toast({ title: 'Đã xóa món khỏi thực đơn', tone: 'success' });
     },
     onError: (err) => toast({ title: 'Lỗi', description: getErrorMessage(err), tone: 'danger' }),
   });
@@ -173,6 +198,12 @@ export function AdminProducts(): JSX.Element {
       qc.invalidateQueries({ queryKey: ['admin-products'] });
       toast({ title: 'Đã khôi phục', tone: 'success' });
     },
+    onError: (err) =>
+      toast({
+        title: 'Chưa khôi phục được món',
+        description: getErrorMessage(err),
+        tone: 'danger',
+      }),
   });
 
   if (productsQuery.isLoading) return <Skeleton className="h-64" />;
@@ -199,7 +230,7 @@ export function AdminProducts(): JSX.Element {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {visible.map((p) => (
-          <Card key={p._id} className="overflow-hidden">
+          <Card key={p._id} data-product-id={p._id} className="overflow-hidden">
             <img
               src={p.image}
               alt={p.name}
@@ -224,8 +255,13 @@ export function AdminProducts(): JSX.Element {
                 <Button size="sm" variant="outline" onClick={() => setEditing(p)}>
                   <Pencil className="h-3 w-3" /> Sửa
                 </Button>
-                <Button size="sm" variant="outline" onClick={() => archive.mutate(p._id)}>
-                  <Archive className="h-3 w-3" /> Ẩn
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-danger"
+                  onClick={() => setDeleting(p)}
+                >
+                  <Trash2 className="h-3 w-3" /> Xóa
                 </Button>
               </div>
             </div>
@@ -236,16 +272,21 @@ export function AdminProducts(): JSX.Element {
       {archived.length > 0 && (
         <details className="rounded-lg border border-foreground/10 p-3">
           <summary className="cursor-pointer text-sm font-semibold">
-            Món đã ẩn ({archived.length})
+            Món đã xóa ({archived.length})
           </summary>
           <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {archived.map((p) => (
-              <Card key={p._id} className="p-3 flex items-center justify-between">
+              <Card key={p._id} data-product-id={p._id} className="p-3 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold">{p.name}</p>
                   <p className="text-xs text-muted-foreground">{vnd(p.basePrice)}</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => restore.mutate(p._id)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={restore.isPending}
+                  onClick={() => restore.mutate(p._id)}
+                >
                   <ArchiveRestore className="h-3 w-3" /> Khôi phục
                 </Button>
               </Card>
@@ -253,6 +294,30 @@ export function AdminProducts(): JSX.Element {
           </div>
         </details>
       )}
+
+      <Modal
+        open={!!deleting}
+        onOpenChange={(open) => !open && !archive.isPending && setDeleting(null)}
+        title={`Xóa món: ${deleting?.name ?? ''}`}
+        description="Món sẽ được gỡ khỏi thực đơn, tìm kiếm và gợi ý AI. Lịch sử đơn và doanh thu vẫn được giữ lại."
+      >
+        <p className="text-sm text-muted-foreground">
+          Bạn có thể khôi phục món từ mục “Món đã xóa”. Đơn đã gửi vẫn được giữ nguyên để phục vụ và
+          thanh toán.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button variant="outline" disabled={archive.isPending} onClick={() => setDeleting(null)}>
+            Giữ món
+          </Button>
+          <Button
+            variant="danger"
+            disabled={archive.isPending}
+            onClick={() => deleting && archive.mutate(deleting._id)}
+          >
+            {archive.isPending ? 'Đang xóa…' : 'Xóa món'}
+          </Button>
+        </div>
+      </Modal>
 
       <Modal
         open={!!editing}
@@ -305,6 +370,8 @@ export function AdminProducts(): JSX.Element {
             <Field label="Danh mục">
               <select
                 className={inputCls}
+                aria-label="Danh mục"
+                required
                 value={form.categoryId}
                 onChange={(e) => setForm({ ...form, categoryId: e.target.value })}
               >
@@ -312,6 +379,7 @@ export function AdminProducts(): JSX.Element {
                 {categoriesQuery.data?.categories.map((c) => (
                   <option key={c._id} value={c._id}>
                     {c.name}
+                    {!c.isActive ? ' (đã ẩn)' : ''}
                   </option>
                 ))}
               </select>
@@ -404,7 +472,7 @@ export function AdminProducts(): JSX.Element {
                 checked={form.isArchived}
                 onChange={(e) => setForm({ ...form, isArchived: e.target.checked })}
               />
-              Đã ẩn
+              Đã xóa mềm
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">

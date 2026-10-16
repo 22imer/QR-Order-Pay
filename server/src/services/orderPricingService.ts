@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 import { ConflictError, ValidationError } from '../errors/AppError.js';
 import { productRepository } from '../repositories/productRepository.js';
 import { toppingRepository } from '../repositories/toppingRepository.js';
+import { categoryRepository } from '../repositories/categoryRepository.js';
 import type { PlaceOrderItemInput } from './orderService.js';
 import { guestCanOrder } from './tableSessionService.js';
 
@@ -60,12 +61,14 @@ export async function priceOrderItems(
 ): Promise<PricedCart> {
   const productIds = [...new Set(items.map((item) => item.productId))];
   const toppingIds = [...new Set(items.flatMap((item) => item.toppingIds))];
-  const [products, toppings] = await Promise.all([
+  const [products, toppings, categories] = await Promise.all([
     productRepository.findManyByIds(productIds, session),
     toppingIds.length > 0
       ? toppingRepository.findManyByIds(toppingIds, session)
       : Promise.resolve([]),
+    categoryRepository.listActive(session),
   ]);
+  const activeCategories = new Set(categories.map((category) => category.id));
   const productMap = new Map(products.map((product) => [product._id.toString(), product]));
   const toppingMap = new Map(toppings.map((topping) => [topping._id.toString(), topping]));
   const unavailable: Array<{ index: number; productId: string }> = [];
@@ -73,7 +76,12 @@ export async function priceOrderItems(
 
   const priced = items.map((item, index) => {
     const product = productMap.get(item.productId);
-    if (!product || product.isArchived || !product.isAvailable) {
+    if (
+      !product ||
+      product.isArchived ||
+      !product.isAvailable ||
+      !activeCategories.has(String(product.categoryId))
+    ) {
       unavailable.push({ index, productId: item.productId });
       return null;
     }

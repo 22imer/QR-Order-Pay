@@ -7,6 +7,7 @@ import { cn } from '../../lib/cn';
 import { useCart } from '../../store/cart';
 import { useToast } from '../../components/ui/useToast';
 import { QtyStepper } from './QtyStepper';
+import { MenuPhoto } from './MenuPhoto';
 
 interface Variant {
   _id: string;
@@ -120,7 +121,9 @@ export function ProductDetailModal({
     (t) => t.isAvailable !== false && (product.allowedOptions.toppingIds ?? []).includes(t._id),
   );
   const sugarOptions = (
-    product.allowedOptions.sugarLevels?.length > 0 ? product.allowedOptions.sugarLevels : SUGAR_LEVELS
+    product.allowedOptions.sugarLevels?.length > 0
+      ? product.allowedOptions.sugarLevels
+      : SUGAR_LEVELS
   ).map((s) => ({ value: s, label: s }));
   const iceOptions =
     product.allowedOptions.iceLevels?.length > 0
@@ -193,11 +196,11 @@ export function ProductDetailModal({
       onOpenChange={(o) => !o && onClose()}
       title={product.name}
       description={product.description}
-      className="g-sheet"
+      className="g-sheet product-sheet"
     >
-      <img
-        src={product.image}
-        alt=""
+      <MenuPhoto
+        source={product.image}
+        eager
         className="h-44 w-full rounded-2xl bg-muted object-cover"
       />
       {!product.isAvailable ? (
@@ -282,12 +285,13 @@ export function ProductDetailModal({
           onChange={(e) => setNote(e.target.value)}
           maxLength={280}
           rows={2}
+          aria-label="Ghi chú"
           placeholder="Ví dụ: ít ngọt hơn, đổi sang sữa hạnh nhân..."
           className="w-full rounded-2xl border border-foreground/15 bg-card p-3 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
       </Section>
 
-      <div className="sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-foreground/10 bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
+      <div className="product-sheet-footer sticky bottom-0 -mx-5 -mb-5 mt-6 flex items-center gap-3 border-t border-foreground/10 bg-card px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-4">
         <QtyStepper value={quantity} onChange={setQuantity} />
         <Button
           size="lg"
@@ -359,7 +363,7 @@ function Segmented({
             className={cn(
               'h-10 flex-1 rounded-xl px-1 text-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
               selected
-                ? 'bg-card font-semibold shadow-soft'
+                ? 'bg-primary/15 font-semibold text-primary shadow-soft'
                 : 'text-muted-foreground hover:text-foreground',
             )}
             onClick={() => onChange(option.value)}

@@ -1,4 +1,55 @@
-# Test report — cập nhật 13/10/2026
+# Test report — cập nhật 16/10/2026
+
+## Kiểm tra trước checkpoint Git — 16/10/2026
+
+- Lint, typecheck và production build PASS. **200 tests PASS**: server unit 71, integration 85, client 44. Integration sử dụng database test cô lập; không seed/reset dữ liệu quán. Logs `.cache/git-push-{lint,typecheck,test,build}.log`.
+- Kiểm tra whitespace và secret trong phần staged PASS; `.env`, `apikey.txt` và `.cache/` bị Git ignore.
+- `npm audit --audit-level=high` FAIL: **15 vulnerabilities (2 moderate, 12 high, 1 critical)** trên dependency hiện có. Package manifests/lockfile không thay đổi trong checkpoint; chưa thực hiện nâng dependency. CI có bước audit nên có thể thất bại. Log `.cache/git-push-audit.log`. Kết quả audit 0 trong các mục lịch sử không đại diện cho lần kiểm tra này.
+- Sau khi áp dụng cấu hình AI mới: 4 API và 3 worker healthy, các biến AI runtime khớp `.env`, `AI_MODE=live`; chưa gọi thử provider. Local health ở 8080/8081/8082 và public menu/products/health HTTP 200; link public hiện tại lưu trong `.cache/public-url.txt`.
+- Không chạy lại browser suite trong lần checkpoint này; bằng chứng browser ở các mục dưới thuộc các lần kiểm tra trước.
+
+## Public Guest HTTPS — 15/10/2026
+
+- Web Docker build/TypeScript và client lint PASS; client **44 tests PASS**, gồm 2 test runtime portal identity. Nginx -t PASS. Hai Guest APIs có PUBLIC_APP_URL=https public và COOKIE_SECURE=true, hai Internal APIs giữ HTTP local cookie false.
+- Cloudflare tunnel chuyển đúng Guest 8080; HTTPS/menu/API public HTTP 200. Browser mobile secure context, guest portal meta, menu và WebSocket handshake PASS. Negative join nhận đúng lỗi vé đầu vào thay vì CSRF origin; token màn hình sai bị chặn. Public /auth/login, /staff, /admin và API nội bộ trả 404; local 8081/8082 healthy và hiển thị đăng nhập.
+- User tự chọn bàn; không cấp lại khóa màn hình, tạo phiên/đơn/khoản thu hoặc reset database. Camera/4G trên điện thoại thực tế chưa được kiểm tra. Ảnh `.cache/public-browser/menu-phone.png`; logs `.cache/public-{web-build,client-tests,lint,start,production}.log`.
+
+
+## Tài khoản, topping và khoản thu — 15/10/2026
+
+- Typecheck/lint/build PASS; **198 tests PASS**: server unit 71, integration 85, client 42. Logs `.cache/account-{tests,typecheck,lint,build}.log`.
+- Tài khoản: profile chỉ trả trường an toàn; nhân viên chỉ sửa tên mình, không đổi quyền hay quản lý người khác; mật khẩu hiện tại sai bị chặn, đổi đúng thu hồi access/refresh; admin tạo/sửa/khóa/mở/đặt lại mật khẩu, validate email/quyền/ID, chặn cập nhật tùy ý và tự khóa/hạ quyền. Hai admin hạ quyền nhau đồng thời chỉ một thao tác thành công; token cũ không version còn dùng trước lần thay đổi bảo mật đầu tiên.
+- Làm rõ giao diện: bấm tên người dùng mở profile; menu giữ Nhân viên và các mục nghiệp vụ. Xóa nhân viên chỉ ADMIN xóa STAFF, ẩn khỏi list, chặn login/access/refresh và mở khóa lại bằng PATCH; payment snapshot và tên người thu được giữ nguyên. Client kiểm hủy/xác nhận xóa nhân viên. Các kiểm thử nằm trong accountCatalog.test.tsx và accounts.test.ts.
+- Topping: chỉ admin xóa mềm/khôi phục, invalid ID bị chặn, menu loại topping đã xóa, cấu hình AI và giỏ cũ không chấp nhận, snapshot đơn giữ nguyên, audit/outbox đầy đủ.
+- Client: sửa tên/đổi mật khẩu và đăng xuất, khóa mình bị vô hiệu và khóa người khác cần xác nhận, hủy/xác nhận xóa topping/khôi phục, mã khoản thu ẩn mặc định trong Chi tiết nhưng vẫn mở được.
+
+
+- Production-local đã cập nhật toàn stack, mọi dịch vụ healthy. Chromium PASS 18 màn hình ở 375/768/1440 trên hai portal: trang tài khoản, sửa tài khoản Admin, xác nhận xóa topping và khoản thu gọn; không tràn ngang hoặc page error. Mọi hộp sửa/xóa đều hủy; users và topping nghiệp vụ không đổi. Ảnh `.cache/account-browser/`, log `.cache/account-production.log`.
+
+- Bản giao diện làm rõ đã triển khai, mọi dịch vụ healthy. Chromium PASS 9 màn hình profile/xác nhận xóa nhân viên ở 375/768/1440, bấm tên người dùng mở profile và đăng nhập/đăng xuất cho Admin/Staff, route bảo vệ sau logout và refresh 401; các menu tài khoản mới được bỏ. Hủy xóa, users không đổi; không tràn ngang/page error. Artifacts `.cache/profile-browser/`, `.cache/profile-production.log`; typecheck/lint/build và 198 tests PASS, logs `.cache/profile-*.log`.
+
+## Xóa catalog và lọc theo danh mục hiển thị — 13/10/2026
+
+- Server unit **71 PASS**, integration **75 PASS**, client **37 PASS**; tổng **183**. Typecheck/lint/build toàn repo PASS. Thêm 8 integration tests trong `catalogLifecycle.test.ts` với Mongo replica set cô lập.
+- Kiểm xóa mềm/khôi phục món giữ nguyên paid order/payment snapshot; ẩn/hiện danh mục áp dụng menu/featured/search/AI/cấu hình AI/giỏ cũ; count tính archive; chuyển toàn bộ món rồi xóa category có audit/outbox, rollback nhận sai/trùng, ADMIN authorization, tạo/chuyển món đồng thời không orphan.
+- Browser cô lập PASS xác nhận/hủy xóa, archive/restore, form category đúng và giữ ingredient/options/variant, hide/show cập nhật guest qua realtime, xóa danh mục sau chuyển và xóa danh mục trống. Ba viewport 375/768/1440 không tràn ngang/page error. Không ghi dữ liệu thử vào DB quán. Artifacts `.cache/catalog-browser/`.
+- Đã build/recreate toàn stack local, mọi API/workers/web/Mongo/Redis healthy; không cần schema migration mới, không seed/reset. Logs `.cache/catalog-{unit,integration,client-tests,typecheck,lint,build,browser,docker-build,deploy}.log`. Hướng dẫn `docs/catalog-lifecycle.md`.
+- Smoke production chỉ đọc PASS Admin xác nhận xóa món/danh mục ở 3 kích thước, số món từng danh mục khớp danh sách admin, menu khách và health 3 portal; tất cả hộp thoại được hủy, so sánh catalog trước/sau không đổi. Không tạo đơn/khoản thu. Log `.cache/catalog-production.log`, ảnh `.cache/catalog-production/`.
+
+## Đồng bộ cửa sổ và giao diện khách — 13/10/2026
+
+- Client typecheck/lint/build PASS, 37/37 tests PASS. Theme khách xanh đậm/chữ sáng/vàng; AI, tùy chỉnh món, bộ lọc, giỏ/đơn, hủy/đánh giá và vào bàn đồng bộ. Staff/Admin tiếp tục nền kem, in hóa đơn nền trắng/chữ đậm; PWA cache v6.
+- Chromium với API + Mongo replica set cô lập PASS: preset/ngân sách/không sữa → gọi AI thật ở mode fallback → xem thẻ gợi ý/mở cấu hình; đặt Espresso 35k → thu 10k + 25k → KDS phục vụ → gửi đánh giá → đóng phiên/receipt. Ba kích thước 375/768/1440 cho AI, options, cart, orders, cancel/review/receipt; kiểm nút đóng trong viewport, không tràn ngang/page error và màu chữ/nền khi print. Các giao dịch thử chỉ nằm trong DB cô lập.
+- Docker web đã cập nhật, toàn stack healthy. Smoke read-only production PASS menu, AI 3 kích thước/Escape, chọn món/filter/vào bàn; Staff/Admin không nhận theme khách. Không tạo phiên/đơn/khoản thu trên DB quán. Logs `.cache/guest-surfaces-{typecheck,lint,tests,build,browser,production,docker-build,deploy}.log`, ảnh trong `.cache/guest-surfaces-browser/` và `.cache/guest-surfaces-production/`.
+
+## Thực đơn ảnh nền và carousel — 13/10/2026
+
+- Checkpoint `9c27792` đã push lên origin/main trước khi sửa UI theo yêu cầu.
+- Client typecheck/lint/build PASS; **37 tests PASS**. Ba test mới kiểm preview không gọi đặt món, chuyển đúng món sang phần tùy chỉnh, thay danh sách lọc không giữ món ngoài kết quả và chặn chọn món tạm hết.
+- Chromium với API và Mongo replica set cô lập, catalog sao chép từ API đọc: PASS tại 1440/1920/768/390/375, không tràn ngang/lỗi JS. Bấm thẻ đổi đúng URL ảnh, heading, mô tả và giá, không mở modal/gửi đơn; next/previous, danh mục, tìm kiếm tiếng Việt không dấu, kết quả rỗng, ảnh URL không hợp lệ và AI dialog đều hoạt động.
+- Luồng **Chọn món → tùy chỉnh → thêm giỏ → quote → đặt đơn** PASS, tạo một đơn Espresso Mây 35.000 VND, AWAITING_PAYMENT/UNPAID trong DB cô lập. Không đặt/thu tiền thử trên DB quán.
+- Artifacts: `.cache/showcase-browser.log`, `.cache/showcase-browser/`, `.cache/showcase-tests.log`, `.cache/showcase-typecheck.log`, `.cache/showcase-lint.log`, `.cache/showcase-build.log`.
+- Web local đã cập nhật và healthy. Smoke production chỉ đọc PASS tại 1440/768/375, ảnh nền local/mô tả/modal hoạt động, Staff/Admin giữ layout riêng, không lỗi JS; không tạo phiên/đơn/khoản thu. Log `.cache/showcase-production-smoke.log`, ảnh `.cache/showcase-production/`.
 
 ## Fantastic cafe và Be Vietnam Pro — 13/10/2026
 

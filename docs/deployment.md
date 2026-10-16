@@ -71,6 +71,28 @@ Không chạy `npm run seed` tự động trong image. Nếu cần dữ liệu d
 - Có thể đặt `INSTANCE_ID`; Compose gán `server-guest-a/b`, `server-internal-a/b`, `worker-scheduler-1`, `worker-realtime-1`, `worker-report-1` để log/metric phân biệt rõ. Worker healthcheck đọc heartbeat TTL trong Redis. Health API trả thêm `trafficClass=guest|internal` để kiểm tra routing.
 - Quy tắc tổng hợp, định nghĩa metric và cách tránh cộng trùng số liệu database nằm tại [observability.md](observability.md).
 
+## Mở cổng khách công khai để quét QR — 15/10/2026
+
+Đã dùng Cloudflare Quick Tunnel qua container `fantastic-public-tunnel` để cấp URL HTTPS tạm thời, chuyển đến `web:8080`. Cổng Nhân viên/Admin vẫn ở localhost:8081/8082; Nginx chặn route/API nội bộ từ cổng khách. MongoDB/Redis không mở cổng ra Internet.
+
+Chạy từ thư mục dự án sau khi có image production hiện tại:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/public-web.ps1
+```
+
+Script tái sử dụng tunnel đang chạy, hoặc khởi động/cấp URL mới; lưu URL vào `.cache/public-url.txt`, cập nhật duy nhất PUBLIC_APP_URL trong `.env`, giữ secret và dữ liệu. Nó áp `compose.public.yaml` để cookie Guest có Secure qua HTTPS; cookie Staff/Admin local giữ cấu hình HTTP hiện có. Tất cả API/worker nhận cùng PUBLIC_APP_URL, nên liên kết màn hình và vé QR mới dùng địa chỉ công khai. Web nhận diện cổng từ meta do Nginx cấp ở mỗi server, kể cả SPA deep link/index.html; không cần rebuild frontend mỗi khi hostname tunnel thay đổi.
+
+Chọn bàn ở Nhân viên/Admin, bấm **Cấu hình màn hình QR** → **Mở màn hình QR**, rồi dùng điện thoại quét mã đang hiển thị. Nếu đã có màn hình mở bằng localhost, tải lại trang để lấy QR mới. Không chia sẻ link `/display#...` cho khách.
+
+Giữ máy tính, Docker và container tunnel hoạt động. Quick Tunnel dùng cho demo, hostname thay đổi khi tạo lại; chạy lại script để đồng bộ URL sau khi khởi động tunnel. Đây không phải dịch vụ hosting luôn bật. Nguồn: [Cloudflare Quick Tunnels](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/).
+
+Dừng public và phục hồi địa chỉ khách ban đầu (lưu ở `.cache/public-original-url.txt`):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/public-web.ps1 -Stop
+```
+
 ## HTTPS/cloud
 
 Khi đặt sau load balancer hoặc reverse proxy HTTPS:
@@ -81,7 +103,7 @@ Khi đặt sau load balancer hoặc reverse proxy HTTPS:
 4. Chỉ đặt `TRUST_PROXY_HOPS` bằng số proxy thực tế, không tin tùy ý `X-Forwarded-For` từ Internet.
 5. Thay hai JWT secret bằng secret manager; không đưa chúng vào image hoặc repository.
 
-Repository hiện mới có cấu hình production local. Chưa có bằng chứng đã triển khai cloud hoặc HTTPS thật.
+Ứng dụng chạy production-local, có Quick Tunnel HTTPS tạm thời cho demo. Chưa triển khai hosting cloud luôn bật.
 
 ## Kết quả production-local cập nhật 23/09/2026
 

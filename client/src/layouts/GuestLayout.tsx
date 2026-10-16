@@ -27,6 +27,7 @@ const dockItem =
 export function GuestLayout(): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
+  const showcase = location.pathname === '/menu';
   const qc = useQueryClient();
   const { toast } = useToast();
   const items = useCart((s) => s.items);
@@ -64,6 +65,7 @@ export function GuestLayout(): JSX.Element {
   useSocketEvent('order.created', refreshOrders);
   useSocketEvent('menu.availabilityChanged', () => {
     void qc.invalidateQueries({ queryKey: ['menu'] });
+    void qc.invalidateQueries({ queryKey: ['menu-search'] });
   });
   useSocketEvent('tableSession.statusChanged', refreshSession);
   useSocketEvent('payment.confirmed', () => {
@@ -125,8 +127,13 @@ export function GuestLayout(): JSX.Element {
   const context: GuestContext = { tableName: activeSession?.table?.name ?? null };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
-      <header className="sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
+    <div
+      className={cn(
+        'guest-shell flex min-h-dvh flex-col bg-background',
+        showcase && 'guest-showcase',
+      )}
+    >
+      <header className="guest-header sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 lg:h-20 lg:gap-6 lg:px-6">
           <CloudMark className="h-6 w-8 shrink-0 text-primary" />
           <div className="min-w-0 flex-1 leading-tight">
@@ -158,7 +165,10 @@ export function GuestLayout(): JSX.Element {
               )}
             </p>
           </div>
-          <nav aria-label="Điều hướng chính" className="hidden items-center gap-1 lg:flex">
+          <nav
+            aria-label="Điều hướng chính"
+            className="guest-header-nav hidden items-center gap-1 lg:flex"
+          >
             {[
               { to: '/menu', label: 'Thực đơn' },
               { to: '/ai', label: 'AI Barista' },
@@ -207,8 +217,10 @@ export function GuestLayout(): JSX.Element {
 
       <main
         className={cn(
-          'mx-auto w-full max-w-6xl flex-1 px-4 pt-5 lg:px-6 lg:pt-8 print:pb-0',
-          showCartPill ? 'pb-56 lg:pb-32' : 'pb-36 lg:pb-12',
+          showcase
+            ? 'w-full flex-1'
+            : 'mx-auto w-full max-w-6xl flex-1 px-4 pt-5 lg:px-6 lg:pt-8 print:pb-0',
+          !showcase && (showCartPill ? 'pb-56 lg:pb-32' : 'pb-36 lg:pb-12'),
         )}
       >
         {receiptAvailable ? (
@@ -250,7 +262,7 @@ export function GuestLayout(): JSX.Element {
           ) : null}
           <nav
             aria-label="Điều hướng chính"
-            className="pointer-events-auto flex rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden"
+            className="guest-dock pointer-events-auto flex rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden"
           >
             <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
             <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />

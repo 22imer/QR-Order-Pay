@@ -74,7 +74,7 @@ export function JoinPage(): JSX.Element {
 
   return (
     <main className="grid min-h-dvh md:grid-cols-2">
-      <section className="flex flex-col px-5 pb-6 pt-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
+      <section className="guest-join-intro flex flex-col px-5 pb-6 pt-8 md:bg-primary md:px-10 md:py-10 md:text-primary-foreground lg:px-16">
         <div className="flex items-center gap-3">
           <CloudMark className="h-7 w-10 text-primary md:text-primary-foreground" />
           <span className="g-title text-2xl">Fantastic cafe</span>

@@ -84,6 +84,9 @@ const AdminBills = lazy(() =>
 const LoginPage = lazy(() =>
   import('./features/auth/LoginPage').then((module) => ({ default: module.LoginPage })),
 );
+const AccountPage = lazy(() =>
+  import('./features/auth/AccountPage').then((module) => ({ default: module.AccountPage })),
+);
 
 export function App(): JSX.Element {
   const portal = getPortalMode();
@@ -128,6 +131,7 @@ export function App(): JSX.Element {
                 <Route path="/staff/availability" element={<StaffAvailability />} />
                 <Route path="/staff/cash-shift" element={<StaffCashShift />} />
                 <Route path="/staff/payments" element={<PaymentAccounting />} />
+                <Route path="/staff/account" element={<AccountPage />} />
               </Route>
             </Route>
           ) : null}
@@ -145,6 +149,7 @@ export function App(): JSX.Element {
                 <Route path="/admin/toppings" element={<AdminToppings />} />
                 <Route path="/admin/tables" element={<AdminTables />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/account" element={<AccountPage />} />
                 <Route path="/admin/reviews" element={<AdminReviews />} />
               </Route>
             </Route>

@@ -1,6 +1,7 @@
 import { useLayoutEffect } from 'react';
+import '../../styles/guest-surfaces.css';
 
-const GUEST_BACKGROUND = '#E8EFEA';
+const GUEST_BACKGROUND = '#101d18';
 
 export function useGuestTheme(enabled: boolean): void {
   useLayoutEffect(() => {

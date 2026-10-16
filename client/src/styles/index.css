@@ -27,20 +27,21 @@
 }
 
 :root.theme-guest {
-  --c-background: 232 239 234;
-  --c-foreground: 19 39 31;
-  --c-primary: 34 85 63;
-  --c-primary-fg: 246 250 247;
+  color-scheme: dark;
+  --c-background: 16 29 24;
+  --c-foreground: 246 243 235;
+  --c-primary: 244 162 29;
+  --c-primary-fg: 19 39 31;
   --c-accent: 244 162 29;
   --c-accent-fg: 19 39 31;
-  --c-muted: 217 228 221;
-  --c-muted-fg: 78 97 88;
-  --c-card: 252 253 250;
-  --c-card-fg: 19 39 31;
-  --c-danger: 179 49 42;
-  --c-success: 42 127 73;
-  --c-shadow: 19 39 31;
-  --shimmer-hi: #eef4f0;
+  --c-muted: 35 56 46;
+  --c-muted-fg: 179 194 184;
+  --c-card: 27 43 35;
+  --c-card-fg: 246 243 235;
+  --c-danger: 244 143 131;
+  --c-success: 145 211 165;
+  --c-shadow: 0 0 0;
+  --shimmer-hi: #304a3d;
 }
 
 body {

@@ -57,7 +57,7 @@ const KINDS = {
 };
 
 export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.Element {
-  useDocumentTitle('Khoản thu & điều chỉnh');
+  useDocumentTitle('Khoản thu');
   const [page, setPage] = useState(1);
   const prefix = admin ? '/admin' : '/staff';
   const query = useQuery({
@@ -135,15 +135,16 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold">Khoản thu & điều chỉnh</h1>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Giữ nguyên khoản thu gốc. Mọi điều chỉnh có lý do và cần quản lý khác duyệt. Hủy ghi nhận
-          thu dùng khi ghi nhầm; tiền đã thực nhận cần dùng luồng hoàn tiền tại đơn.
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Hủy thu hoặc chuyển sang đúng đơn chỉ áp dụng trước pha chế. Sửa phương thức được thực
-          hiện sau đóng phiên; hóa đơn đã chốt giữ nguyên và đối soát qua lịch sử dưới đây.
-        </p>
+        <h1 className="font-display text-2xl font-semibold">Khoản thu</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Điều chỉnh cần quản lý khác duyệt.</p>
+        <details className="mt-2 text-sm text-muted-foreground">
+          <summary className="cursor-pointer">Quy định điều chỉnh</summary>
+          <p className="mt-2">
+            Hủy ghi nhận khi thu nhầm; hoàn tiền thực tế tại đơn. Hủy thu hoặc chuyển đơn chỉ trước
+            pha chế. Sửa phương thức sau đóng phiên được lưu vào lịch sử, giữ nguyên hóa đơn đã
+            chốt.
+          </p>
+        </details>
       </div>
       <section className="space-y-3">
         <h2 className="font-semibold">Chờ duyệt ({pending.length})</h2>
@@ -163,7 +164,10 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                   · {vnd(item.receipt.amount)} · {METHODS[item.receipt.method]}
                 </p>
               ) : null}
-              <p className="break-all text-xs text-muted-foreground">Khoản thu: {item.paymentId}</p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Chi tiết</summary>
+                <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+              </details>
               <p className="text-sm">{item.reason}</p>
               {item.method ? (
                 <p className="text-sm">Phương thức đúng: {METHODS[item.method]}</p>
@@ -225,10 +229,13 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                   Thu lúc{' '}
                   {new Date(item.paidAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
                 </p>
-                <p className="break-all text-xs text-muted-foreground">Mã khoản thu: {item.id}</p>
-                {item.replacesPaymentId ? (
-                  <p className="break-all text-xs">Thay thế khoản thu: {item.replacesPaymentId}</p>
-                ) : null}
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Chi tiết</summary>
+                  <p className="mt-2 break-all">Mã khoản thu: {item.id}</p>
+                  {item.replacesPaymentId ? (
+                    <p className="mt-1 break-all">Thay thế: {item.replacesPaymentId}</p>
+                  ) : null}
+                </details>
                 <p className="text-sm">
                   {item.status === 'SUCCESS'
                     ? 'Đã ghi nhận'
@@ -254,7 +261,7 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
                       setTarget('');
                     }}
                   >
-                    Yêu cầu điều chỉnh
+                    Điều chỉnh
                   </Button>
                 ) : null}
               </Card>
@@ -284,11 +291,24 @@ export function PaymentAccounting({ admin = false }: { admin?: boolean }): JSX.E
               <p className="font-semibold">
                 {KINDS[item.kind]} · {item.status === 'APPROVED' ? 'Đã duyệt' : 'Từ chối'}
               </p>
+              {item.receipt ? (
+                <p className="text-muted-foreground">
+                  {item.receipt.orders
+                    .map((order) =>
+                      order ? `${order.tableName} · ${order.code}` : 'Đơn đã lưu trữ',
+                    )
+                    .join(', ')}{' '}
+                  · {vnd(item.receipt.amount)}
+                </p>
+              ) : null}
               <p>{item.reason}</p>
               <p>
                 {item.decidedByName}: {item.decisionNote}
               </p>
-              <p className="break-all text-xs text-muted-foreground">Khoản thu: {item.paymentId}</p>
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Chi tiết</summary>
+                <p className="mt-2 break-all">Mã khoản thu: {item.paymentId}</p>
+              </details>
             </Card>
           ))}
       </section>

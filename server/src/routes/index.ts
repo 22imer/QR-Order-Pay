@@ -95,6 +95,8 @@ apiRouter.post('/auth/refresh', authLimiter, auth.refresh);
 apiRouter.post('/auth/logout', authLimiter, auth.logout);
 apiRouter.post('/auth/logout-all', authLimiter, requireAuth, auth.logoutAll);
 apiRouter.get('/auth/me', requireAuth, auth.me);
+apiRouter.patch('/auth/me', authLimiter, requireAuth, auth.profile);
+apiRouter.post('/auth/password', authLimiter, requireAuth, auth.password);
 
 // public menu
 apiRouter.get('/categories', menu.listMenu);
@@ -424,10 +426,12 @@ apiRouter.delete('/admin/products/:id', requireAuth, requireRole('ADMIN'), admin
 apiRouter.get('/admin/categories', requireAuth, requireRole('ADMIN'), admin.listCategories);
 apiRouter.post('/admin/categories', requireAuth, requireRole('ADMIN'), admin.createCategory);
 apiRouter.patch('/admin/categories/:id', requireAuth, requireRole('ADMIN'), admin.updateCategory);
+apiRouter.delete('/admin/categories/:id', requireAuth, requireRole('ADMIN'), admin.deleteCategory);
 
 apiRouter.get('/admin/toppings', requireAuth, requireRole('ADMIN'), admin.listToppings);
 apiRouter.post('/admin/toppings', requireAuth, requireRole('ADMIN'), admin.createTopping);
 apiRouter.patch('/admin/toppings/:id', requireAuth, requireRole('ADMIN'), admin.updateTopping);
+apiRouter.delete('/admin/toppings/:id', requireAuth, requireRole('ADMIN'), admin.deleteTopping);
 
 apiRouter.get('/admin/tables', requireAuth, requireRole('ADMIN'), admin.listTables);
 apiRouter.post(
@@ -439,6 +443,7 @@ apiRouter.post(
 apiRouter.get('/admin/users', requireAuth, requireRole('ADMIN'), admin.listUsers);
 apiRouter.post('/admin/users', requireAuth, requireRole('ADMIN'), admin.createStaff);
 apiRouter.patch('/admin/users/:id', requireAuth, requireRole('ADMIN'), admin.updateUser);
+apiRouter.delete('/admin/users/:id', requireAuth, requireRole('ADMIN'), admin.deleteUser);
 apiRouter.get('/admin/reviews', requireAuth, requireRole('ADMIN'), admin.listReviews);
 
 // health

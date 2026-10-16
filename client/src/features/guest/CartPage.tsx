@@ -12,6 +12,7 @@ import { api, generateIdempotencyKey, getErrorMessage, unwrap, vnd } from '../..
 import { useToast } from '../../components/ui/useToast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { MenuPhoto } from './MenuPhoto';
 
 export function CartPage(): JSX.Element {
   useDocumentTitle('Giỏ hàng');
@@ -116,7 +117,7 @@ export function CartPage(): JSX.Element {
   const priceChanged = quote !== null && quote.total !== subtotal;
 
   return (
-    <div className="space-y-6 pt-2">
+    <div className="mx-auto w-full max-w-3xl space-y-6 pt-2">
       <h1 className="g-display text-[2.25rem]">Giỏ hàng của bạn</h1>
 
       <div className="slip-wrap">
@@ -131,11 +132,7 @@ export function CartPage(): JSX.Element {
             <ul className="space-y-5 py-5">
               {groupedItems.map((it) => (
                 <li key={it.clientId} className="flex gap-3">
-                  <img
-                    src={it.image}
-                    alt=""
-                    className="h-14 w-14 shrink-0 rounded-xl bg-muted object-cover"
-                  />
+                  <MenuPhoto source={it.image} className="h-14 w-14 shrink-0 rounded-xl" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-end gap-2">
                       <p className="font-semibold leading-snug">

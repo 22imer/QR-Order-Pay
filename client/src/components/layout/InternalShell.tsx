@@ -32,6 +32,7 @@ export function InternalShell({
   onLogout: () => void | Promise<void>;
 }): JSX.Element {
   const { pathname } = useLocation();
+  const accountPath = `${home}/account`;
   const current = nav.find((item) => pathname === item.to);
   const navigation = (mobile = false) => (
     <nav
@@ -85,13 +86,19 @@ export function InternalShell({
             <CloudMark className="h-6 w-8" />
           </span>
           <span className="min-w-0">
-            <span className="block font-display text-lg font-semibold leading-snug">Fantastic cafe</span>
+            <span className="block font-display text-lg font-semibold leading-snug">
+              Fantastic cafe
+            </span>
             <span className="mt-1 block text-xs text-primary-foreground/65">{title}</span>
           </span>
         </Link>
         <div className="min-h-0 flex-1 overflow-y-auto">{navigation()}</div>
         <div className="mt-6 border-t border-primary-foreground/15 pt-5">
-          <div className="mb-4 flex min-w-0 items-center gap-3 px-2">
+          <Link
+            to={accountPath}
+            aria-label={`Tài khoản của ${name}`}
+            className="mb-4 flex min-w-0 items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-primary-foreground/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-primary-foreground/10 font-display text-lg">
               {name.charAt(0)}
             </span>
@@ -99,7 +106,7 @@ export function InternalShell({
               <p className="truncate text-sm font-semibold">{name}</p>
               <p className="mt-0.5 text-[11px] text-primary-foreground/60">{role}</p>
             </div>
-          </div>
+          </Link>
           <button
             onClick={() => void onLogout()}
             className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 text-sm text-primary-foreground/75 transition hover:bg-primary-foreground/10 hover:text-primary-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
@@ -110,19 +117,31 @@ export function InternalShell({
       </aside>
       <header className="sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
         <div className="mx-auto flex min-h-[76px] max-w-[1600px] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
-          <Link to={home} className="flex min-w-0 items-center gap-2.5 lg:hidden">
-            <CloudMark className="h-6 w-8 shrink-0 text-primary" />
-            <span className="min-w-0">
-              <span className="block font-display text-lg font-semibold">Fantastic cafe</span>
-              <span className="block text-xs text-muted-foreground">{title}</span>
-            </span>
-          </Link>
+          <div className="flex min-w-0 items-center gap-2.5 lg:hidden">
+            <Link to={home} aria-label="Trang chủ">
+              <CloudMark className="h-6 w-8 shrink-0 text-primary" />
+            </Link>
+            <div className="min-w-0">
+              <Link to={home} className="block truncate font-display text-lg font-semibold">
+                Fantastic cafe
+              </Link>
+              <Link
+                to={accountPath}
+                aria-label={`Tài khoản của ${name}`}
+                className="block truncate rounded text-xs text-muted-foreground hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {name}
+              </Link>
+            </div>
+          </div>
           <div className="hidden items-center gap-2 text-sm lg:flex">
             <span className="text-muted-foreground">{title}</span>
             <span aria-hidden="true" className="text-foreground/25">
               /
             </span>
-            <span className="font-semibold">{current?.label ?? title}</span>
+            <span className="font-semibold">
+              {current?.label ?? (pathname === accountPath ? 'Tài khoản của tôi' : title)}
+            </span>
           </div>
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {status}

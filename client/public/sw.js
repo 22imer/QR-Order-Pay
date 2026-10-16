@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'fantastic-cafe-shell-v4';
+const CACHE_VERSION = 'fantastic-cafe-shell-v10';
 const SHELL_URLS = [
   '/',
   '/index.html',

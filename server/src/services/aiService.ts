@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { config } from '../config/index.js';
 import { HttpAIProvider, type AIProvider } from '../providers/aiProvider.js';
 import { productRepository } from '../repositories/productRepository.js';
+import { categoryRepository } from '../repositories/categoryRepository.js';
 import { logger } from '../infrastructure/logger.js';
 import type { ProductDoc } from '../models/Product.js';
 
@@ -375,7 +376,12 @@ export async function validateRecommendedConfiguration(input: {
       : Promise.resolve([]),
   ]);
   const violations: string[] = [];
-  if (!product || product.isArchived || !product.isAvailable)
+  if (
+    !product ||
+    product.isArchived ||
+    !product.isAvailable ||
+    !(await categoryRepository.findById(String(product.categoryId)))?.isActive
+  )
     return { valid: false, total: 0, violations: ['Món không còn khả dụng.'] };
   const variant = input.variantId
     ? product.variants.find(

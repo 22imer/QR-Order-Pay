@@ -10,8 +10,11 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 - Màn hình tại bàn hiển thị QR tự đổi mỗi 60 giây; khách quét mã còn hạn để vào phiên bằng Wi-Fi hoặc 4G.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
+- Quản trị xóa mềm/khôi phục món; xóa danh mục trống hoặc chuyển toàn bộ món sang danh mục khác rồi xóa. Ẩn danh mục áp dụng cả menu, tìm kiếm, AI và kiểm tra giỏ cũ. Xem [quản lý vòng đời catalog](docs/catalog-lifecycle.md).
+- Thực đơn khách dạng ảnh nền toàn màn hình và thẻ món ngang: chọn thẻ đổi ảnh, tên, mô tả và giá; bấm **Chọn món** để tùy chỉnh và thêm giỏ.
 - Tìm kiếm menu bằng câu tiếng Việt có/không dấu, typo nhẹ, ngân sách và ràng buộc caffeine/sữa; kết quả rỗng minh bạch và có bộ lọc sửa tay.
 - AI Barista gợi ý món từ menu thật theo sở thích & ngân sách (có fallback minh bạch khi không có API key).
+- Giao diện khách đồng bộ nền xanh đậm/chữ sáng/nút vàng từ thực đơn đến AI, tùy chỉnh món, giỏ, đơn và đánh giá; hóa đơn in dùng nền trắng.
 - Giỏ hàng theo thiết bị, quote ký trước khi đặt và idempotency khi gửi đơn.
 - KDS có tuổi công đoạn/SLA, duyệt yêu cầu hủy; staff có màn hình báo hết món, chuyển bàn và đối soát ca.
 - Realtime qua Socket.IO cho cả guest và staff.

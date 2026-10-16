@@ -10,6 +10,18 @@ README mở đầu danh sách tính năng bằng **QR tự đổi mỗi 60 giây
 
 ## Hình dạng nghiệp vụ quyết định bố cục
 
+### Trang thực đơn theo ảnh tham chiếu
+
+Theo yêu cầu ngày 13/10/2026, `/menu` dùng hero ảnh nền phủ màn hình và carousel thẻ món. Ảnh, tên, mô tả, danh mục và giá lấy từ catalog; bấm thẻ chỉ đổi món đang xem, **Chọn món** mở cấu hình gọi món. Desktop hiển thị nội dung trái/thẻ phải; mobile xếp dọc và vuốt ngang. Header phủ lên ảnh ở riêng route menu. Font Be Vietnam Pro và màu xanh/gold hiện có được giữ qua lớp ảnh/gradient; không có autoplay để khách đọc mô tả và thao tác chủ động.
+
+`MenuShowcase.tsx`, `MenuPhoto.tsx`, `menuImages.ts`, `menu-showcase.css` là các file chính. `client/public/menu-images/SOURCES.md` ghi nguồn ảnh từ Product.image thật; URL không phải ảnh dùng nền/icon dự phòng, không gán ảnh món khác.
+
+### Cửa sổ và bề mặt khách đồng bộ với thực đơn
+
+Theo yêu cầu tiếp theo ngày 13/10/2026, theme khách chuyển sang xanh đậm/chữ sáng/vàng để cửa sổ AI và các thành phần đi cùng nền ảnh. `styles/guest-surfaces.css` định nghĩa bề mặt, viền, overlay mờ, header/đóng, thẻ gợi ý và dock; token nằm ở `index.css`, áp qua `useGuestTheme` cả các portal Radix ở body. Staff/Admin vẫn dùng token nền kem hiện có. Khi in, token khách chuyển sang giấy trắng/chữ xanh đậm.
+
+AI Barista dùng nội dung/preset sẵn có, nhãn mô tả khẩu vị rõ ràng, trạng thái chọn và đang hỏi, kết quả có ảnh catalog qua MenuPhoto, lý do/size/caffeine/sữa/giá và nhãn fallback từ API. Kết quả mới cuộn vào vùng xem, header cửa sổ dài giữ nút đóng. Size/đường/đá, bộ lọc, giỏ/phiếu đơn, đánh giá và vào bàn kế thừa cùng bảng màu. QR vẫn là ảnh đen trắng có nền trắng của thư viện qrcode.
+
 - **Khách:** danh mục → món → size/đường/đá/topping → giỏ → đơn. Product chứa ảnh, mô tả, basePrice, variants, allowedOptions, isAvailable/isArchived/isFeatured. Danh mục và món là cấu trúc chính của trang menu; AI Barista là hỗ trợ chọn món.
 - **Nhân viên:** hàng chờ thu tiền → các cột KDS → phục vụ. Đơn mới `AWAITING_PAYMENT / UNPAID`; nhận đủ tiền mới `PENDING / PAID`. KDS dùng các nhãn **Chờ xác nhận**, **Đã nhận**, **Đang pha**, **Sẵn sàng**. Không đưa đơn chưa trả tiền vào hàng pha chế.
 - **Quản trị:** bàn/QR, món/danh mục/topping, hóa đơn, nhân viên, đánh giá và báo cáo. Các thao tác quản lý dùng route và quyền hiện có; số liệu lấy API/report job thật.
@@ -38,15 +50,15 @@ README mở đầu danh sách tính năng bằng **QR tự đổi mỗi 60 giây
 
 | Token          | Khách               | Nhân viên/Quản trị |
 | -------------- | ------------------- | ------------------ |
-| Nền            | `#E8EFEA`           | `#FAF7F2`          |
-| Chữ            | `#13271F`           | `#2B2118`          |
-| Primary        | `#22553F`           | `#285943`          |
+| Nền            | `#101D18`           | `#FAF7F2`          |
+| Chữ            | `#F6F3EB`           | `#2B2118`          |
+| Primary        | `#F4A21D`           | `#285943`          |
 | Accent         | `#F4A21D`           | `#C88A4D`          |
-| Card           | `#FCFDFA`           | `#FFFFFF`          |
+| Card           | `#1B2B23`           | `#FFFFFF`          |
 | Font giao diện | Be Vietnam Pro     | Be Vietnam Pro     |
 | Font tiêu đề   | Be Vietnam Pro     | Be Vietnam Pro     |
 
-Các giá trị lấy từ CSS, không đặt thêm bảng màu riêng. Theme khách chỉ áp trên portal/path khách. Nút hiện có bo tròn với chiều cao 36/40/48 px; card bo `rounded-2xl`, bóng `soft`; modal dùng Radix. Guest có dấu mây SVG, thanh điều hướng dưới trên điện thoại, dòng món có ảnh và phiếu hóa đơn mép răng cưa. Giữ những đặc điểm này khi cải thiện bố cục.
+Các giá trị lấy từ CSS đang triển khai. Theme khách chỉ áp trên portal/path khách, bao gồm cửa sổ Radix. Nút bo tròn với chiều cao 36/40/48 px; card bo `rounded-2xl`, bóng `soft`; modal dùng Radix. Guest có dấu mây SVG, thanh điều hướng dưới trên điện thoại, dòng món có ảnh và phiếu hóa đơn mép răng cưa. Giữ những đặc điểm này khi cải thiện bố cục.
 
 Theo yêu cầu đổi tên và kiểu chữ ngày 13/10/2026, tên hiển thị là **Fantastic cafe** và cả ba portal dùng **Be Vietnam Pro**, weight 400/500/600/700/800. Font WOFF2 và giấy phép OFL nằm trong `client/public/fonts/`, được phục vụ/cached cùng ứng dụng. Tiêu đề khách dùng weight 700, tiêu đề phụ 600; không dùng font hẹp hoặc serif cũ.
 

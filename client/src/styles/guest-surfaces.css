@@ -1,0 +1,263 @@
+/* Customer surfaces share the menu's forest background and warm gold actions.
+   Scope at the document root so Radix portals inherit the same visual identity. */
+.theme-guest body {
+  background: rgb(var(--c-background));
+  color: rgb(var(--c-foreground));
+}
+.theme-guest .guest-shell {
+  background-image: radial-gradient(ellipse at 85% 0%, rgb(67 100 74 / 0.18), transparent 55%);
+}
+.theme-guest .modal-overlay {
+  background: rgb(4 12 8 / 0.65);
+  backdrop-filter: blur(10px);
+}
+.theme-guest .modal-panel {
+  --guest-modal-padding: 20px;
+  padding: var(--guest-modal-padding);
+  border: 1px solid rgb(var(--c-foreground) / 0.16);
+  background: linear-gradient(145deg, #22372b, #17271f 65%);
+  color: rgb(var(--c-foreground));
+  box-shadow:
+    0 32px 100px rgb(0 0 0 / 0.5),
+    inset 0 1px rgb(255 255 255 / 0.04);
+  scrollbar-width: thin;
+  scrollbar-color: #516650 transparent;
+  overscroll-behavior: contain;
+  scroll-padding-top: 120px;
+}
+.theme-guest .modal-header {
+  position: relative;
+  z-index: 2;
+  margin: calc(-1 * var(--guest-modal-padding)) calc(-1 * var(--guest-modal-padding)) 0;
+  padding: var(--guest-modal-padding);
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid rgb(var(--c-foreground) / 0.1);
+  background: rgb(29 48 37 / 0.98);
+  backdrop-filter: blur(12px);
+}
+.theme-guest :is(.ai-sheet, .product-sheet) .modal-header {
+  position: sticky;
+  top: calc(-1 * var(--guest-modal-padding));
+}
+.theme-guest .modal-header h2 {
+  font-size: 22px;
+  letter-spacing: -0.035em;
+}
+.theme-guest .modal-header p {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.theme-guest .modal-title-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex-shrink: 0;
+  place-items: center;
+  border: 1px solid rgb(var(--c-accent) / 0.28);
+  border-radius: 16px;
+  background: rgb(var(--c-accent) / 0.1);
+  color: rgb(var(--c-accent));
+}
+.theme-guest .modal-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-self: start;
+  place-items: center;
+  border: 1px solid rgb(var(--c-foreground) / 0.15);
+  background: rgb(var(--c-foreground) / 0.04);
+}
+.theme-guest .modal-close:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 3px;
+}
+.theme-guest :is(input:not([type='checkbox']):not([type='radio']), textarea, select) {
+  color: rgb(var(--c-foreground));
+}
+.theme-guest :is(input, textarea)::placeholder {
+  color: rgb(var(--c-muted-fg) / 0.8);
+}
+.theme-guest textarea {
+  line-height: 1.75;
+}
+.theme-guest [data-tone='warning'] {
+  color: rgb(var(--c-accent));
+}
+.theme-guest button[data-variant='danger'] {
+  background: #b33930;
+  color: #fff;
+}
+.theme-guest .guest-dock {
+  background: rgb(22 39 30 / 0.96);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.4);
+}
+.theme-guest .guest-dock a[aria-current='page'] {
+  background: rgb(var(--c-accent) / 0.08);
+}
+.theme-guest .slip {
+  background: linear-gradient(145deg, #22362b, #1b2b23);
+}
+.theme-guest .product-sheet-footer {
+  background: #17271f;
+  box-shadow: 0 -12px 24px rgb(10 22 17 / 0.2);
+}
+.theme-guest .ai-sheet.g-sheet {
+  max-width: 38rem;
+}
+.ai-preferences {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: end;
+  gap: 14px;
+}
+.ai-preference-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ai-preference-toggles label {
+  height: 40px;
+  padding-inline: 12px;
+  font-size: 12px;
+}
+.ai-prompt {
+  background: rgb(9 23 16 / 0.35);
+  resize: vertical;
+  min-height: 104px;
+}
+.ai-presets {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+.ai-preset {
+  min-height: 42px;
+  padding: 9px 12px;
+  border: 1px solid rgb(var(--c-foreground) / 0.13);
+  border-radius: 12px;
+  background: rgb(var(--c-foreground) / 0.025);
+  text-align: left;
+  font-size: 11px;
+  line-height: 1.6;
+  transition:
+    background 180ms,
+    border-color 180ms;
+}
+.ai-preset:hover {
+  background: rgb(var(--c-muted));
+}
+.ai-preset[aria-pressed='true'] {
+  border-color: rgb(var(--c-accent) / 0.55);
+  background: rgb(var(--c-accent) / 0.08);
+  color: rgb(var(--c-accent));
+}
+.ai-preset:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+}
+.ai-result-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 10px;
+  line-height: 1.7;
+}
+.ai-result-heading p {
+  min-width: 180px;
+  flex: 1;
+}
+.ai-recommendation {
+  display: flex;
+  width: 100%;
+  align-items: start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid rgb(var(--c-foreground) / 0.12);
+  border-radius: 16px;
+  background: rgb(var(--c-foreground) / 0.025);
+  text-align: left;
+  transition:
+    background 180ms,
+    border-color 180ms;
+}
+.ai-recommendation:hover {
+  border-color: rgb(var(--c-accent) / 0.5);
+  background: rgb(var(--c-muted));
+}
+.ai-recommendation:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 3px;
+}
+@media (min-width: 640px) {
+  .theme-guest .ai-sheet {
+    --guest-modal-padding: 26px;
+  }
+}
+@media (min-width: 768px) {
+  .theme-guest .guest-join-intro {
+    background: linear-gradient(145deg, #294333, #14251f);
+    color: rgb(var(--c-foreground));
+  }
+  .theme-guest .guest-join-intro .text-primary-foreground {
+    color: rgb(var(--c-accent));
+  }
+  .theme-guest .guest-join-intro svg {
+    color: rgb(var(--c-accent));
+  }
+  .theme-guest .guest-join-intro p {
+    color: rgb(var(--c-muted-fg));
+  }
+  .theme-guest .guest-join-intro .g-display {
+    color: rgb(var(--c-foreground));
+  }
+}
+@media (max-width: 420px) {
+  .ai-preferences {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .theme-guest .modal-header h2 {
+    font-size: 20px;
+  }
+  .theme-guest .modal-title-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 13px;
+  }
+  .theme-guest .product-sheet-footer {
+    gap: 8px;
+  }
+  .theme-guest .product-sheet-footer > button {
+    padding-inline: 12px;
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-preset,
+  .ai-recommendation {
+    transition: none;
+  }
+}
+/* Keep printed customer receipts readable without a dark page of ink. */
+@media print {
+  :root.theme-guest.theme-guest {
+    color-scheme: light;
+    --c-background: 255 255 255;
+    --c-foreground: 19 39 31;
+    --c-primary: 34 85 63;
+    --c-primary-fg: 255 255 255;
+    --c-muted: 238 242 239;
+    --c-muted-fg: 78 97 88;
+    --c-card: 255 255 255;
+    --c-card-fg: 19 39 31;
+    --c-success: 42 127 73;
+    --c-danger: 179 49 42;
+  }
+  .theme-guest :is(.guest-shell, .slip) {
+    background: #fff;
+    color: #13271f;
+  }
+}

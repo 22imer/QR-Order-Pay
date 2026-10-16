@@ -17,7 +17,7 @@ declare module 'express-serve-static-core' {
   }
 }
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction): void {
+export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
     return next(new UnauthorizedError('Vui lòng đăng nhập.'));
@@ -25,7 +25,14 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
   const token = header.slice('Bearer '.length).trim();
   try {
     const payload = verifyAccessToken(token);
-    req.user = { id: payload.sub, role: payload.role, name: payload.name };
+    const user = await userRepository.findById(payload.sub);
+    if (
+      !user?.isActive ||
+      user.role !== payload.role ||
+      (user.authVersion ?? 0) !== (payload.authVersion ?? 0)
+    )
+      return next(new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.'));
+    req.user = { id: user.id, role: user.role, name: user.name };
     next();
   } catch {
     next(new UnauthorizedError('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại.'));
@@ -35,7 +42,8 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 export function requireRole(...roles: Array<'ADMIN' | 'STAFF'>) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) return next(new UnauthorizedError());
-    if (!roles.includes(req.user.role)) return next(new ForbiddenError('Bạn không có quyền truy cập chức năng này.'));
+    if (!roles.includes(req.user.role))
+      return next(new ForbiddenError('Bạn không có quyền truy cập chức năng này.'));
     next();
   };
 }

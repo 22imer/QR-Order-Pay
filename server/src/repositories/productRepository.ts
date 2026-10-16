@@ -1,5 +1,6 @@
 import type { ClientSession } from 'mongoose';
 import { ProductModel, type ProductDoc } from '../models/Product.js';
+import { categoryRepository } from './categoryRepository.js';
 
 export interface PublicProductFilters {
   categoryId?: string;
@@ -10,9 +11,12 @@ export interface PublicProductFilters {
 
 export const productRepository = {
   async listPublic(filters: PublicProductFilters = {}): Promise<ProductDoc[]> {
-    const query: Record<string, unknown> = { isArchived: false };
+    const categories = await categoryRepository.listActive();
+    const categoryIds = categories
+      .filter((category) => !filters.categoryId || category.id === filters.categoryId)
+      .map((category) => category._id);
+    const query: Record<string, unknown> = { isArchived: false, categoryId: { $in: categoryIds } };
     if (!filters.includeUnavailable) query.isAvailable = true;
-    if (filters.categoryId) query.categoryId = filters.categoryId;
     if (filters.tag) query.tags = filters.tag;
     if (filters.q) {
       const regex = new RegExp(escapeRegex(filters.q), 'i');
@@ -21,7 +25,13 @@ export const productRepository = {
     return ProductModel.find(query).sort({ sortOrder: 1, name: 1 });
   },
   async listFeatured(limit = 6): Promise<ProductDoc[]> {
-    return ProductModel.find({ isArchived: false, isAvailable: true, isFeatured: true })
+    const categories = await categoryRepository.listActive();
+    return ProductModel.find({
+      isArchived: false,
+      isAvailable: true,
+      isFeatured: true,
+      categoryId: { $in: categories.map((category) => category._id) },
+    })
       .sort({ sortOrder: 1 })
       .limit(limit);
   },
@@ -33,6 +43,12 @@ export const productRepository = {
   },
   async listAll(): Promise<ProductDoc[]> {
     return ProductModel.find().sort({ sortOrder: 1, name: 1 });
+  },
+  async countsByCategory(): Promise<Map<string, number>> {
+    const counts = await ProductModel.aggregate<{ _id: unknown; count: number }>([
+      { $group: { _id: '$categoryId', count: { $sum: 1 } } },
+    ]);
+    return new Map(counts.map((item) => [String(item._id), item.count]));
   },
   async create(data: Record<string, unknown>, session?: ClientSession | null): Promise<ProductDoc> {
     const [created] = await ProductModel.create([data], { session: session ?? undefined });
