@@ -1,6 +1,15 @@
 # Bộ nhớ dự án — Fantastic cafe
 
-Cập nhật: 16/10/2026.
+Cập nhật: 18/10/2026.
+
+## Khởi chạy và kiểm tra local — 18/10/2026
+
+- User yêu cầu chạy dự án và xem lỗi. Đã bật `maycafe-production` bằng `compose.production.yaml`; MongoDB, Redis, 4 API, 3 worker và web healthy; migration exit 0, các migration đã có được skip. Bốn API `/readyz` trả `ready`, cả MongoDB/Redis ready; không có restart trên API/worker tại thời điểm kiểm tra.
+- Tunnel public vẫn dừng. `.env` chỉ đổi `PUBLIC_APP_URL` từ tunnel cũ sang `http://localhost:8080`, giữ các cấu hình/secret khác. Đã build/recreate web với cấu hình local. Guest `http://localhost:8080/menu`, Staff `http://localhost:8081`, Admin `http://localhost:8082`. Public 4G cần bật lại bằng script để lấy hostname mới.
+- Source hiện tại: lint/typecheck/build PASS; **244 tests PASS** = 105 server unit, 95 integration, 44 client. Test integration dùng MongoMemoryReplSet riêng. Logs `.cache/startup-{lint,typecheck,tests,build}-20261018.log`; web build `.cache/startup-web-build-20261018.log`.
+- Smoke bằng **Lightpanda** trên web mới PASS: menu/product selection, đăng nhập Staff/Admin, Bàn/KDS/tài khoản Staff, Bàn/Món/tài khoản Admin; API menu/health, current user, KDS chỉ PAID và route isolation đúng. Không thấy JS exception hoặc HTTP 5xx trong lượt smoke. Lightpanda chỉ xác minh DOM/hành vi, chưa chứng minh CSS/layout trực quan. Không kiểm AI provider live, camera/4G hay máy in thật. Log/harness `.cache/startup-smoke-20261018.*`. Hai container Lightpanda/relay tạm được dừng sau kiểm tra.
+- `npm audit --json --fetch-retries=0 --fetch-timeout=20000` vẫn báo **15 vulnerabilities (2 moderate, 12 high, 1 critical)**; chưa nâng dependency. Report `.cache/startup-audit-bounded-20261018.json`.
+- Không seed/reset, tạo đơn/khoản thu thử, sửa catalog hoặc cấp/xoay khóa QR. Đã logout các phiên Staff/Admin thử nghiệm; giữ stack local chạy để user xem. User yêu cầu commit/push bản ghi kiểm tra này lên `main`; `.env`, `apikey.txt` và `.cache/` vẫn bị Git ignore.
 
 ## Trạng thái mới nhất — đã bật lại local và public, 16/10/2026
 
