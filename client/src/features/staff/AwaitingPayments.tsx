@@ -17,6 +17,7 @@ import { useToast } from '../../components/ui/useToast';
 import { WalletCards } from 'lucide-react';
 import { Input } from '../../components/ui/Input';
 import { usePaymentClaim } from './usePaymentClaim';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 
 export function AwaitingPayments(): JSX.Element {
   const query = useQuery({
@@ -142,6 +143,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
           </li>
         ))}
       </ul>
+      <BenefitBreakdown order={order} />
       <p className="text-sm">
         Tổng: {vnd(order.total)} · Đã thu: {vnd(order.paidAmount ?? 0)}
       </p>

@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose';
+import { recipeComponentSchema } from './Recipe.js';
 
 const orderItemSchema = new Schema(
   {
@@ -44,6 +45,20 @@ export const orderSchema = new Schema(
     tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
     items: { type: [orderItemSchema], required: true },
     total: { type: Number, required: true, min: 0 },
+    subtotal: { type: Number, default: null },
+    memberId: { type: Schema.Types.ObjectId, ref: 'Member', default: null },
+    voucherId: { type: Schema.Types.ObjectId, ref: 'Voucher', default: null },
+    voucherCode: { type: String, default: '' },
+    voucherDiscount: { type: Number, default: 0 },
+    pointsDiscount: { type: Number, default: 0 },
+    redeemedPoints: { type: Number, default: 0 },
+    earnedPoints: { type: Number, default: 0 },
+    inventorySnapshot: { type: [recipeComponentSchema], default: [] },
+    inventoryState: {
+      type: String,
+      enum: ['NONE', 'RESERVED', 'CONSUMED', 'RELEASED'],
+      default: 'NONE',
+    },
     // Null preserves old fully paid orders without a data rewrite.
     paidAmount: { type: Number, min: 0, default: null },
     status: {

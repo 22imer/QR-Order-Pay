@@ -22,6 +22,7 @@ import { tableRepository } from '../repositories/tableRepository.js';
 import { recordBusinessEvent, recordOrderStageDuration } from '../infrastructure/metrics.js';
 import { createOrderQuote } from '../services/orderPricingService.js';
 import { reviewRepository } from '../repositories/reviewRepository.js';
+import { MEMBER_COOKIE, resolveMember } from '../services/memberService.js';
 
 export async function quote(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -31,6 +32,9 @@ export async function quote(req: Request, res: Response, next: NextFunction): Pr
       tableSessionId: req.guest.tableSessionId,
       participantId: req.guest.participantId,
       items: input.items,
+      voucherCode: input.voucherCode,
+      redeemPoints: input.redeemPoints,
+      memberId: (await resolveMember(req.cookies?.[MEMBER_COOKIE]))?.id ?? null,
     });
     res.json({ success: true, data });
   } catch (error) {
@@ -52,17 +56,18 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
       idempotencyKey,
       items: input.items,
       note: input.note,
+      voucherCode: input.voucherCode,
+      redeemPoints: input.redeemPoints,
+      memberId: (await resolveMember(req.cookies?.[MEMBER_COOKIE]))?.id ?? null,
       quoteToken: input.quoteToken,
     });
     if (result.created) {
       recordBusinessEvent('order_created');
     }
-    res
-      .status(result.created ? 201 : 200)
-      .json({
-        success: true,
-        data: { order: toGuestOrder(result.order), created: result.created },
-      });
+    res.status(result.created ? 201 : 200).json({
+      success: true,
+      data: { order: toGuestOrder(result.order), created: result.created },
+    });
   } catch (e) {
     next(e);
   }

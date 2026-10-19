@@ -4,6 +4,7 @@ import {
   listAdminCategories,
   listAdminProducts,
   listAdminToppings,
+  listStaffAvailability,
 } from '../services/menuService.js';
 import { tableRepository } from '../repositories/tableRepository.js';
 import { userRepository } from '../repositories/userRepository.js';
@@ -261,8 +262,7 @@ export async function staffAvailabilityCatalog(
   next: NextFunction,
 ): Promise<void> {
   try {
-    const [products, toppings] = await Promise.all([listAdminProducts(), listAdminToppings()]);
-    res.json({ success: true, data: { products, toppings } });
+    res.json({ success: true, data: await listStaffAvailability() });
   } catch (error) {
     next(error);
   }

@@ -21,6 +21,11 @@ import '../src/models/ServiceRequest.js';
 import '../src/models/Table.js';
 import '../src/models/Topping.js';
 import '../src/models/User.js';
+import '../src/models/Ingredient.js';
+import '../src/models/Recipe.js';
+import '../src/models/StockMovement.js';
+import '../src/models/Member.js';
+import '../src/models/Voucher.js';
 
 interface Migration {
   id: string;
@@ -29,6 +34,27 @@ interface Migration {
   up: () => Promise<void>;
 }
 const migrations: Migration[] = [
+  {
+    id: '20261019-002-promotions-members-indexes',
+    description: 'Create member, member session, points ledger and voucher indexes',
+    checksumSource:
+      'v1:member-phone,member-session-token-ttl,points-order-type-member-history,voucher-code-use-order-member',
+    up: async () => {
+      for (const name of ['Member', 'MemberSession', 'PointEntry', 'Voucher', 'VoucherUse'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
+  {
+    id: '20261019-001-inventory-indexes',
+    description:
+      'Create ingredient, recipe and stock ledger indexes without rewriting business data',
+    checksumSource:
+      'v1:ingredients-code-unique,recipes-target-unique,stockmovements-idempotency-unique-history',
+    up: async () => {
+      for (const name of ['Ingredient', 'Recipe', 'StockMovement'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
   {
     id: '20261013-001-payment-correction-indexes',
     description: 'Create unique pending payment correction and accounting lookup indexes',

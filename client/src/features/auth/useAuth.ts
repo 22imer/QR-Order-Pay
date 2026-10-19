@@ -80,23 +80,22 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
-api.interceptors.response.use(
-  undefined,
-  async (error: unknown) => {
-    if (!axios.isAxiosError(error)) throw error;
-    const config = error.config as RetriableConfig | undefined;
-    if (error.response?.status !== 401 || !config) throw error;
-    const url = config.url ?? '';
-    const isAuthPath = AUTH_PATHS_WITHOUT_REFRESH.some((p) => url === p || url.endsWith(p));
-    const hasStaffSession = useAuth.getState().accessToken !== null;
-    if (isAuthPath || config._retry || !hasStaffSession) throw error;
-    config._retry = true;
-    const refreshed = refreshInFlight ?? (refreshInFlight = refreshAccessToken());
-    const token = await refreshed;
-    if (!token) throw error;
-    return api.request(config);
-  },
-);
+api.interceptors.response.use(undefined, async (error: unknown) => {
+  if (!axios.isAxiosError(error)) throw error;
+  const config = error.config as RetriableConfig | undefined;
+  if (error.response?.status !== 401 || !config) throw error;
+  const url = config.url ?? '';
+  const isAuthPath =
+    url.startsWith('/members/') ||
+    AUTH_PATHS_WITHOUT_REFRESH.some((p) => url === p || url.endsWith(p));
+  const hasStaffSession = useAuth.getState().accessToken !== null;
+  if (isAuthPath || config._retry || !hasStaffSession) throw error;
+  config._retry = true;
+  const refreshed = refreshInFlight ?? (refreshInFlight = refreshAccessToken());
+  const token = await refreshed;
+  if (!token) throw error;
+  return api.request(config);
+});
 
 export async function fetchMe(): Promise<void> {
   const data = await unwrap(await api.get<AuthUser>('/auth/me'));

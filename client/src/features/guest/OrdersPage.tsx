@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 import { useEffect, useState } from 'react';
 import { ListChecks, ReceiptText, Star, X } from 'lucide-react';
 import type { GuestOrder } from '@may-cafe/contracts';
@@ -188,6 +189,7 @@ export function OrdersPage(): JSX.Element {
                 ))}
               </ul>
 
+              <BenefitBreakdown order={order} />
               <div className="slip-rule" />
               <div className="flex items-end justify-between gap-3 pt-4">
                 <span className="g-title text-lg">Tổng</span>

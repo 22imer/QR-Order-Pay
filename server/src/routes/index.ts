@@ -13,6 +13,8 @@ import { loadGuest, loadReceiptGuest, requireGuest, guestCsrfGuard } from '../mi
 import { currentReceipt } from '../controllers/receiptController.js';
 import * as cancelRequest from '../controllers/cancelRequestController.js';
 import * as cashShift from '../controllers/cashShiftController.js';
+import * as inventory from '../controllers/inventoryController.js';
+import * as promotion from '../controllers/promotionController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -99,6 +101,23 @@ apiRouter.patch('/auth/me', authLimiter, requireAuth, auth.profile);
 apiRouter.post('/auth/password', authLimiter, requireAuth, auth.password);
 
 // public menu
+apiRouter.get('/members/me', promotion.me);
+apiRouter.post('/members/register', guestCsrfGuard, authLimiter, promotion.register);
+apiRouter.post('/members/login', guestCsrfGuard, authLimiter, promotion.login);
+apiRouter.post('/members/logout', guestCsrfGuard, authLimiter, promotion.logout);
+apiRouter.post('/members/password', guestCsrfGuard, authLimiter, promotion.password);
+apiRouter.get('/members/points', authLimiter, promotion.points);
+apiRouter.get('/admin/members', requireAuth, requireRole('ADMIN'), promotion.listMembers);
+apiRouter.patch('/admin/members/:id', requireAuth, requireRole('ADMIN'), promotion.updateMember);
+apiRouter.get(
+  '/admin/members/:id/points',
+  requireAuth,
+  requireRole('ADMIN'),
+  promotion.memberPoints,
+);
+apiRouter.get('/admin/vouchers', requireAuth, requireRole('ADMIN'), promotion.vouchers);
+apiRouter.post('/admin/vouchers', requireAuth, requireRole('ADMIN'), promotion.createVoucher);
+apiRouter.patch('/admin/vouchers/:id', requireAuth, requireRole('ADMIN'), promotion.updateVoucher);
 apiRouter.get('/categories', menu.listMenu);
 apiRouter.get('/products', menu.listMenu);
 apiRouter.get('/products/featured', menu.listFeaturedMenu);
@@ -381,6 +400,32 @@ apiRouter.patch(
 );
 
 // admin
+apiRouter.get('/admin/inventory', requireAuth, requireRole('ADMIN'), inventory.overview);
+apiRouter.post(
+  '/admin/inventory/ingredients',
+  requireAuth,
+  requireRole('ADMIN'),
+  inventory.createIngredient,
+);
+apiRouter.patch(
+  '/admin/inventory/ingredients/:id',
+  requireAuth,
+  requireRole('ADMIN'),
+  inventory.updateIngredient,
+);
+apiRouter.post(
+  '/admin/inventory/ingredients/:id/movements',
+  requireAuth,
+  requireRole('ADMIN'),
+  inventory.moveStock,
+);
+apiRouter.get('/admin/inventory/movements', requireAuth, requireRole('ADMIN'), inventory.movements);
+apiRouter.put(
+  '/admin/inventory/recipes/:type/:id',
+  requireAuth,
+  requireRole('ADMIN'),
+  inventory.saveRecipe,
+);
 apiRouter.get('/admin/reports/overview', requireAuth, requireRole('ADMIN'), admin.reportsOverview);
 apiRouter.post(
   '/admin/reports/overview/jobs',

@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { benefitSelectionSchema, benefitBreakdownSchema } from './promotions.js';
 
 export const moneyVndSchema = z.number().int().nonnegative();
 
@@ -256,6 +257,7 @@ export const orderItemSchema = z.object({
 });
 
 export const orderSchema = z.object({
+  ...benefitBreakdownSchema.shape,
   id: z.string(),
   code: z.string(),
   tableSessionId: z.string(),
@@ -286,6 +288,7 @@ const orderDtoItemSchema = orderItemSchema.extend({
   variantNameSnapshot: z.string(),
 });
 const orderDtoBaseSchema = z.object({
+  ...benefitBreakdownSchema.shape,
   _id: z.string(),
   code: z.string(),
   tableSessionId: z.string(),
@@ -354,6 +357,7 @@ export const joinTableRequestSchema = z.object({
 });
 
 export const placeOrderRequestSchema = z.object({
+  ...benefitSelectionSchema.shape,
   items: z
     .array(
       z.object({
@@ -372,6 +376,9 @@ export const placeOrderRequestSchema = z.object({
 });
 export const quoteOrderRequestSchema = placeOrderRequestSchema.omit({ quoteToken: true });
 export const orderQuoteResponseSchema = z.object({
+  voucherAllowsPoints: z.boolean().optional(),
+  maxRedeemPoints: z.number().int().nonnegative().optional(),
+  ...benefitBreakdownSchema.shape,
   quoteId: z.string(),
   quoteToken: z.string(),
   expiresAt: z.string().datetime(),
@@ -614,6 +621,7 @@ export const receiptResponseSchema = z.object({
   total: moneyVndSchema,
   orders: z.array(
     z.object({
+      ...benefitBreakdownSchema.shape,
       _id: z.string(),
       code: z.string(),
       total: moneyVndSchema,
@@ -692,6 +700,7 @@ export const billHistoryDetailSchema = billHistoryRowSchema.extend({
   ),
   orders: z.array(
     z.object({
+      ...benefitBreakdownSchema.shape,
       _id: z.string(),
       code: z.string(),
       status: orderStatusSchema,

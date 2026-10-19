@@ -10,6 +10,253 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /members/register:
+    post:
+      summary: Đăng ký thành viên bằng tên, SĐT Việt Nam và mật khẩu; không SMS
+      description: Body strict gồm name, phone, password. Mật khẩu từ 8 ký tự, tối đa 72 byte UTF-8. Set cookie HttpOnly mc_member 14 ngày, JSON không trả token/hash.
+      responses:
+        '201': { description: DTO member }
+        '409': { description: SĐT đã đăng ký }
+        '422': { description: Input không hợp lệ }
+  /members/login:
+    post:
+      summary: Đăng nhập SĐT + mật khẩu, set cookie HttpOnly mc_member
+      description: Body gồm phone, password. Chuẩn hóa +84 thành 0. Sáu lần sai khóa 15 phút; thêm Redis limiter theo IP.
+      responses:
+        '200': { description: DTO member }
+        '401': { description: Sai thông tin hoặc tài khoản khóa }
+        '429': { description: Khóa đăng nhập tạm thời hoặc rate limit }
+  /members/me:
+    get:
+      summary: Thành viên hiện tại hoặc null và quy tắc tích/đổi điểm
+      responses:
+        '200': { description: member và rules }
+  /members/logout:
+    post:
+      summary: Thu hồi phiên thành viên hiện tại và xóa cookie
+      responses:
+        '200': { description: OK }
+  /members/password:
+    post:
+      summary: Đổi mật khẩu thành viên và thu hồi mọi phiên
+      description: Body strict gồm currentPassword và password mới.
+      responses:
+        '200': { description: Đã đổi; cần đăng nhập lại }
+        '401': { description: Chưa đăng nhập hoặc sai mật khẩu hiện tại }
+  /members/points:
+    get:
+      summary: Cookie thành viên hợp lệ xem sổ điểm của chính mình; page mặc định 1, 20 dòng/trang
+      responses:
+        '200': { description: items, total, page; EARN/REDEEM/RETURN và balanceAfter }
+        '401': { description: Cần đăng nhập thành viên }
+  /admin/vouchers:
+    get:
+      summary: ADMIN xem 200 voucher mới nhất kèm số lượt đang giữ/đã dùng
+      responses:
+        '200': { description: items }
+    post:
+      summary: ADMIN tạo voucher FIXED/PERCENT
+      description: Cấu hình strict theo voucherCreateSchema trong packages/contracts/src/promotions.ts; không tự tạo dữ liệu mẫu. Có mức đơn tối thiểu, trần giảm, thời gian, tổng lượt, điều kiện và lượt thành viên. allowPointRedemption (boolean, mặc định false) bật quyền dùng kèm điểm; giới hạn điểm tính sau voucher.
+      responses:
+        '201': { description: voucher DTO }
+        '409': { description: Mã trùng }
+  /admin/vouchers/{id}:
+    patch:
+      summary: ADMIN sửa cấu hình voucher với expectedVersion; không đổi mã
+      responses:
+        '200': { description: voucher DTO }
+        '409': { description: Version đã đổi }
+  /admin/members:
+    get:
+      summary: ADMIN tìm theo q là tên/SĐT, phân trang page, 20 dòng/trang
+      responses:
+        '200': { description: items, total, page; không có passwordHash/token }
+  /admin/members/{id}:
+    patch:
+      summary: ADMIN khóa/mở/đặt lại mật khẩu thành viên, thu hồi phiên
+      description: Body strict gồm expectedVersion, isActive và/hoặc password mới; không được sửa điểm.
+      responses:
+        '200': { description: member DTO }
+        '409': { description: Version đã đổi }
+  /admin/members/{id}/points:
+    get:
+      summary: ADMIN xem sổ điểm thành viên theo page
+      responses:
+        '200': { description: items, total, page }
+  /admin/inventory:
+    get:
+      summary: ADMIN xem nguyên liệu, tồn thực, lượng giữ, cảnh báo và công thức
+      responses:
+        '200': { description: data gồm ingredients, recipes, products và toppings }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Chỉ ADMIN }
+  /admin/inventory/ingredients:
+    post:
+      summary: ADMIN thêm nguyên liệu với tồn ban đầu bằng 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code, name, unit]
+              properties:
+                code: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' }
+                name: { type: string, minLength: 1, maxLength: 100 }
+                unit: { type: string, enum: [g, ml, unit] }
+                lowStockThreshold:
+                  { type: number, minimum: 0, maximum: 1000000000, multipleOf: 0.001, default: 0 }
+      responses:
+        '201': { description: data.ingredient với lượng theo đơn vị cơ sở }
+        '403': { description: Chỉ ADMIN }
+        '409': { description: Mã nguyên liệu đã tồn tại }
+        '422': { description: Dữ liệu không hợp lệ }
+  /admin/inventory/ingredients/{id}:
+    patch:
+      summary: ADMIN sửa tên, ngưỡng cảnh báo hoặc ngừng dùng nguyên liệu
+      description: Không đổi mã/đơn vị; không ngừng nguyên liệu đang giữ cho đơn.
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, lowStockThreshold, isActive, expectedVersion]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 100 }
+                lowStockThreshold:
+                  { type: number, minimum: 0, maximum: 1000000000, multipleOf: 0.001 }
+                isActive: { type: boolean }
+                expectedVersion: { type: integer, minimum: 0 }
+      responses:
+        '200': { description: data.ingredient }
+        '403': { description: Chỉ ADMIN }
+        '409': { description: Version thay đổi hoặc còn nguyên liệu đang giữ }
+        '422': { description: Dữ liệu không hợp lệ }
+  /admin/inventory/ingredients/{id}/movements:
+    post:
+      summary: ADMIN ghi nhận nhập, xuất khác hoặc kiểm kê có lý do và chống ghi trùng
+      description: Quantity theo g/ml/đơn vị; ADJUSTMENT là tổng tồn sau kiểm kê. Không được thấp hơn lượng đang giữ. Retry giữ nguyên idempotencyKey và nội dung, không yêu cầu version cũ còn khớp nếu đã ghi nhận.
+      parameters:
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [type, quantity, reason, expectedVersion, idempotencyKey]
+              properties:
+                type: { type: string, enum: [RECEIPT, ISSUE, ADJUSTMENT] }
+                quantity: { type: number, minimum: 0, maximum: 1000000000, multipleOf: 0.001 }
+                reason: { type: string, minLength: 3, maxLength: 280 }
+                expectedVersion: { type: integer, minimum: 0 }
+                idempotencyKey: { type: string, minLength: 8, maxLength: 64 }
+      responses:
+        '200': { description: data.id và data.replayed }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Không có nguyên liệu }
+        '409': { description: Version đổi, thiếu tồn hoặc key dùng cho nội dung khác }
+        '422': { description: Dữ liệu không hợp lệ }
+  /admin/inventory/movements:
+    get:
+      summary: ADMIN xem sổ biến động kho phân trang 30 dòng
+      parameters:
+        - {
+            in: query,
+            name: page,
+            schema: { type: integer, minimum: 1, maximum: 100000, default: 1 },
+          }
+        - { in: query, name: ingredientId, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200':
+          {
+            description: data.items,
+            total,
+            page và limit; có lượng biến động,
+            tồn sau,
+            giữ sau,
+            lý do,
+            đơn và người thao tác,
+          }
+        '403': { description: Chỉ ADMIN }
+  /admin/inventory/recipes/{type}/{id}:
+    put:
+      summary: ADMIN lưu công thức nền và công thức thay thế theo size
+      description: Xem docs/inventory.md và recipeSaveSchema trong contracts. Payload gồm enabled, components, variants và expectedVersion. Component gồm ingredientId và quantity lớn hơn 0, tối đa 3 chữ số thập phân. Topping không có variants. Công thức bật cần ít nhất một nguyên liệu nền; không cho trùng nguyên liệu/size. Không sửa snapshot kho của đơn đã đặt.
+      parameters:
+        - {
+            in: path,
+            name: type,
+            required: true,
+            schema: { type: string, enum: [PRODUCT, TOPPING] },
+          }
+        - {
+            in: path,
+            name: id,
+            required: true,
+            schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enabled, components, variants, expectedVersion]
+              properties:
+                enabled: { type: boolean }
+                expectedVersion: { type: integer, minimum: 0 }
+                components:
+                  type: array
+                  maxItems: 100
+                  items: &inventoryComponent
+                    type: object
+                    additionalProperties: false
+                    required: [ingredientId, quantity]
+                    properties:
+                      ingredientId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+                      quantity:
+                        {
+                          type: number,
+                          minimum: 0,
+                          exclusiveMinimum: true,
+                          maximum: 1000000000,
+                          multipleOf: 0.001,
+                        }
+                variants:
+                  type: array
+                  maxItems: 30
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [variantId, components]
+                    properties:
+                      variantId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+                      components:
+                        { type: array, minItems: 1, maxItems: 100, items: *inventoryComponent }
+      responses:
+        '200': { description: data.version mới }
+        '403': { description: Chỉ ADMIN }
+        '404': { description: Món/topping không tồn tại hoặc đã xóa }
+        '409': { description: Version công thức đã đổi }
+        '422': { description: Nguyên liệu hoặc size không hợp lệ }
   /table-displays/qr:
     get:
       summary: Lấy QR vào bàn còn hạn trong chu kỳ 60 giây
@@ -84,7 +331,12 @@ paths:
         '201': { description: Đã thu tiền }
         '200': { description: Idempotent replay }
         '409': { description: Version hoặc idempotency conflict }
-        '422': { description: Số tiền vượt phần còn thiếu, không dương với đơn có dư nợ, hoặc dữ liệu không hợp lệ }
+        '422':
+          {
+            description: Số tiền vượt phần còn thiếu,
+            không dương với đơn có dư nợ,
+            hoặc dữ liệu không hợp lệ,
+          }
   /staff/table-sessions/{id}/payment-claim:
     post:
       summary: STAFF hoặc ADMIN giữ/gia hạn quyền thu toàn phiên bàn trong 120 giây
@@ -103,7 +355,8 @@ paths:
               properties:
                 token: { type: string, minLength: 16, maxLength: 128 }
       responses:
-        '200': { description: data.expiresAt và version phiên mới; gia hạn bằng cùng token và tài khoản }
+        '200':
+          { description: data.expiresAt và version phiên mới; gia hạn bằng cùng token và tài khoản }
         '409': { description: Bàn đã đóng hoặc người/cửa sổ khác giữ quyền }
   /staff/table-sessions/{id}/payment-claim/release:
     post:
@@ -132,7 +385,14 @@ paths:
           name: page
           schema: { type: integer, minimum: 1 }
       responses:
-        '200': { description: data.items (30/trang), total, corrections (200 yêu cầu, ưu tiên đang chờ), targets (200 đơn chờ) }
+        '200':
+          {
+            description: data.items (30/trang),
+            total,
+            corrections (200 yêu cầu,
+            ưu tiên đang chờ),
+            targets (200 đơn chờ),
+          }
   /admin/payments:
     get:
       summary: ADMIN tra cứu khoản thu và hàng chờ duyệt
@@ -156,8 +416,14 @@ paths:
               properties:
                 kind: { type: string, enum: [VOID, METHOD, TRANSFER] }
                 reason: { type: string, minLength: 3, maxLength: 280 }
-                method: { type: string, enum: [CASH, BANK_TRANSFER, OTHER], description: Bắt buộc cho METHOD }
-                targetOrderId: { type: string, description: ObjectId đơn nhận, bắt buộc cho TRANSFER }
+                method:
+                  {
+                    type: string,
+                    enum: [CASH, BANK_TRANSFER, OTHER],
+                    description: Bắt buộc cho METHOD,
+                  }
+                targetOrderId:
+                  { type: string, description: ObjectId đơn nhận, bắt buộc cho TRANSFER }
       responses:
         '201': { description: Đã lập yêu cầu chờ quản lý khác duyệt }
         '409': { description: Khoản thu đã thay đổi, đang giữ quyền thu hoặc có yêu cầu khác }
@@ -430,6 +696,7 @@ paths:
   /orders:
     post:
       summary: Đặt món
+      description: Cần cookie QR và quoteToken còn hạn. Chọn voucherCode và/hoặc redeemPoints nếu voucher bật allowPointRedemption; trừ voucher trước, điểm tối đa 50% phần còn lại. Thành viên xác định qua cookie mc_member, không nhận memberId/discount từ client.
       parameters:
         - in: header
           name: Idempotency-Key
@@ -458,6 +725,9 @@ paths:
                       note: { type: string, maxLength: 280 }
                       quantity: { type: integer, minimum: 1, maximum: 50 }
                 note: { type: string, maxLength: 280 }
+                quoteToken: { type: string, minLength: 20 }
+                voucherCode: { type: string, minLength: 3, maxLength: 32 }
+                redeemPoints: { type: integer, minimum: 0, maximum: 1000000 }
       responses:
         '201': { description: Tạo mới }
         '200': { description: Replay (idempotent) }
@@ -705,7 +975,11 @@ paths:
         '201': { description: OK }
   /admin/products/{id}:
     patch: { summary: Cập nhật món, responses: { '200': { description: OK } } }
-    delete: { summary: Xóa mềm món (giữ lịch sử và có thể khôi phục), responses: { '200': { description: OK } } }
+    delete:
+      {
+        summary: Xóa mềm món (giữ lịch sử và có thể khôi phục),
+        responses: { '200': { description: OK } },
+      }
   /admin/categories:
     get: { summary: Danh mục, responses: { '200': { description: OK } } }
     post: { summary: Tạo danh mục, responses: { '201': { description: OK } } }
@@ -732,7 +1006,8 @@ paths:
                   type: string
                   description: ID danh mục nhận; bắt buộc nếu còn món, gồm món đã xóa mềm
       responses:
-        '200': { description: Đã chuyển món và xóa danh mục; data.category.movedProductCount ghi số món }
+        '200':
+          { description: Đã chuyển món và xóa danh mục; data.category.movedProductCount ghi số món }
         '403': { description: Chỉ ADMIN }
         '404': { description: Danh mục nguồn hoặc nhận không tồn tại }
         '409': { description: CATEGORY_NOT_EMPTY khi còn món mà chưa chọn danh mục nhận }
@@ -751,11 +1026,16 @@ paths:
   /admin/tables:
     get: { summary: Danh sách bàn, responses: { '200': { description: OK } } }
   /admin/users:
-    get: { summary: Danh sách tài khoản (ADMIN), responses: { '200': { description: Không trả passwordHash } } }
+    get:
+      {
+        summary: Danh sách tài khoản (ADMIN),
+        responses: { '200': { description: Không trả passwordHash } },
+      }
     post:
       summary: Tạo tài khoản STAFF hoặc ADMIN
       responses:
-        '201': { description: 'Tài khoản mới; name, email, password 8–72 ký tự, role STAFF hoặc ADMIN' }
+        '201':
+          { description: 'Tài khoản mới; name, email, password 8–72 ký tự, role STAFF hoặc ADMIN' }
         '409': { description: Email đã được sử dụng }
   /admin/users/{id}:
     patch:
@@ -795,15 +1075,12 @@ paths:
         '422': { description: Mật khẩu hiện tại sai hoặc mật khẩu mới không hợp lệ }
   /orders/quote:
     post:
-      {
-        summary: Báo giá ký số ràng buộc guest/phiên/fingerprint giỏ,
-        responses:
-          {
-            '200': { description: Dòng món chuẩn hóa, tổng và thời hạn },
-            '409': { description: Món không khả dụng },
-            '422': { description: Tùy chọn sai },
-          },
-      }
+      summary: Báo giá ký số ràng buộc guest/phiên/fingerprint giỏ và thành viên/ưu đãi
+      description: Body items và voucherCode và/hoặc redeemPoints. Response thêm subtotal, voucherCode, voucherDiscount, pointsDiscount, redeemedPoints, voucherAllowsPoints, maxRedeemPoints. Kiểm lại quyền kết hợp/quota/điểm khi đặt trong transaction.
+      responses:
+        '200': { description: Dòng món chuẩn hóa, tổng và thời hạn }
+        '409': { description: Món/voucher không khả dụng hoặc không đủ điểm }
+        '422': { description: Tùy chọn hoặc điều kiện ưu đãi sai }
   /orders/{id}/cancel-requests:
     post:
       {

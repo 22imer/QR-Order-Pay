@@ -83,7 +83,7 @@ export function GuestLayout(): JSX.Element {
       setSession(session.tableSessionId, session.participantId);
     else if (session && !session.active) {
       resetSession();
-      if (session.receiptAvailable && location.pathname !== '/receipt')
+      if (session.receiptAvailable && !['/receipt', '/member'].includes(location.pathname))
         navigate('/receipt', { replace: true });
     }
   }, [session, setSession, resetSession, navigate, location.pathname]);
@@ -202,6 +202,12 @@ export function GuestLayout(): JSX.Element {
               </Button>
             ) : null}
           </nav>
+          <NavLink
+            to="/member"
+            className="shrink-0 rounded-full px-3 py-2 text-sm font-semibold hover:bg-card"
+          >
+            Thành viên
+          </NavLink>
           {activeSession || receiptAvailable ? (
             <Button
               size="sm"

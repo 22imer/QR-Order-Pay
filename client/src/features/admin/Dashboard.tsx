@@ -218,7 +218,7 @@ export function AdminDashboard(): JSX.Element {
             <tr className="text-left">
               <th className="py-2">Sản phẩm</th>
               <th className="py-2">Số lượng</th>
-              <th className="py-2">Doanh thu</th>
+              <th className="py-2">Tiền món trước ưu đãi</th>
             </tr>
           </thead>
           <tbody>

@@ -1,4 +1,37 @@
-# Test report — cập nhật 16/10/2026
+# Test report — cập nhật 19/10/2026
+
+## Voucher dùng kèm điểm có điều kiện — 19/10/2026
+
+- **295 tests PASS = server 238 (105 unit + 133 integration), client 57**. Lint/typecheck/build PASS, thêm 5 integration + 3 client so với bản #5 trước. Logs `.cache/promotion-stacking-{server,client,typecheck,lint,build}.log`.
+- Kiểm thử trừ voucher trước, cap điểm 50% tiền còn lại (fixed/%/làm tròn/còn 0đ), legacy/default false, admin tắt quyền sau quote, tổng net và điểm tích, idempotency/rollback, hai đơn tranh lượt cuối không trừ điểm bên thua, hoàn cả điểm và lượt đúng một lần, snapshot hai khoản giảm trong Bill/receipt/in lại. Client giữ nguyên lựa chọn và cap sau voucher khi sửa điểm, hiển thị từ chối kết hợp, gửi cả hai cùng quote, checkbox admin được lưu.
+- Tài liệu `docs/promotions-loyalty.md` đã cập nhật chính sách mới và 11 ca tự test. Các kết quả bên dưới về không cộng dồn thuộc bản trước, voucher cũ vẫn mặc định không kết hợp nếu admin chưa bật.
+- Lightpanda cô lập PASS tạo/sửa quyền kết hợp, giỏ giữ hai lựa chọn và cap 25 điểm sau voucher10k/đơn60k, đặt đơn net40k, hủy hoàn cả hai, tắt quyền bị chặn mà không mất lựa chọn; không JS exception/5xx. Migration cũ apply/rerun vẫn PASS. Sau backup/build/recreate, local stack healthy và Lightpanda read-only PASS checkbox mới mặc định tắt (hủy form không lưu), member/admin navigation/API và 3 portal health/isolation. Không sửa dữ liệu quán; logs `.cache/promotion-stacking-{lightpanda,docker,local-start,local-smoke}.log`. Chưa xác minh CSS/layout, native dropdown, in giấy hay điện thoại thật; container trình duyệt tạm đã dọn.
+
+## Voucher và thành viên theo SĐT + mật khẩu (#5) — 19/10/2026
+
+- **287 tests PASS**: server 233 (105 unit + 128 integration), client 54. Mới thêm 19 integration và 6 client. Lint, typecheck, production build PASS. Logs `.cache/promotion-{server,client}-final.log`, `.cache/promotion-{lint,typecheck}-final.log`, `.cache/promotion-build.log`.
+- Integration kiểm tra chuẩn hóa/hash/phiên HttpOnly/phân quyền/CSRF/lock login/revoke; quote gắn member/ưu đãi; min đơn/%/trần/thời hạn; tranh quota/điểm; rollback transaction; idempotency; thu từng phần/đủ không tích sớm; PAID+SERVED tích theo tổng net; hủy/hoàn/VOID; đơn 0đ; snapshot hóa đơn/receipt/in lại sau sửa mã. Database Mongo tạm, không ghi test vào quán.
+- Client kiểm đăng ký/lỗi, lịch sử/logout xóa cache riêng, áp voucher chỉ gửi code + signed quote, đổi điểm không cộng dồn và chặn lỗi số dư, admin tạo mã có điều kiện và khóa member với observed version.
+- Lightpanda trên DB cô lập PASS form tạo voucher, đăng ký, giỏ/đơn giảm giá, thanh toán/SERVED + tích điểm, đổi/hủy/hoàn điểm trên UI, lịch sử/khóa từ admin và đăng xuất khách; migration apply + rerun skip. Logs/harness `.cache/promotion-lightpanda-smoke*`. Giới hạn một context/page, kiểm tuần tự; không có bằng chứng CSS/layout, native dropdown, in giấy hoặc điện thoại thật.
+- Hướng dẫn và 10 kịch bản user tự test: `docs/promotions-loyalty.md`. Không có SMS, không xác minh sở hữu SĐT; quên mật khẩu nhờ admin kiểm tra yêu cầu tại quầy rồi reset.
+- Runtime local đã backup Mongo, build toàn stack, apply migration chỉ thêm indexes; hash 12 collection nghiệp vụ trước/sau migration không đổi. Web/4 API/3 worker/Mongo/Redis healthy, giữ chạy Guest 8080/Staff 8081/Admin 8082. Lightpanda read-only smoke local PASS member nav/login/register form, admin voucher/members nav và protected reads, 3 portal health và API isolation; không JS exception/5xx. Không tạo thành viên/voucher/đơn/thu tiền hay sửa QR/kho trên DB quán. Backup `.cache/maycafe-before-promotions-20261019.archive.gz`, logs `.cache/promotion-local-smoke.log`, `.cache/promotion-{docker-build,migration,local-start}.log`. Container Lightpanda/relay tạm đã dọn. OpenAPI YAML và whitespace PASS.
+
+## Dữ liệu mẫu kho và hướng dẫn tự test — 19/10/2026
+
+- Theo yêu cầu user, đã nạp API 32 nguyên liệu, 32 receipt tồn đầu, 22 recipe món và 6 recipe topping. Backup `.cache/maycafe-before-inventory-demo-20261019.archive.gz`; hash Order/Payment/Bill/Table/TableSession/Category trước/sau không đổi, các trường nghiệp vụ catalog giữ nguyên.
+- Bộ nạp mặc định preview; đã chạy apply thành công rồi apply lại để kiểm idempotency: 0 ingredient/receipt/recipe mới, replay 32 receipt; đối chiếu toàn bộ số lượng và version recipe không đổi. Kiểm đọc `priceOrderItems` cho 30 cấu hình món/size/topping thật: đủ nguyên liệu và đúng tổng giá, không giữ/trừ tồn. Syntax `node --check scripts/setup-inventory-demo.mjs` và whitespace PASS. Không đổi code runtime nên không chạy lại suite đã đạt bên dưới.
+- Dữ liệu `docs/data/inventory-demo.json`, tài liệu `docs/inventory-demo-data.md`, 12 ca tự test `docs/inventory-test-scenarios.md`. Các ca tạo đơn/thu/hoàn/pha chế được ghi là hướng dẫn để user tự chạy, không tính là manual PASS trên DB quán. Stack local giữ chạy; chưa xác minh CSS/layout mới ngoài các giới hạn Lightpanda đã ghi.
+
+## Kho nguyên liệu và công thức — 19/10/2026
+
+- **Runtime sau yêu cầu chạy test của user:** đã backup `.cache/maycafe-before-inventory-20261019.archive.gz`, build/recreate toàn stack production-local và apply migration inventory thành công; tất cả dịch vụ healthy, giữ chạy tại Guest 8080/Staff 8081/Admin 8082. Lightpanda smoke chỉ đọc PASS menu, login Staff/Admin, availability có effectiveAvailable, trang `/admin/inventory` và 3 tab, API kho 200 và chặn API Admin từ Guest; không JS exception/HTTP 5xx. DB có 0 nguyên liệu/0 công thức, không tự tạo fixture thật. Phiên smoke đã logout, container browser/relay tạm đã gỡ. Logs `.cache/inventory-local-start-20261019.log`, `.cache/inventory-local-smoke-20261019.log`. Chưa xác minh CSS/layout trực quan. Các ghi chú chưa cập nhật runtime bên dưới thuộc thời điểm hoàn tất source trước yêu cầu chạy.
+
+- Lint/typecheck/build PASS. **262 tests PASS**: server unit 105, integration 109, client 48. Thêm 14 integration tests và 4 client tests. Logs `.cache/inventory-{lint,typecheck,build,unit,integration,client}-20261019.log`.
+- Integration MongoMemoryReplSet riêng: phân quyền/strict validation, mã nguyên liệu unique, số lượng thập phân, nhập/xuất/kiểm kê và audit/ledger, version/idempotency và hai request cùng key; công thức/size/topping, cộng nhiều dòng chung nguyên liệu; hai bàn tranh phần cuối chỉ một thành công; replay không giữ hai lần; hủy/hoàn một phần trả giữ; PREPARING xuất đúng snapshot cũ và chỉ một lần; chặn giảm tồn dưới phần giữ/ngừng nguyên liệu còn giữ; rollback Order/Ingredient/ledger/outbox; giữ cờ ngừng bán thủ công và tương thích món/đơn chưa quản lý kho.
+- Menu, featured, search, AI fallback, validate cấu hình và giỏ cũ đều chặn thiếu nguyên liệu; nhập tồn khôi phục khả năng bán. Client kiểm payload nhập kho/version/key, retry cùng payload sau mất mạng, công thức nền + size thay thế và tải lịch sử khi mở tab.
+- Lượt `npm run test` đầu tiên chưa đạt: ổ C chỉ còn khoảng 50 MB khiến MongoDB tạm fassert, một test client cũ timeout khi chạy song song. Chuyển TEMP/TMP trong process test sang D và chạy từng nhóm; server unit 105, integration 109, client 48 đều đạt. Không đổi timeout để che lỗi.
+- Lightpanda CDP trên image `lightpanda/browser:nightly`, frontend production build và DB tạm: login/menu Admin, thêm nguyên liệu và chọn đơn vị, nhập tồn, bật công thức/size, Staff badge thiếu nguyên liệu, lịch sử và menu khôi phục sau hủy PASS; không JS exception hoặc HTTP 5xx. Vì native selectOption chưa cập nhật trạng thái React trong Lightpanda, dropdown được kiểm bằng gán giá trị + dispatch DOM change và đối chiếu API/DB. **Chưa chứng minh thao tác dropdown native hoặc CSS/layout trực quan.** Harness/log `.cache/inventory-lightpanda-smoke-20261019.mts`, `.cache/inventory-lightpanda-20261019.log`.
+- Migration compiled mới apply rồi skip idempotent trên DB tạm, số lượng Product/Ingredient không đổi. Không seed/reset DB quán hoặc cập nhật runtime production; stack local đang dừng từ trước lượt này. Không kiểm AI provider live. Hướng dẫn `docs/inventory.md`.
 
 ## Kiểm tra trước checkpoint Git — 16/10/2026
 
@@ -14,7 +47,6 @@
 - Cloudflare tunnel chuyển đúng Guest 8080; HTTPS/menu/API public HTTP 200. Browser mobile secure context, guest portal meta, menu và WebSocket handshake PASS. Negative join nhận đúng lỗi vé đầu vào thay vì CSRF origin; token màn hình sai bị chặn. Public /auth/login, /staff, /admin và API nội bộ trả 404; local 8081/8082 healthy và hiển thị đăng nhập.
 - User tự chọn bàn; không cấp lại khóa màn hình, tạo phiên/đơn/khoản thu hoặc reset database. Camera/4G trên điện thoại thực tế chưa được kiểm tra. Ảnh `.cache/public-browser/menu-phone.png`; logs `.cache/public-{web-build,client-tests,lint,start,production}.log`.
 
-
 ## Tài khoản, topping và khoản thu — 15/10/2026
 
 - Typecheck/lint/build PASS; **198 tests PASS**: server unit 71, integration 85, client 42. Logs `.cache/account-{tests,typecheck,lint,build}.log`.
@@ -22,7 +54,6 @@
 - Làm rõ giao diện: bấm tên người dùng mở profile; menu giữ Nhân viên và các mục nghiệp vụ. Xóa nhân viên chỉ ADMIN xóa STAFF, ẩn khỏi list, chặn login/access/refresh và mở khóa lại bằng PATCH; payment snapshot và tên người thu được giữ nguyên. Client kiểm hủy/xác nhận xóa nhân viên. Các kiểm thử nằm trong accountCatalog.test.tsx và accounts.test.ts.
 - Topping: chỉ admin xóa mềm/khôi phục, invalid ID bị chặn, menu loại topping đã xóa, cấu hình AI và giỏ cũ không chấp nhận, snapshot đơn giữ nguyên, audit/outbox đầy đủ.
 - Client: sửa tên/đổi mật khẩu và đăng xuất, khóa mình bị vô hiệu và khóa người khác cần xác nhận, hủy/xác nhận xóa topping/khôi phục, mã khoản thu ẩn mặc định trong Chi tiết nhưng vẫn mở được.
-
 
 - Production-local đã cập nhật toàn stack, mọi dịch vụ healthy. Chromium PASS 18 màn hình ở 375/768/1440 trên hai portal: trang tài khoản, sửa tài khoản Admin, xác nhận xóa topping và khoản thu gọn; không tràn ngang hoặc page error. Mọi hộp sửa/xóa đều hủy; users và topping nghiệp vụ không đổi. Ảnh `.cache/account-browser/`, log `.cache/account-production.log`.
 

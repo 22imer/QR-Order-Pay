@@ -5,6 +5,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { receiptResponseSchema } from '@may-cafe/contracts';
 import { OrderReview } from './OrderReview';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 
 function iceLabel(value: string): string {
   return value === 'no-ice' ? 'không đá' : value === 'less-ice' ? 'ít đá' : 'đá thường';
@@ -91,6 +92,7 @@ export function ReceiptPage(): JSX.Element {
                     </li>
                   ))}
                 </ul>
+                <BenefitBreakdown order={order} />
                 <p className="mt-3 flex justify-between text-sm text-muted-foreground">
                   <span>Tổng đơn, đã thanh toán</span>
                   <span className="tabular-nums">{vnd(order.total)}</span>
@@ -119,8 +121,8 @@ export function ReceiptPage(): JSX.Element {
       ) : null}
 
       <p className="text-sm text-muted-foreground print:mt-4">
-        Cảm ơn bạn đã ghé Fantastic cafe! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể từ lúc
-        vào bàn hoặc khi bạn rời bàn.
+        Cảm ơn bạn đã ghé Fantastic cafe! Quyền xem hóa đơn trên thiết bị này hết hạn sau 12 giờ kể
+        từ lúc vào bàn hoặc khi bạn rời bàn.
       </p>
     </div>
   );

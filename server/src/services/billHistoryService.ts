@@ -22,6 +22,12 @@ interface RawItem extends Record<string, unknown> {
   toppingIds: unknown[];
 }
 interface RawOrder {
+  subtotal?: number | null;
+  voucherCode?: string;
+  voucherDiscount?: number;
+  pointsDiscount?: number;
+  redeemedPoints?: number;
+  earnedPoints?: number;
   orderId: unknown;
   code: string;
   status: string;
@@ -121,6 +127,12 @@ function serializeBill(bill: RawBill) {
       status: order.status,
       paymentStatus: order.paymentStatus,
       total: order.total,
+      subtotal: order.subtotal ?? order.total,
+      voucherCode: order.voucherCode ?? '',
+      voucherDiscount: order.voucherDiscount ?? 0,
+      pointsDiscount: order.pointsDiscount ?? 0,
+      redeemedPoints: order.redeemedPoints ?? 0,
+      earnedPoints: order.earnedPoints ?? 0,
       createdAt: order.createdAt.toISOString(),
       participantId: order.participantId,
       items: order.items.map((item) => ({

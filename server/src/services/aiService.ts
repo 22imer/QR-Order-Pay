@@ -39,7 +39,6 @@ export interface RecommendResult {
   latencyMs: number;
 }
 
-
 export class AIService {
   constructor(
     private readonly provider: AIProvider | null,
@@ -157,7 +156,6 @@ export class AIService {
   }
 }
 
-
 function fallbackResult(
   input: RecommendInput,
   message: string,
@@ -242,12 +240,20 @@ function availableVariant(p: ProductDoc) {
 function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
   if (!p.isAvailable || p.isArchived) return false;
   // Hydration defaults are not evidence of ingredient metadata stored in the database.
-  if (input.preferences?.noCaffeine &&
-      (p.$isDefault('ingredientMetadata') || p.$isDefault('ingredientMetadata.caffeine') ||
-       p.ingredientMetadata?.caffeine !== false)) return false;
-  if (input.preferences?.noDairy &&
-      (p.$isDefault('ingredientMetadata') || p.$isDefault('ingredientMetadata.dairy') ||
-       p.ingredientMetadata?.dairy !== false)) return false;
+  if (
+    input.preferences?.noCaffeine &&
+    (p.$isDefault('ingredientMetadata') ||
+      p.$isDefault('ingredientMetadata.caffeine') ||
+      p.ingredientMetadata?.caffeine !== false)
+  )
+    return false;
+  if (
+    input.preferences?.noDairy &&
+    (p.$isDefault('ingredientMetadata') ||
+      p.$isDefault('ingredientMetadata.dairy') ||
+      p.ingredientMetadata?.dairy !== false)
+  )
+    return false;
   const variant = availableVariant(p);
   if (p.variants.length > 0 && !variant) return false;
   return (variant?.price ?? p.basePrice) <= (input.maxBudget ?? Infinity);
@@ -354,6 +360,21 @@ export async function validateRecommendedConfiguration(input: {
       : Promise.resolve([]),
   ]);
   const violations: string[] = [];
+  try {
+    const { assertInventoryAvailable } = await import('./inventoryAvailabilityService.js');
+    await assertInventoryAvailable([
+      {
+        productId: input.productId,
+        variantId: input.variantId,
+        toppingIds: input.toppingIds,
+        quantity: 1,
+      },
+    ]);
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'INSUFFICIENT_STOCK')
+      violations.push('Không đủ nguyên liệu cho cấu hình đã chọn.');
+    else throw error;
+  }
   if (
     !product ||
     product.isArchived ||

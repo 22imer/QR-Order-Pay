@@ -1,9 +1,14 @@
 import type { ClientSession } from 'mongoose';
 import { ToppingModel, type ToppingDoc } from '../models/Topping.js';
+import { applyInventoryAvailability } from '../services/inventoryAvailabilityService.js';
 
 export const toppingRepository = {
-  async listAvailable(): Promise<ToppingDoc[]> {
-    return ToppingModel.find({ isArchived: false, isAvailable: true }).sort({ name: 1 });
+  async listAvailable(applyInventory = true): Promise<ToppingDoc[]> {
+    const toppings = await ToppingModel.find({ isArchived: false, isAvailable: true }).sort({
+      name: 1,
+    });
+    if (applyInventory) await applyInventoryAvailability([], toppings);
+    return toppings.filter((t) => t.isAvailable);
   },
   async listAll(): Promise<ToppingDoc[]> {
     return ToppingModel.find().sort({ name: 1 });

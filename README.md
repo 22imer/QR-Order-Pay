@@ -8,6 +8,9 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+- Kho nguyên liệu, nhập/xuất/kiểm kê và công thức theo món/size/topping; giữ kho khi đặt, xuất khi pha chế, trả giữ khi hủy và tự báo hết trên menu/AI. Quản lý ở **Admin → Kho & công thức**. Xem [hướng dẫn kho](docs/inventory.md).
+  Dữ liệu mẫu và kiểm thử: [32 nguyên liệu và công thức theo menu](docs/inventory-demo-data.md), [12 kịch bản test kho](docs/inventory-test-scenarios.md). Bộ nạp cộng thêm qua API: `node scripts/setup-inventory-demo.mjs --apply` (cần `INVENTORY_ADMIN_PASSWORD`), không dùng seed/reset tổng.
+
 - Màn hình tại bàn hiển thị QR tự đổi mỗi 60 giây; khách quét mã còn hạn để vào phiên bằng Wi-Fi hoặc 4G.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - Quản trị xóa mềm/khôi phục món; xóa danh mục trống hoặc chuyển toàn bộ món sang danh mục khác rồi xóa. Ẩn danh mục áp dụng cả menu, tìm kiếm, AI và kiểm tra giỏ cũ. Xem [quản lý vòng đời catalog](docs/catalog-lifecycle.md).
@@ -128,6 +131,8 @@ Production-local được tách thành ba portal qua cùng Nginx: Guest `http://
 Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-design.md`.
 
 ## Bảo mật & vận hành
+
+- Voucher và thành viên SĐT + mật khẩu: xem [hướng dẫn và kịch bản test](docs/promotions-loyalty.md). Khách vào `/member`, admin vào `/admin/vouchers` và `/admin/members`. Không dùng SMS.
 
 - Mật khẩu hash bằng bcrypt.
 - Access token ngắn hạn (memory), refresh token xoay được, lưu cookie HttpOnly.

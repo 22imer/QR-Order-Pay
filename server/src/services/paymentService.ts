@@ -25,6 +25,7 @@ import mongoose from 'mongoose';
 import { orderRealtimeEvents } from './orderService.js';
 import { guardPaymentClaim, clearCommittedPaymentClaim } from './paymentClaimService.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
+import { settleOrderBenefits } from './promotionService.js';
 
 export interface ConfirmOrderPaymentInput {
   claimToken?: string;
@@ -129,6 +130,7 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
         { new: true, session },
       );
       if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
+      if (updated.status === 'SERVED') await settleOrderBenefits(updated, 'SERVED', session);
       await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
       await auditRepository.log(
         {
@@ -330,6 +332,8 @@ async function settleSession(input: ConfirmPaymentInput) {
     const settledOrders = await OrderModel.find({ tableSessionId: tableSession._id })
       .sort({ createdAt: 1 })
       .session(session);
+    for (const order of settledOrders)
+      if (order.status === 'SERVED') await settleOrderBenefits(order, 'SERVED', session);
     const sessionPayments = await paymentRepository.listBySession(
       tableSession._id.toString(),
       session,
@@ -442,6 +446,12 @@ export interface BillSummary {
       | 'items'
       | 'createdAt'
       | 'participantId'
+      | 'subtotal'
+      | 'voucherCode'
+      | 'voucherDiscount'
+      | 'pointsDiscount'
+      | 'redeemedPoints'
+      | 'earnedPoints'
     >
   >;
 }
@@ -467,6 +477,12 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
           _id: o.orderId,
           code: o.code,
           total: o.total,
+          subtotal: o.subtotal ?? o.total,
+          voucherCode: o.voucherCode,
+          voucherDiscount: o.voucherDiscount,
+          pointsDiscount: o.pointsDiscount,
+          redeemedPoints: o.redeemedPoints,
+          earnedPoints: o.earnedPoints,
           status: o.status,
           paymentStatus: o.paymentStatus,
           items: o.items,
@@ -491,7 +507,9 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
     status: session.status,
     openedAt: session.startedAt,
     closedAt: session.closedAt ?? null,
-    subtotal: orders.filter((o) => o.status !== 'CANCELLED').reduce((s, o) => s + o.total, 0),
+    subtotal: orders
+      .filter((o) => o.status !== 'CANCELLED')
+      .reduce((s, o) => s + (o.subtotal ?? o.total), 0),
     total,
     paidAmount,
     orders: orders
@@ -500,6 +518,12 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
         _id: o._id,
         code: o.code,
         total: o.total,
+        subtotal: o.subtotal ?? o.total,
+        voucherCode: o.voucherCode,
+        voucherDiscount: o.voucherDiscount,
+        pointsDiscount: o.pointsDiscount,
+        redeemedPoints: o.redeemedPoints,
+        earnedPoints: o.earnedPoints,
         status: o.status,
         paymentStatus: o.paymentStatus,
         items: o.items,

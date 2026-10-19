@@ -5,6 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { ErrorState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import './paid-bill-print.css';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 
 interface PaidBill {
   tableCode: string;
@@ -15,6 +16,10 @@ interface PaidBill {
   orders: Array<{
     _id: string;
     code: string;
+    voucherCode?: string;
+    voucherDiscount?: number;
+    pointsDiscount?: number;
+    redeemedPoints?: number;
     items: Array<{
       nameSnapshot: string;
       sizeName?: string | null;
@@ -86,6 +91,7 @@ export function PaidBillModal({
                   <span className="whitespace-nowrap">{vnd(item.lineTotal)}</span>
                 </div>
               ))}
+              <BenefitBreakdown order={order} />
             </section>
           ))}
           <p className="flex justify-between border-t pt-3 text-lg font-semibold">

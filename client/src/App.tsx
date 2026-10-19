@@ -20,6 +20,15 @@ const TableDisplayPage = lazy(() =>
 const MenuPage = lazy(() =>
   import('./features/guest/MenuPage').then((module) => ({ default: module.MenuPage })),
 );
+const MemberPage = lazy(() =>
+  import('./features/guest/MemberPage').then((m) => ({ default: m.MemberPage })),
+);
+const AdminVouchers = lazy(() =>
+  import('./features/admin/Vouchers').then((m) => ({ default: m.AdminVouchers })),
+);
+const AdminMembers = lazy(() =>
+  import('./features/admin/Members').then((m) => ({ default: m.AdminMembers })),
+);
 const CartPage = lazy(() =>
   import('./features/guest/CartPage').then((module) => ({ default: module.CartPage })),
 );
@@ -59,6 +68,9 @@ const AdminDashboard = lazy(() =>
 );
 const AdminProducts = lazy(() =>
   import('./features/admin/Products').then((module) => ({ default: module.AdminProducts })),
+);
+const AdminInventory = lazy(() =>
+  import('./features/admin/Inventory').then((module) => ({ default: module.AdminInventory })),
 );
 const AdminCategories = lazy(() =>
   import('./features/admin/Categories').then((module) => ({ default: module.AdminCategories })),
@@ -110,6 +122,7 @@ export function App(): JSX.Element {
               <Route path="/t/:token" element={<JoinPage />} />
               <Route element={<GuestLayout />}>
                 <Route path="/menu" element={<MenuPage />} />
+                <Route path="/member" element={<MemberPage />} />
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/orders" element={<OrdersPage />} />
                 <Route path="/receipt" element={<ReceiptPage />} />
@@ -145,6 +158,9 @@ export function App(): JSX.Element {
                 <Route path="/admin/bills" element={<AdminBills />} />
                 <Route path="/admin/payments" element={<PaymentAccounting admin />} />
                 <Route path="/admin/products" element={<AdminProducts />} />
+                <Route path="/admin/inventory" element={<AdminInventory />} />
+                <Route path="/admin/vouchers" element={<AdminVouchers />} />
+                <Route path="/admin/members" element={<AdminMembers />} />
                 <Route path="/admin/categories" element={<AdminCategories />} />
                 <Route path="/admin/toppings" element={<AdminToppings />} />
                 <Route path="/admin/tables" element={<AdminTables />} />

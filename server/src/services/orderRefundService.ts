@@ -92,7 +92,8 @@ export async function refundAndCancelOrder(
     if (order.status === 'CANCELLED' && order.paymentStatus === 'REFUNDED') return order;
     if (
       order.version !== expectedVersion ||
-      (order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0)) <= 0 ||
+      ((order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0)) <= 0 &&
+        !(order.total === 0 && order.paymentStatus === 'PAID' && amount === 0)) ||
       !['AWAITING_PAYMENT', 'PENDING', 'CONFIRMED'].includes(order.status) ||
       (order.paidAmount ?? order.total) !== amount
     )

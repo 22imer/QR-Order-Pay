@@ -7,18 +7,26 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useToast } from '../../components/ui/useToast';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
+import { useSocketEvent } from '../../lib/socket';
 
 interface Product {
   _id: string;
   name: string;
   isAvailable: boolean;
+  effectiveAvailable?: boolean;
   isArchived: boolean;
-  variants: Array<{ _id: string; name: string; isAvailable: boolean }>;
+  variants: Array<{
+    _id: string;
+    name: string;
+    isAvailable: boolean;
+    effectiveAvailable?: boolean;
+  }>;
 }
 interface Topping {
   _id: string;
   name: string;
   isAvailable: boolean;
+  effectiveAvailable?: boolean;
   isArchived: boolean;
 }
 
@@ -26,12 +34,19 @@ export function StaffAvailability(): JSX.Element {
   useDocumentTitle('Tình trạng món');
   const qc = useQueryClient();
   const { toast } = useToast();
+  useSocketEvent('menu.availabilityChanged', () => {
+    void qc.invalidateQueries({ queryKey: ['staff-availability'] });
+  });
+  useSocketEvent('connect', () => {
+    void qc.invalidateQueries({ queryKey: ['staff-availability'] });
+  });
   const query = useQuery({
     queryKey: ['staff-availability'],
     queryFn: async () =>
       unwrap<{ products: Product[]; toppings: Topping[] }>(
         await api.get('/staff/catalog/availability'),
       ),
+    refetchInterval: 10000,
   });
   const change = useMutation({
     mutationFn: ({ url, isAvailable }: { url: string; isAvailable: boolean }) =>
@@ -65,6 +80,9 @@ export function StaffAvailability(): JSX.Element {
               <div key={product._id} className="py-3">
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-medium">{product.name}</span>
+                  {product.isAvailable && product.effectiveAvailable === false && (
+                    <Badge tone="danger">Thiếu nguyên liệu hoặc size tạm hết</Badge>
+                  )}
                   <AvailabilityButton
                     value={product.isAvailable}
                     busy={change.isPending}
@@ -84,6 +102,9 @@ export function StaffAvailability(): JSX.Element {
                         className="flex items-center justify-between gap-2 text-sm"
                       >
                         <span>{variant.name}</span>
+                        {variant.isAvailable && variant.effectiveAvailable === false && (
+                          <Badge tone="danger">Thiếu nguyên liệu</Badge>
+                        )}
                         <AvailabilityButton
                           value={variant.isAvailable}
                           busy={change.isPending}
@@ -108,6 +129,9 @@ export function StaffAvailability(): JSX.Element {
             {toppings.map((topping) => (
               <div key={topping._id} className="flex items-center justify-between gap-2 py-3">
                 <span>{topping.name}</span>
+                {topping.isAvailable && topping.effectiveAvailable === false && (
+                  <Badge tone="danger">Thiếu nguyên liệu</Badge>
+                )}
                 <AvailabilityButton
                   value={topping.isAvailable}
                   busy={change.isPending}

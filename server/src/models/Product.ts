@@ -48,6 +48,7 @@ export const productSchema = new Schema(
     isFeatured: { type: Boolean, default: false },
     sortOrder: { type: Number, default: 0 },
     version: { type: Number, default: 0 },
+    inventoryVersion: { type: Number, default: 0 },
   },
   { timestamps: true },
 );

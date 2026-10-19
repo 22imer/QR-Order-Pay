@@ -1,6 +1,8 @@
 import type { ClientSession } from 'mongoose';
 import { OrderModel, type OrderDoc } from '../models/Order.js';
 import type { OrderStatus, PaymentStatus } from '@may-cafe/contracts';
+import { settleOrderInventory } from '../services/orderInventoryService.js';
+import { settleOrderBenefits } from '../services/promotionService.js';
 
 export const UNFINISHED_ORDER_STATUSES: OrderStatus[] = [
   'PENDING',
@@ -107,7 +109,7 @@ export const orderRepository = {
       byParticipantId: entry.byParticipantId ?? null,
       reason: entry.reason ?? '',
     };
-    return OrderModel.findOneAndUpdate(
+    const updated = await OrderModel.findOneAndUpdate(
       { _id: id, status: entry.from, version: expectedVersion },
       {
         $set: {
@@ -119,6 +121,10 @@ export const orderRepository = {
       },
       { new: true, session: session ?? undefined },
     );
+    if (updated && session)
+      await settleOrderInventory(updated, nextStatus, entry.by ?? null, session);
+    if (updated && session) await settleOrderBenefits(updated, nextStatus, session);
+    return updated;
   },
   async setPaymentStatus(
     orderIds: string[],

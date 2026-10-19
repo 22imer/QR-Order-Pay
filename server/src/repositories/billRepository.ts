@@ -38,7 +38,7 @@ export const billRepository: IBillRepository = {
 
     const orders = input.orders.filter((o) => o.status !== 'CANCELLED');
     const paidPayments = input.payments.filter((p) => p.status === 'SUCCESS');
-    const subtotal = orders.reduce((s, o) => s + o.total, 0);
+    const subtotal = orders.reduce((s, o) => s + (o.subtotal ?? o.total), 0);
     const participants = [
       ...new Set(orders.map((o) => o.participantId).filter((p): p is string => !!p)),
     ];
@@ -62,6 +62,12 @@ export const billRepository: IBillRepository = {
         status: o.status,
         paymentStatus: o.paymentStatus,
         total: o.total,
+        subtotal: o.subtotal ?? o.total,
+        voucherCode: o.voucherCode,
+        voucherDiscount: o.voucherDiscount,
+        pointsDiscount: o.pointsDiscount,
+        redeemedPoints: o.redeemedPoints,
+        earnedPoints: o.earnedPoints,
         createdAt: o.createdAt,
         participantId: o.participantId,
         items: o.items.map((i) => ({
@@ -81,7 +87,7 @@ export const billRepository: IBillRepository = {
         })),
       })),
       subtotal,
-      total: subtotal,
+      total: orders.reduce((s, o) => s + o.total, 0),
       paidAmount: paidPayments.reduce((s, p) => s + p.amount, 0),
       paymentIds: paidPayments.map((p) => p._id),
       payments: paidPayments.map((p) => ({

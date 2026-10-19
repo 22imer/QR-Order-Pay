@@ -7,6 +7,8 @@ import { toppingRepository } from '../repositories/toppingRepository.js';
 import { categoryRepository } from '../repositories/categoryRepository.js';
 import type { PlaceOrderItemInput } from './orderService.js';
 import { guestCanOrder } from './tableSessionService.js';
+import { assertInventoryAvailable } from './inventoryAvailabilityService.js';
+import { priceBenefits, type BenefitSelection, type Benefits } from './promotionService.js';
 
 export interface PricedCart {
   items: Array<{
@@ -26,6 +28,7 @@ export interface PricedCart {
   }>;
   total: number;
   catalogFingerprint: string;
+  benefits?: Benefits;
 }
 
 export interface OrderQuote {
@@ -33,6 +36,13 @@ export interface OrderQuote {
   quoteToken: string;
   expiresAt: string;
   total: number;
+  subtotal?: number;
+  voucherCode?: string;
+  voucherDiscount?: number;
+  pointsDiscount?: number;
+  redeemedPoints?: number;
+  voucherAllowsPoints?: boolean;
+  maxRedeemPoints?: number;
   items: Array<{
     productId: string;
     variantId: string | null;
@@ -53,6 +63,17 @@ interface QuotePayload {
   catalogFingerprint: string;
   total: number;
   expiresAt: number;
+  benefitsFingerprint?: string;
+}
+
+export async function priceOrderWithBenefits(
+  items: PlaceOrderItemInput[],
+  selection: BenefitSelection,
+  session?: ClientSession | null,
+): Promise<PricedCart> {
+  const priced = await priceOrderItems(items, session);
+  const benefits = await priceBenefits(priced.total, selection, session);
+  return { ...priced, total: benefits.total, benefits };
 }
 
 export async function priceOrderItems(
@@ -139,6 +160,7 @@ export async function priceOrderItems(
   if (invalidOptions.length > 0)
     throw new ValidationError('Tùy chọn món không hợp lệ.', { invalidOptions });
   const normalized = priced.filter((item): item is NonNullable<typeof item> => item !== null);
+  await assertInventoryAvailable(normalized, session);
   const total = normalized.reduce((sum, item) => sum + item.lineTotal, 0);
   return { items: normalized, total, catalogFingerprint: digest(normalized.map(serializableItem)) };
 }
@@ -147,9 +169,12 @@ export async function createOrderQuote(input: {
   tableSessionId: string;
   participantId: string;
   items: PlaceOrderItemInput[];
+  voucherCode?: string;
+  redeemPoints?: number;
+  memberId?: string | null;
 }): Promise<OrderQuote> {
   await guestCanOrder(input.tableSessionId);
-  const priced = await priceOrderItems(input.items);
+  const priced = await priceOrderWithBenefits(input.items, input);
   const expiresAt = Date.now() + config.orderQuoteTtlMs;
   const payload: QuotePayload = {
     quoteId: crypto.randomUUID(),
@@ -159,12 +184,20 @@ export async function createOrderQuote(input: {
     catalogFingerprint: priced.catalogFingerprint,
     total: priced.total,
     expiresAt,
+    benefitsFingerprint: benefitFingerprint(priced.benefits),
   };
   return {
     quoteId: payload.quoteId,
     quoteToken: sign(payload),
     expiresAt: new Date(expiresAt).toISOString(),
     total: priced.total,
+    subtotal: priced.benefits?.subtotal ?? priced.total,
+    voucherCode: priced.benefits?.voucherCode ?? '',
+    voucherDiscount: priced.benefits?.voucherDiscount ?? 0,
+    pointsDiscount: priced.benefits?.pointsDiscount ?? 0,
+    redeemedPoints: priced.benefits?.redeemedPoints ?? 0,
+    voucherAllowsPoints: priced.benefits?.voucherAllowsPoints ?? true,
+    maxRedeemPoints: priced.benefits?.maxRedeemPoints ?? 0,
     items: priced.items.map((item) => ({
       productId: item.productId.toString(),
       variantId: item.variantId?.toString() ?? null,
@@ -207,7 +240,11 @@ export function validateQuote(
     throw new ConflictError('QUOTE_CHANGED', 'Giỏ hàng đã thay đổi sau khi báo giá.', {
       reason: 'CART_CHANGED',
     });
-  if (payload.catalogFingerprint !== priced.catalogFingerprint || payload.total !== priced.total) {
+  if (
+    payload.catalogFingerprint !== priced.catalogFingerprint ||
+    payload.total !== priced.total ||
+    payload.benefitsFingerprint !== benefitFingerprint(priced.benefits)
+  ) {
     throw new ConflictError(
       'QUOTE_CHANGED',
       'Giá hoặc tình trạng món đã thay đổi. Vui lòng xác nhận báo giá mới.',
@@ -218,6 +255,13 @@ export function validateQuote(
       },
     );
   }
+}
+
+function benefitFingerprint(benefits?: Benefits): string | undefined {
+  if (!benefits || (!benefits.memberId && !benefits.voucherId && !benefits.redeemedPoints))
+    return undefined;
+  // Available balance is preview metadata, not part of the price/selection snapshot.
+  return digest({ ...benefits, maxRedeemPoints: undefined });
 }
 
 function requestFingerprint(items: PlaceOrderItemInput[]): string {

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ReceiptText, Search } from 'lucide-react';
@@ -182,6 +183,11 @@ function BillPrint({ bill }: { bill: BillDetail }): JSX.Element {
           )),
         )}
       </div>
+      {bill.orders.map((order) => (
+        <div key={order._id}>
+          <BenefitBreakdown order={order} />
+        </div>
+      ))}
       <div className="flex justify-between text-lg font-semibold">
         <span>Tổng đã thu</span>
         <span>{vnd(bill.paidAmount)}</span>

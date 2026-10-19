@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useMember } from './useMember';
+import { Input } from '../../components/ui/Input';
+import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { CurrentTableSessionResponse, OrderQuoteResponse } from '@may-cafe/contracts';
 import { getAxiosError } from '../../lib/api';
@@ -26,6 +29,15 @@ export function CartPage(): JSX.Element {
   const tableName = useGuestContext()?.tableName ?? null;
   const submission = useRef<{ payload: string; key: string } | null>(null);
   const [quote, setQuote] = useState<OrderQuoteResponse | null>(null);
+  const memberQuery = useMember();
+  const member = memberQuery.data?.member;
+  const [voucherCode, setVoucherCode] = useState('');
+  const [redeemPoints, setRedeemPoints] = useState(0);
+  const [benefitError, setBenefitError] = useState('');
+  const [benefitPreview, setBenefitPreview] = useState<{
+    context: string;
+    quote: OrderQuoteResponse;
+  } | null>(null);
   const sessionQuery = useQuery({
     queryKey: ['guest-session'],
     queryFn: async () =>
@@ -35,6 +47,8 @@ export function CartPage(): JSX.Element {
   const { subtotal } = cartTotals(items);
   const orderPayload = useMemo(
     () => ({
+      ...(voucherCode.trim() ? { voucherCode: voucherCode.trim().toUpperCase() } : {}),
+      ...(redeemPoints ? { redeemPoints } : {}),
       items: items.map((it) => ({
         productId: it.productId,
         variantId: it.variantId,
@@ -45,13 +59,46 @@ export function CartPage(): JSX.Element {
         quantity: it.quantity,
       })),
     }),
-    [items],
+    [items, voucherCode, redeemPoints],
   );
   const cartSignature = JSON.stringify(orderPayload);
+  const benefitContext = JSON.stringify({
+    items: orderPayload.items,
+    voucherCode: orderPayload.voucherCode,
+    memberId: member?.id,
+  });
+  const checkedBenefits = benefitPreview?.context === benefitContext ? benefitPreview.quote : null;
+  const maxRedeemPoints = orderPayload.voucherCode
+    ? checkedBenefits?.maxRedeemPoints === undefined
+      ? undefined
+      : Math.min(member?.points ?? 0, checkedBenefits.maxRedeemPoints)
+    : Math.min(member?.points ?? 0, Math.floor(subtotal / 2000));
   useEffect(() => {
     setQuote(null);
     submission.current = null;
-  }, [cartSignature]);
+    setBenefitError('');
+  }, [cartSignature, member?.id]);
+  const preview = useMutation({
+    mutationFn: async () => {
+      // Read voucher policy/cap even if the full selection is later rejected.
+      if (orderPayload.voucherCode && redeemPoints > 0 && !checkedBenefits) {
+        const voucherQuote = unwrap<OrderQuoteResponse>(
+          await api.post('/orders/quote', { ...orderPayload, redeemPoints: 0 }),
+        );
+        setBenefitPreview({ context: benefitContext, quote: voucherQuote });
+      }
+      return unwrap<OrderQuoteResponse>(await api.post('/orders/quote', orderPayload));
+    },
+    onSuccess: (data) => {
+      setQuote(data);
+      setBenefitPreview({ context: benefitContext, quote: data });
+      setBenefitError('');
+    },
+    onError: (e) => {
+      setQuote(null);
+      setBenefitError(getErrorMessage(e));
+    },
+  });
 
   const placeMutation = useMutation({
     mutationFn: async () => {
@@ -59,6 +106,7 @@ export function CartPage(): JSX.Element {
       if (!checkedQuote) {
         checkedQuote = unwrap<OrderQuoteResponse>(await api.post('/orders/quote', orderPayload));
         setQuote(checkedQuote);
+        setBenefitPreview({ context: benefitContext, quote: checkedQuote });
         // Only a changed price needs another confirmation; the normal flow sends immediately.
         if (checkedQuote.total !== subtotal) return false;
       }
@@ -84,6 +132,7 @@ export function CartPage(): JSX.Element {
       clear();
       submission.current = null;
       queryClient.invalidateQueries({ queryKey: ['my-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['member'] });
       navigate('/orders');
     },
     onError: (err) => {
@@ -114,7 +163,8 @@ export function CartPage(): JSX.Element {
     );
   }
 
-  const priceChanged = quote !== null && quote.total !== subtotal;
+  const priceChanged = quote !== null && (quote.subtotal ?? quote.total) !== subtotal;
+  const busy = placeMutation.isPending || preview.isPending;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 pt-2">
@@ -128,7 +178,7 @@ export function CartPage(): JSX.Element {
           </div>
           <div className="slip-rule mt-4" />
 
-          <fieldset disabled={placeMutation.isPending} className="min-w-0">
+          <fieldset disabled={busy} className="min-w-0">
             <ul className="space-y-5 py-5">
               {groupedItems.map((it) => (
                 <li key={it.clientId} className="flex gap-3">
@@ -172,11 +222,74 @@ export function CartPage(): JSX.Element {
           </fieldset>
 
           <div className="slip-rule" />
+          <fieldset disabled={busy} className="space-y-3 py-4">
+            <legend className="pt-4 font-semibold">Ưu đãi</legend>
+            <label className="block text-sm">
+              Mã voucher
+              <Input
+                aria-label="Mã voucher"
+                value={voucherCode}
+                maxLength={32}
+                onChange={(e) => {
+                  setVoucherCode(e.target.value);
+                }}
+                placeholder="Nhập mã giảm giá"
+              />
+            </label>
+            {member ? (
+              <label className="block text-sm">
+                Đổi điểm (đang có {member.points} điểm)
+                <Input
+                  aria-label="Điểm muốn đổi"
+                  type="number"
+                  min={0}
+                  max={maxRedeemPoints}
+                  step={1}
+                  value={redeemPoints}
+                  onChange={(e) => {
+                    setRedeemPoints(Math.max(0, Number(e.target.value)));
+                  }}
+                />
+              </label>
+            ) : (
+              <Link to="/member" className="block text-sm underline">
+                Đăng nhập thành viên để tích và đổi điểm
+              </Link>
+            )}
+            <p className="text-sm text-muted-foreground">
+              1 điểm = 1.000đ, tối đa 50% số tiền sau voucher. Dùng kèm điểm khi voucher cho phép.
+            </p>
+            {orderPayload.voucherCode && !checkedBenefits ? (
+              <p className="text-sm text-muted-foreground">
+                Kiểm tra ưu đãi để biết voucher có cho dùng kèm điểm và số điểm tối đa.
+              </p>
+            ) : null}
+            {orderPayload.voucherCode && checkedBenefits?.voucherAllowsPoints === false ? (
+              <p className="text-sm text-muted-foreground">
+                Voucher này không cho phép dùng kèm điểm. Để dùng voucher, đặt số điểm đổi về 0.
+              </p>
+            ) : maxRedeemPoints !== undefined && member ? (
+              <p className="text-sm text-muted-foreground">
+                Có thể đổi tối đa {maxRedeemPoints} điểm với lựa chọn hiện tại.
+              </p>
+            ) : null}
+            <Button type="button" variant="ghost" onClick={() => preview.mutate()}>
+              Kiểm tra ưu đãi
+            </Button>
+            {benefitError ? (
+              <p role="alert" className="text-sm text-danger">
+                {benefitError}
+              </p>
+            ) : null}
+          </fieldset>
           <dl className="space-y-2 pt-4">
             <div className="flex justify-between text-sm">
               <dt className="text-muted-foreground">Tạm tính</dt>
-              <dd className="tabular-nums">{vnd(subtotal)}</dd>
+              <dd className="tabular-nums">{vnd(quote?.subtotal ?? subtotal)}</dd>
             </div>
+          </dl>
+          {quote ? <BenefitBreakdown order={quote} /> : null}
+          <dl>
             <div className="flex items-end justify-between gap-3">
               <dt className="g-title text-lg">Tổng</dt>
               <dd className="g-display text-3xl tabular-nums">{vnd(quote?.total ?? subtotal)}</dd>
@@ -186,6 +299,11 @@ export function CartPage(): JSX.Element {
       </div>
 
       <div className="space-y-3">
+        {quote && ((quote.voucherDiscount ?? 0) > 0 || (quote.pointsDiscount ?? 0) > 0) ? (
+          <p role="status" className="text-sm">
+            Đã kiểm tra ưu đãi. Tổng cần thanh toán: {vnd(quote.total)}.
+          </p>
+        ) : null}
         {quote && priceChanged ? (
           <div
             role="alert"
@@ -193,8 +311,8 @@ export function CartPage(): JSX.Element {
           >
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p>
-              Giá món đã thay đổi: tổng mới {vnd(quote.total)} (trước đó {vnd(subtotal)}). Bấm đặt
-              món nếu bạn đồng ý với giá mới.
+              Giá món đã thay đổi: tiền món mới {vnd(quote.subtotal ?? quote.total)} (trước đó{' '}
+              {vnd(subtotal)}). Bấm đặt món nếu bạn đồng ý với giá mới.
             </p>
           </div>
         ) : null}
@@ -208,7 +326,8 @@ export function CartPage(): JSX.Element {
           className="w-full"
           onClick={() => placeMutation.mutate()}
           disabled={
-            placeMutation.isPending ||
+            busy ||
+            memberQuery.isPending ||
             !sessionQuery.data?.active ||
             sessionQuery.data.status !== 'OPEN'
           }

@@ -23,7 +23,18 @@ type OrderSource = Pick<
   | 'version'
   | 'createdAt'
   | 'updatedAt'
->;
+> &
+  Partial<
+    Pick<
+      OrderDoc,
+      | 'subtotal'
+      | 'voucherCode'
+      | 'voucherDiscount'
+      | 'pointsDiscount'
+      | 'redeemedPoints'
+      | 'earnedPoints'
+    >
+  >;
 
 const iso = (value: Date | string | null | undefined): string =>
   value instanceof Date ? value.toISOString() : String(value ?? '');
@@ -52,6 +63,12 @@ function baseOrder(order: OrderSource) {
       variantNameSnapshot: item.variantNameSnapshot ?? '',
     })),
     total: order.total,
+    subtotal: order.subtotal ?? order.total,
+    voucherCode: order.voucherCode ?? '',
+    voucherDiscount: order.voucherDiscount ?? 0,
+    pointsDiscount: order.pointsDiscount ?? 0,
+    redeemedPoints: order.redeemedPoints ?? 0,
+    earnedPoints: order.earnedPoints ?? 0,
     paidAmount: order.paidAmount ?? (order.paymentStatus === 'PAID' ? order.total : 0),
     balanceDue:
       order.paymentStatus === 'REFUNDED'

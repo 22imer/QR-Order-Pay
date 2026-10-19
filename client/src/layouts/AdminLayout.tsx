@@ -10,11 +10,15 @@ import {
   Users,
   MessageSquareText,
   ReceiptText,
+  Package,
 } from 'lucide-react';
 import { useAuth } from '../features/auth/useAuth';
 import { InternalShell } from '../components/layout/InternalShell';
 
 const NAV = [
+  { to: '/admin/vouchers', label: 'Voucher', icon: <Sparkles className="h-4 w-4" /> },
+  { to: '/admin/members', label: 'Thành viên', icon: <Users className="h-4 w-4" /> },
+  { to: '/admin/inventory', label: 'Kho & công thức', icon: <Package className="h-4 w-4" /> },
   { to: '/admin/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
   { to: '/admin/operations', label: 'Vận hành', icon: <Activity className="h-4 w-4" /> },
   { to: '/admin/bills', label: 'Hóa đơn', icon: <ReceiptText className="h-4 w-4" /> },
@@ -40,6 +44,9 @@ export function AdminLayout(): JSX.Element {
     '/admin/products',
     '/admin/categories',
     '/admin/toppings',
+    '/admin/inventory',
+    '/admin/vouchers',
+    '/admin/members',
     '/admin/bills',
     '/admin/payments',
     '/admin/reviews',

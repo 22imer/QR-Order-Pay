@@ -1,12 +1,14 @@
 import type { ClientSession } from 'mongoose';
 import { ProductModel, type ProductDoc } from '../models/Product.js';
 import { categoryRepository } from './categoryRepository.js';
+import { applyInventoryAvailability } from '../services/inventoryAvailabilityService.js';
 
 export interface PublicProductFilters {
   categoryId?: string;
   q?: string;
   tag?: string;
   includeUnavailable?: boolean;
+  applyInventory?: boolean;
 }
 
 export const productRepository = {
@@ -22,18 +24,21 @@ export const productRepository = {
       const regex = new RegExp(escapeRegex(filters.q), 'i');
       query.$or = [{ name: regex }, { description: regex }];
     }
-    return ProductModel.find(query).sort({ sortOrder: 1, name: 1 });
+    const products = await ProductModel.find(query).sort({ sortOrder: 1, name: 1 });
+    if (filters.applyInventory === false) return products;
+    await applyInventoryAvailability(products, []);
+    return filters.includeUnavailable ? products : products.filter((p) => p.isAvailable);
   },
-  async listFeatured(limit = 6): Promise<ProductDoc[]> {
+  async listFeatured(limit = 6, applyInventory = true): Promise<ProductDoc[]> {
     const categories = await categoryRepository.listActive();
-    return ProductModel.find({
+    const products = await ProductModel.find({
       isArchived: false,
       isAvailable: true,
       isFeatured: true,
       categoryId: { $in: categories.map((category) => category._id) },
-    })
-      .sort({ sortOrder: 1 })
-      .limit(limit);
+    }).sort({ sortOrder: 1 });
+    if (applyInventory) await applyInventoryAvailability(products, []);
+    return (applyInventory ? products.filter((p) => p.isAvailable) : products).slice(0, limit);
   },
   async findById(id: string, session?: ClientSession | null): Promise<ProductDoc | null> {
     return ProductModel.findById(id, null, { session: session ?? undefined });

@@ -1,0 +1,296 @@
+{
+  "dataset": "fantastic-inventory-demo-v1",
+  "description": "Định lượng minh họa cho menu Fantastic cafe hiện có; nguyên liệu trái cây tính phần ăn được, trà/cold brew và topping dùng bán thành phẩm. Không theo dõi nước, đá và đường thêm tùy chọn.",
+  "ingredients": [
+    {
+      "code": "COFFEE_BEANS",
+      "name": "Cà phê hạt rang",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "FRESH_MILK",
+      "name": "Sữa tươi",
+      "unit": "ml",
+      "openingStock": 5000,
+      "lowStockThreshold": 500
+    },
+    {
+      "code": "CONDENSED_MILK",
+      "name": "Sữa đặc",
+      "unit": "ml",
+      "openingStock": 2000,
+      "lowStockThreshold": 200
+    },
+    {
+      "code": "COCONUT_MILK",
+      "name": "Cốt dừa",
+      "unit": "ml",
+      "openingStock": 1500,
+      "lowStockThreshold": 150
+    },
+    {
+      "code": "COLD_BREW_BASE",
+      "name": "Cốt cold brew đã ủ",
+      "unit": "ml",
+      "openingStock": 3000,
+      "lowStockThreshold": 300
+    },
+    {
+      "code": "FRUIT_TEA_BASE",
+      "name": "Cốt trà trái cây không caffeine",
+      "unit": "ml",
+      "openingStock": 5000,
+      "lowStockThreshold": 500
+    },
+    {
+      "code": "BLACK_TEA_BASE",
+      "name": "Cốt hồng trà đã ủ",
+      "unit": "ml",
+      "openingStock": 4000,
+      "lowStockThreshold": 400
+    },
+    {
+      "code": "PEACH",
+      "name": "Đào miếng",
+      "unit": "g",
+      "openingStock": 1500,
+      "lowStockThreshold": 150
+    },
+    {
+      "code": "ORANGE",
+      "name": "Cam tươi sơ chế",
+      "unit": "g",
+      "openingStock": 6000,
+      "lowStockThreshold": 600
+    },
+    {
+      "code": "LEMONGRASS",
+      "name": "Sả tươi",
+      "unit": "g",
+      "openingStock": 200,
+      "lowStockThreshold": 20
+    },
+    {
+      "code": "AVOCADO",
+      "name": "Thịt bơ",
+      "unit": "g",
+      "openingStock": 2000,
+      "lowStockThreshold": 200
+    },
+    {
+      "code": "MANGO",
+      "name": "Thịt xoài",
+      "unit": "g",
+      "openingStock": 2000,
+      "lowStockThreshold": 200
+    },
+    {
+      "code": "STRAWBERRY",
+      "name": "Dâu tây",
+      "unit": "g",
+      "openingStock": 2000,
+      "lowStockThreshold": 200
+    },
+    {
+      "code": "YOGURT",
+      "name": "Sữa chua",
+      "unit": "g",
+      "openingStock": 3000,
+      "lowStockThreshold": 300
+    },
+    {
+      "code": "HONEY",
+      "name": "Mật ong",
+      "unit": "ml",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "BLUEBERRY",
+      "name": "Việt quất",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "BANANA",
+      "name": "Chuối bóc vỏ",
+      "unit": "g",
+      "openingStock": 1500,
+      "lowStockThreshold": 150
+    },
+    {
+      "code": "WATERMELON",
+      "name": "Thịt dưa hấu",
+      "unit": "g",
+      "openingStock": 5000,
+      "lowStockThreshold": 500
+    },
+    {
+      "code": "CARROT",
+      "name": "Cà rốt sơ chế",
+      "unit": "g",
+      "openingStock": 4000,
+      "lowStockThreshold": 400
+    },
+    {
+      "code": "GINGER",
+      "name": "Gừng tươi",
+      "unit": "g",
+      "openingStock": 300,
+      "lowStockThreshold": 30
+    },
+    {
+      "code": "HAZELNUT_SYRUP",
+      "name": "Syrup hạt phỉ",
+      "unit": "ml",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "CHOCOLATE_SAUCE",
+      "name": "Sốt chocolate",
+      "unit": "ml",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "BLACK_PEARL",
+      "name": "Trân châu đen đã nấu",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "WHITE_PEARL",
+      "name": "Trân châu trắng đã chuẩn bị",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "COFFEE_JELLY",
+      "name": "Thạch cà phê đã chuẩn bị",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "EGG_PUDDING",
+      "name": "Pudding trứng thành phẩm",
+      "unit": "unit",
+      "openingStock": 20,
+      "lowStockThreshold": 3
+    },
+    {
+      "code": "CHEESE_FOAM",
+      "name": "Kem cheese đã đánh",
+      "unit": "g",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "CARAMEL_SAUCE",
+      "name": "Sốt caramel",
+      "unit": "ml",
+      "openingStock": 1000,
+      "lowStockThreshold": 100
+    },
+    {
+      "code": "CROISSANT_READY",
+      "name": "Croissant thành phẩm",
+      "unit": "unit",
+      "openingStock": 30,
+      "lowStockThreshold": 5
+    },
+    {
+      "code": "TIRAMISU_READY",
+      "name": "Tiramisu thành phẩm (phần)",
+      "unit": "unit",
+      "openingStock": 20,
+      "lowStockThreshold": 3
+    },
+    {
+      "code": "MOUSSE_READY",
+      "name": "Mousse chanh dây thành phẩm (phần)",
+      "unit": "unit",
+      "openingStock": 20,
+      "lowStockThreshold": 3
+    },
+    {
+      "code": "COOKIE_READY",
+      "name": "Cookie socola thành phẩm",
+      "unit": "unit",
+      "openingStock": 50,
+      "lowStockThreshold": 5
+    }
+  ],
+  "products": [
+    {
+      "slug": "espresso-may",
+      "base": { "COFFEE_BEANS": 18 },
+      "sizes": {
+        "S": { "COFFEE_BEANS": 18 },
+        "M": { "COFFEE_BEANS": 24 },
+        "L": { "COFFEE_BEANS": 30 }
+      }
+    },
+    {
+      "slug": "bac-xiu-da",
+      "base": { "COFFEE_BEANS": 15, "CONDENSED_MILK": 40, "FRESH_MILK": 80 }
+    },
+    {
+      "slug": "ca-phe-dua",
+      "base": { "COFFEE_BEANS": 18, "COCONUT_MILK": 60, "CONDENSED_MILK": 20 }
+    },
+    {
+      "slug": "americano",
+      "base": { "COFFEE_BEANS": 18 },
+      "sizes": { "M": { "COFFEE_BEANS": 18 }, "L": { "COFFEE_BEANS": 24 } }
+    },
+    { "slug": "cappuccino", "base": { "COFFEE_BEANS": 18, "FRESH_MILK": 150 } },
+    {
+      "slug": "tra-dao-cam-sa",
+      "base": { "FRUIT_TEA_BASE": 180, "PEACH": 60, "ORANGE": 30, "LEMONGRASS": 5 },
+      "sizes": {
+        "M": { "FRUIT_TEA_BASE": 180, "PEACH": 60, "ORANGE": 30, "LEMONGRASS": 5 },
+        "L": { "FRUIT_TEA_BASE": 240, "PEACH": 80, "ORANGE": 40, "LEMONGRASS": 8 }
+      }
+    },
+    { "slug": "sinh-to-bo", "base": { "AVOCADO": 150, "CONDENSED_MILK": 30, "FRESH_MILK": 60 } },
+    { "slug": "sinh-to-xoai", "base": { "MANGO": 180, "FRESH_MILK": 100 } },
+    { "slug": "sinh-to-dau", "base": { "STRAWBERRY": 180, "YOGURT": 100, "HONEY": 15 } },
+    { "slug": "nuoc-ep-cam", "base": { "ORANGE": 400 } },
+    { "slug": "nuoc-ep-dua-hau", "base": { "WATERMELON": 350 } },
+    { "slug": "nuoc-ep-ca-rot", "base": { "CARROT": 250, "ORANGE": 100, "GINGER": 3 } },
+    { "slug": "croissant", "base": { "CROISSANT_READY": 1 } },
+    { "slug": "tiramisu", "base": { "TIRAMISU_READY": 1 } },
+    { "slug": "mousse-chanh-day", "base": { "MOUSSE_READY": 1 } },
+    { "slug": "cold-brew-cam", "base": { "COLD_BREW_BASE": 180, "ORANGE": 120 } },
+    {
+      "slug": "latte-hazelnut",
+      "base": { "COFFEE_BEANS": 18, "FRESH_MILK": 180, "HAZELNUT_SYRUP": 15 }
+    },
+    { "slug": "mocha", "base": { "COFFEE_BEANS": 18, "FRESH_MILK": 150, "CHOCOLATE_SAUCE": 25 } },
+    {
+      "slug": "hong-tra-sua",
+      "base": { "BLACK_TEA_BASE": 180, "FRESH_MILK": 100, "CONDENSED_MILK": 20 }
+    },
+    {
+      "slug": "smoothie-berry",
+      "base": { "BLUEBERRY": 60, "STRAWBERRY": 80, "BANANA": 80, "YOGURT": 100, "HONEY": 10 }
+    },
+    { "slug": "cookie-socola", "base": { "COOKIE_READY": 1 } },
+    { "slug": "ca-phe-sua-da", "base": { "COFFEE_BEANS": 18, "CONDENSED_MILK": 35 } }
+  ],
+  "toppings": [
+    { "name": "Trân châu đen", "base": { "BLACK_PEARL": 50 } },
+    { "name": "Trân châu trắng", "base": { "WHITE_PEARL": 50 } },
+    { "name": "Thạch cà phê", "base": { "COFFEE_JELLY": 50 } },
+    { "name": "Pudding trứng", "base": { "EGG_PUDDING": 1 } },
+    { "name": "Kem cheese", "base": { "CHEESE_FOAM": 30 } },
+    { "name": "Sốt caramel", "base": { "CARAMEL_SAUCE": 15 } }
+  ]
+}

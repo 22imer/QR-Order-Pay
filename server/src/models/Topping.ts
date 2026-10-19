@@ -7,6 +7,7 @@ export const toppingSchema = new Schema(
     isAvailable: { type: Boolean, default: true },
     isArchived: { type: Boolean, default: false },
     version: { type: Number, default: 0 },
+    inventoryVersion: { type: Number, default: 0 },
     ingredientMetadata: { type: { dairy: { type: Boolean, default: null } }, default: () => ({}) },
   },
   { timestamps: true },

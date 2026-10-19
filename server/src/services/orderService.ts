@@ -15,9 +15,12 @@ import { OrderModel } from '../models/Order.js';
 import { TableSessionModel } from '../models/TableSession.js';
 import { tableSessionRepository } from '../repositories/tableSessionRepository.js';
 import { outboxRepository, type RealtimeOutboxInput } from '../repositories/outboxRepository.js';
-import { priceOrderItems, validateQuote } from './orderPricingService.js';
+import { priceOrderWithBenefits, validateQuote } from './orderPricingService.js';
+import { reserveBenefits } from './promotionService.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { guardUnpaidCancellation } from './paymentClaimService.js';
+import mongoose from 'mongoose';
+import { reserveOrderInventory } from './orderInventoryService.js';
 
 export interface PlaceOrderItemInput {
   productId: string;
@@ -30,6 +33,9 @@ export interface PlaceOrderItemInput {
 }
 
 export interface PlaceOrderInput {
+  voucherCode?: string;
+  redeemPoints?: number;
+  memberId?: string | null;
   tableSessionId: string;
   participantId: string;
   idempotencyKey: string;
@@ -56,6 +62,8 @@ export async function placeOrder(
     items: input.items,
     note: input.note,
     participantId: input.participantId,
+    ...(input.voucherCode ? { voucherCode: input.voucherCode } : {}),
+    ...(input.redeemPoints ? { redeemPoints: input.redeemPoints } : {}),
   });
   const replay = async () => {
     const existing = await orderRepository.findByIdempotency(input.tableSessionId, idempotencyKey);
@@ -117,7 +125,7 @@ async function createOrder(
       throw new ForbiddenError(
         'Bạn có 3 đơn đang chờ thanh toán. Vui lòng thanh toán hoặc hủy đơn trước khi gọi thêm.',
       );
-    const priced = await priceOrderItems(input.items, mongoSession);
+    const priced = await priceOrderWithBenefits(input.items, input, mongoSession);
     validateQuote(
       {
         quoteToken: input.quoteToken,
@@ -127,14 +135,32 @@ async function createOrder(
       },
       priced,
     );
+    const orderId = new mongoose.Types.ObjectId();
+    if (priced.benefits)
+      await reserveBenefits(String(orderId), code, priced.benefits, mongoSession);
+    const inventorySnapshot = await reserveOrderInventory(
+      priced.items,
+      String(orderId),
+      mongoSession,
+    );
     const order = await orderRepository.createWithSession(
       {
+        _id: orderId,
+        inventorySnapshot,
+        inventoryState: inventorySnapshot.length ? 'RESERVED' : 'NONE',
         code,
         tableSessionId: open._id,
         participantId: input.participantId,
         tableId: open.tableId,
         items: priced.items.map((it) => ({ ...it })),
         total: priced.total,
+        subtotal: priced.benefits?.subtotal ?? priced.total,
+        memberId: priced.benefits?.memberId ?? null,
+        voucherId: priced.benefits?.voucherId ?? null,
+        voucherCode: priced.benefits?.voucherCode ?? '',
+        voucherDiscount: priced.benefits?.voucherDiscount ?? 0,
+        pointsDiscount: priced.benefits?.pointsDiscount ?? 0,
+        redeemedPoints: priced.benefits?.redeemedPoints ?? 0,
         status: 'AWAITING_PAYMENT' as OrderStatus,
         paymentStatus: 'UNPAID' as const,
         statusHistory: [
@@ -172,6 +198,8 @@ async function createOrder(
 }
 
 function hashRequest(payload: {
+  voucherCode?: string;
+  redeemPoints?: number;
   items: PlaceOrderItemInput[];
   note?: string;
   participantId: string;

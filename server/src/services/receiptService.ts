@@ -62,6 +62,12 @@ function serializeOrder(
   order: {
     code: string;
     total: number;
+    subtotal?: number | null;
+    voucherCode?: string;
+    voucherDiscount?: number;
+    pointsDiscount?: number;
+    redeemedPoints?: number;
+    earnedPoints?: number;
     status: string;
     paymentStatus: string;
     items: unknown;
@@ -74,6 +80,12 @@ function serializeOrder(
     _id: id,
     code: order.code,
     total: order.total,
+    subtotal: order.subtotal ?? order.total,
+    voucherCode: order.voucherCode ?? '',
+    voucherDiscount: order.voucherDiscount ?? 0,
+    pointsDiscount: order.pointsDiscount ?? 0,
+    redeemedPoints: order.redeemedPoints ?? 0,
+    earnedPoints: order.earnedPoints ?? 0,
     status: order.status,
     paymentStatus: order.paymentStatus,
     items: serializeItems(order.items),
