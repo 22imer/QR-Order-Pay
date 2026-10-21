@@ -14,6 +14,7 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { socketRedisClients } from '../infrastructure/redis.js';
 
 interface ServerToClientEvents {
+  'workforce.changed': (payload: RealtimeEventEnvelope) => void;
   'order.created': (payload: RealtimeEventEnvelope) => void;
   'order.statusChanged': (payload: RealtimeEventEnvelope) => void;
   'menu.availabilityChanged': (payload: RealtimeEventEnvelope) => void;

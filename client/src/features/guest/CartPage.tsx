@@ -256,9 +256,12 @@ export function CartPage(): JSX.Element {
                 Đăng nhập thành viên để tích và đổi điểm
               </Link>
             )}
-            <p className="text-sm text-muted-foreground">
-              1 điểm = 1.000đ, tối đa 50% số tiền sau voucher. Dùng kèm điểm khi voucher cho phép.
-            </p>
+            <details className="text-sm text-muted-foreground">
+              <summary className="cursor-pointer py-1">Cách đổi điểm</summary>
+              <p className="pt-1">
+                1 điểm = 1.000đ, tối đa 50% số tiền sau voucher. Dùng kèm điểm khi voucher cho phép.
+              </p>
+            </details>
             {orderPayload.voucherCode && !checkedBenefits ? (
               <p className="text-sm text-muted-foreground">
                 Kiểm tra ưu đãi để biết voucher có cho dùng kèm điểm và số điểm tối đa.

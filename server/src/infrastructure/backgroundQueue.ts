@@ -9,6 +9,7 @@ export const REPORT_PROCESSING_QUEUE = `${REPORT_QUEUE}:processing`;
 export const DEAD_LETTER_QUEUE = 'maycafe:queue:dead-letter';
 
 export type RealtimeEvent =
+  | 'workforce.changed'
   | 'order.created'
   | 'order.statusChanged'
   | 'menu.availabilityChanged'

@@ -61,6 +61,8 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
     return await unitOfWork.withTransaction(async (session) => {
       const order = await orderRepository.findById(input.orderId, session);
       if (!order) throw new NotFoundError('Đơn không tồn tại.');
+      if (order.pickup && order.pickup.outcome !== 'ACTIVE')
+        throw new ConflictError('CONFLICT', 'Đơn mang đi đã kết thúc.');
       await assertNoPaymentCorrection(order.id, session);
       if (
         await CancelRequestModel.exists({ orderId: order._id, status: 'REQUESTED' }).session(
@@ -83,7 +85,7 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
         throw new ValidationError(
           `Số tiền thực nhận phải lớn hơn 0 và không quá ${remaining} VND còn thiếu.`,
         );
-      await guardPaymentClaim(
+      if (order.tableSessionId) await guardPaymentClaim(
         order.tableSessionId.toString(),
         input.staffId,
         input.claimToken,
@@ -131,7 +133,7 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
       );
       if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
       if (updated.status === 'SERVED') await settleOrderBenefits(updated, 'SERVED', session);
-      await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
+      if (order.tableSessionId) await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
       await auditRepository.log(
         {
           actorType: 'USER',
@@ -235,7 +237,7 @@ async function replayPayment(input: ConfirmPaymentInput) {
   const existing = await paymentRepository.findByIdempotency(input.idempotencyKey);
   if (!existing) return null;
   if (
-    existing.tableSessionId.toString() !== input.tableSessionId ||
+    existing.tableSessionId?.toString() !== input.tableSessionId ||
     existing.amount !== input.amount ||
     existing.method !== input.method ||
     existing.confirmedBy?.toString() !== input.staffId ||

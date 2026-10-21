@@ -214,10 +214,7 @@ export function MenuPage(): JSX.Element {
                 Không sữa
               </ToggleCheck>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Bộ lọc thủ công thay cho các điều kiện ngân sách, caffeine và sữa được hiểu từ câu tìm
-              kiếm. Giá tính cho một món ở size khả dụng rẻ nhất.
-            </p>
+            <p className="text-xs text-muted-foreground">Giá theo size rẻ nhất còn bán.</p>
           </div>
         ) : null}
         <div className="menu-categories no-scrollbar" aria-label="Danh mục món">

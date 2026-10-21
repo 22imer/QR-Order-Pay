@@ -27,6 +27,8 @@ type OrderSource = Pick<
   Partial<
     Pick<
       OrderDoc,
+      | 'fulfillmentType'
+      | 'pickup'
       | 'subtotal'
       | 'voucherCode'
       | 'voucherDiscount'
@@ -45,7 +47,9 @@ function baseOrder(order: OrderSource) {
   return {
     _id: order._id.toString(),
     code: order.code,
-    tableSessionId: order.tableSessionId.toString(),
+    tableSessionId: order.tableSessionId?.toString() ?? null,
+    fulfillmentType: order.fulfillmentType ?? 'DINE_IN',
+    scheduledAt: order.pickup?.scheduledAt?.toISOString() ?? null,
     participantId: order.participantId,
     items: order.items.map((item) => ({
       productId: item.productId.toString(),
@@ -110,7 +114,7 @@ export function toStaffOrder(
 ): StaffOrder {
   return staffOrderSchema.parse({
     ...baseOrder(order),
-    tableId: order.tableId.toString(),
+    tableId: order.tableId?.toString() ?? null,
     version: order.version ?? 0,
     ...(table ? { tableName: table.name, tableCode: table.code } : {}),
     statusHistory: order.statusHistory.map((entry) => ({

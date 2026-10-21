@@ -8,6 +8,8 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+- **Mang đi & đặt trước nhận tại quầy (#6)**: trang riêng `/pickup` với thực đơn/AI/giỏ, `/pickup/orders` xem đơn và `/pickup/member` đăng nhập; độc lập luồng QR tại bàn. Nhân viên tạo tại quầy; giờ hẹn Việt Nam, thu đủ trước pha, KDS/giao khách, hủy/hoàn/no-show và hóa đơn snapshot. Staff/Admin → Mang đi & đặt trước. Xem [quy tắc và 18 kịch bản test](docs/pickup.md).
+
 - Kho nguyên liệu, nhập/xuất/kiểm kê và công thức theo món/size/topping; giữ kho khi đặt, xuất khi pha chế, trả giữ khi hủy và tự báo hết trên menu/AI. Quản lý ở **Admin → Kho & công thức**. Xem [hướng dẫn kho](docs/inventory.md).
   Dữ liệu mẫu và kiểm thử: [32 nguyên liệu và công thức theo menu](docs/inventory-demo-data.md), [12 kịch bản test kho](docs/inventory-test-scenarios.md). Bộ nạp cộng thêm qua API: `node scripts/setup-inventory-demo.mjs --apply` (cần `INVENTORY_ADMIN_PASSWORD`), không dùng seed/reset tổng.
 
@@ -131,6 +133,8 @@ Production-local được tách thành ba portal qua cùng Nginx: Guest `http://
 Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-design.md`.
 
 ## Bảo mật & vận hành
+
+- Lịch ca, chấm công và hiệu suất nhân viên (#11): Admin `/admin/workforce`, Staff `/staff/workforce`; gợi ý cao điểm từ lịch sử, đối soát ca thu ngân, sao chép tuần có xem trước và xuất CSV bảng công. Xem [hướng dẫn và 16 kịch bản test](docs/workforce.md). Giờ Việt Nam, không tính lương.
 
 - Voucher và thành viên SĐT + mật khẩu: xem [hướng dẫn và kịch bản test](docs/promotions-loyalty.md). Khách vào `/member`, admin vào `/admin/vouchers` và `/admin/members`. Không dùng SMS.
 

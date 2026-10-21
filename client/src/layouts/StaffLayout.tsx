@@ -8,6 +8,8 @@ import {
   VolumeX,
   PackageCheck,
   WalletCards,
+  CalendarDays,
+  ShoppingBag,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
@@ -17,6 +19,7 @@ import { Button } from '../components/ui/Button';
 import { InternalShell } from '../components/layout/InternalShell';
 import { useToast } from '../components/ui/useToast';
 import { api, unwrap } from '../lib/api';
+import { useNewOrderAlerts } from '../features/staff/useNewOrderAlerts';
 import {
   isSoundEnabled,
   notifyBrowser,
@@ -24,6 +27,7 @@ import {
   requestNotifyPermission,
   setSoundEnabled,
   useCountDelta,
+  unlockAlertAudio,
 } from '../features/staff/notifications';
 
 interface OrderRow {
@@ -41,6 +45,13 @@ interface ServiceReqRow {
 }
 
 const NAV = [
+  {
+    to: '/staff/pickups',
+    label: 'Mang đi & đặt trước',
+    icon: <ShoppingBag className="h-4 w-4" />,
+    badgeKey: 'pickups' as const,
+  },
+  { to: '/staff/workforce', label: 'Lịch & chấm công', icon: <CalendarDays className="h-4 w-4" /> },
   {
     to: '/staff/kds',
     label: 'KDS',
@@ -90,6 +101,16 @@ export function StaffLayout(): JSX.Element {
       unwrap(await api.get<{ items: Array<{ _id: string }> }>('/staff/awaiting-payments')),
     refetchInterval: 5_000,
   });
+  const pickupsQuery = useQuery({
+    queryKey: ['staff-pickup-alerts', user?.id],
+    queryFn: async () =>
+      unwrap(
+        await api.get<{ items: Array<{ _id: string }>; total: number }>('/staff/pickups', {
+          params: { history: false, page: 1 },
+        }),
+      ),
+    refetchInterval: 5_000,
+  });
 
   const pendingCount = useMemo(
     () => (ordersQuery.data?.items ?? []).filter((o) => o.status === 'PENDING').length,
@@ -103,6 +124,8 @@ export function StaffLayout(): JSX.Element {
   const refresh = useCallback(() => {
     for (const key of [
       'staff-orders',
+      'staff-pickup-alerts',
+      'pickups',
       'staff-awaiting-payments',
       'staff-cancel-requests',
       'staff-table-sessions',
@@ -114,12 +137,18 @@ export function StaffLayout(): JSX.Element {
   }, [qc]);
 
   const notifyNewOrder = useCallback(
-    (delta: number) => {
+    (pickup: boolean, delta: number) => {
       playAlert('order');
-      notifyBrowser('Đơn mới', `${delta} đơn mới cần xác nhận trên KDS`);
+      const description = pickup
+        ? 'Vào Mang đi & đặt trước để kiểm tra và thu tiền.'
+        : 'Vào Bàn & phiên để kiểm tra và thu tiền.';
+      notifyBrowser(
+        pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới',
+        `${delta} đơn mới. ${description}`,
+      );
       toast({
-        title: `Đơn mới (${delta})`,
-        description: 'Vào KDS để xác nhận.',
+        title: `${pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới'} (${delta})`,
+        description,
         tone: 'info',
       });
     },
@@ -138,8 +167,8 @@ export function StaffLayout(): JSX.Element {
     [toast],
   );
 
-  useCountDelta(pendingCount, notifyNewOrder);
-  useCountDelta(openRequestCount, notifyNewRequest);
+  useNewOrderAlerts(user?.id, awaitingQuery.data?.items, pickupsQuery.data?.items, notifyNewOrder);
+  useCountDelta(requestsQuery.data ? openRequestCount : undefined, notifyNewRequest);
 
   useSocketEvent('connect', () => {
     setConnected(true);
@@ -167,6 +196,15 @@ export function StaffLayout(): JSX.Element {
     };
   }, [accessToken]);
 
+  useEffect(() => {
+    window.addEventListener('pointerdown', unlockAlertAudio);
+    window.addEventListener('keydown', unlockAlertAudio);
+    return () => {
+      window.removeEventListener('pointerdown', unlockAlertAudio);
+      window.removeEventListener('keydown', unlockAlertAudio);
+    };
+  }, []);
+
   function toggleSound(): void {
     const next = !soundOn;
     setSoundOn(next);
@@ -174,7 +212,8 @@ export function StaffLayout(): JSX.Element {
     if (next) playAlert('order');
   }
 
-  function badgeFor(key: 'pending' | 'requests' | 'awaiting'): number | null {
+  function badgeFor(key: 'pending' | 'requests' | 'awaiting' | 'pickups'): number | null {
+    if (key === 'pickups') return pickupsQuery.data?.total || null;
     if (key === 'awaiting') return awaitingQuery.data?.items.length || null;
     if (key === 'pending') return pendingCount > 0 ? pendingCount : null;
     return openRequestCount > 0 ? openRequestCount : null;

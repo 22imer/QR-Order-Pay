@@ -46,11 +46,10 @@ export const billSchema = new Schema(
     tableSessionId: {
       type: Schema.Types.ObjectId,
       ref: 'TableSession',
-      required: true,
-      unique: true,
-      index: true,
+      default: null,
     },
-    tableId: { type: Schema.Types.ObjectId, ref: 'Table', required: true, index: true },
+    pickupOrderId: { type: Schema.Types.ObjectId, ref: 'Order', default: null },
+    tableId: { type: Schema.Types.ObjectId, ref: 'Table', default: null, index: true },
     tableCode: { type: String, required: true },
     tableName: { type: String, required: true, default: '' },
     cashierName: { type: String, required: true, default: '' },
@@ -82,6 +81,8 @@ export const billSchema = new Schema(
 );
 
 billSchema.index({ createdAt: -1 });
+billSchema.index({ tableSessionId: 1 }, { name: 'tableSessionId_1_dine_in', unique: true, partialFilterExpression: { tableSessionId: { $type: 'objectId' } } });
+billSchema.index({ pickupOrderId: 1 }, { unique: true, partialFilterExpression: { pickupOrderId: { $type: 'objectId' } } });
 
 export type BillDoc = HydratedDocument<InferSchemaType<typeof billSchema>>;
 export const BillModel = model('Bill', billSchema);

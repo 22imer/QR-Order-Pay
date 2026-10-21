@@ -112,7 +112,7 @@ function serializeBillSummary(bill: RawBill) {
 function serializeBill(bill: RawBill) {
   return {
     ...serializeBillSummary(bill),
-    tableSessionId: String(bill.tableSessionId),
+    tableSessionId: bill.tableSessionId ? String(bill.tableSessionId) : null,
     source: bill.source,
     openedAt: bill.openedAt.toISOString(),
     subtotal: bill.subtotal,

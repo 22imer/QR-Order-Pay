@@ -13,6 +13,12 @@ export function setSoundEnabled(v: boolean): void {
 
 let audioCtx: AudioContext | null = null;
 
+export function unlockAlertAudio(): void {
+  if (!isSoundEnabled()) return;
+  const ctx = getCtx();
+  if (ctx?.state === 'suspended') void ctx.resume().catch(() => undefined);
+}
+
 function getCtx(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   if (audioCtx) return audioCtx;
@@ -31,7 +37,7 @@ export function playAlert(kind: 'order' | 'request' | 'payment' = 'order'): void
   if (!isSoundEnabled()) return;
   const ctx = getCtx();
   if (!ctx) return;
-  if (ctx.state === 'suspended') void ctx.resume();
+  if (ctx.state === 'suspended') void ctx.resume().catch(() => undefined);
   const now = ctx.currentTime;
   const seq = kind === 'order'
     ? [880, 1175]
@@ -57,7 +63,7 @@ export function notifyBrowser(title: string, body: string): void {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   try {
-    new Notification(title, { body, silent: false });
+    new Notification(title, { body, silent: !isSoundEnabled() });
   } catch {
     /* ignore */
   }

@@ -30,6 +30,8 @@ interface OrderItem {
 }
 
 interface Order {
+  fulfillmentType?: 'DINE_IN' | 'TAKEAWAY' | 'PICKUP';
+  scheduledAt?: string | null;
   _id: string;
   code: string;
   tableSessionId: string;
@@ -355,6 +357,7 @@ function OrderCard({
         <div>
           <p className="font-display font-semibold">{order.code}</p>
           <p className="font-semibold text-primary">{order.tableName}</p>
+          {order.scheduledAt ? <p className="text-xs">Hẹn {new Date(order.scheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p> : null}
           <p className="text-xs text-muted-foreground">
             {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
               hour: '2-digit',
@@ -392,9 +395,9 @@ function OrderCard({
             disabled={busy}
             size="sm"
             className="flex-1"
-            aria-label={`Chuyển sang ${statusLabel(nextStatus)}`}
+            aria-label={`Chuyển sang ${nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)}`}
           >
-            {statusLabel(nextStatus)} <ChevronRight className="h-4 w-4 shrink-0" />
+            {nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)} <ChevronRight className="h-4 w-4 shrink-0" />
           </Button>
         ) : null}
         <Button variant="outline" size="sm" onClick={onView} title="Xem chi tiết">
@@ -422,7 +425,10 @@ function stageStartedAt(order: Order): number {
   const entry = [...(order.statusHistory ?? [])]
     .reverse()
     .find((value) => value.to === order.status);
-  return new Date(entry?.at ?? order.createdAt).getTime();
+  const stageAt = new Date(entry?.at ?? order.createdAt).getTime();
+  return order.scheduledAt && ['PENDING', 'CONFIRMED'].includes(order.status)
+    ? Math.max(stageAt, new Date(order.scheduledAt).getTime() - 15 * 60000)
+    : stageAt;
 }
 
 function statusLabel(s: Order['status']): string {

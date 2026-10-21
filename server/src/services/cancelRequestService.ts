@@ -65,7 +65,7 @@ export async function createCancelRequest(orderId: string, participantId: string
         cancelEvents(
           created.id,
           order.id,
-          order.tableSessionId.toString(),
+          order.tableSessionId?.toString() ?? '',
           participantId,
           'cancelRequest.created',
           created.version,
@@ -143,7 +143,7 @@ export async function decideCancelRequest(
     let updatedOrder = order;
     if (decision === 'APPROVED') {
       if (order.paymentStatus !== 'PAID' && (order.paidAmount ?? 0) === 0)
-        await guardUnpaidCancellation(order.tableSessionId.toString(), session);
+        await guardUnpaidCancellation(order.tableSessionId?.toString() ?? '', session);
       const cancelled = await orderRepository.transitionStatus(
         order.id,
         order.version,
@@ -168,7 +168,7 @@ export async function decideCancelRequest(
     const events = cancelEvents(
       id,
       order.id,
-      order.tableSessionId.toString(),
+      order.tableSessionId?.toString() ?? '',
       request.participantId,
       'cancelRequest.resolved',
       updatedRequest.version,
@@ -202,7 +202,7 @@ function cancelEvents(
   ];
 }
 function orderEvents(order: OrderDoc): RealtimeOutboxInput[] {
-  const tableSessionId = order.tableSessionId.toString();
+  const tableSessionId = order.tableSessionId?.toString() ?? '';
   const base = {
     eventType: 'order.statusChanged' as const,
     aggregateType: 'Order',

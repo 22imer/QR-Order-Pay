@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useGuestContext } from './guestContext';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { cn } from '../../lib/cn';
 import { useCart } from '../../store/cart';
+import type { CartItem } from '../../store/cart';
 import { useToast } from '../../components/ui/useToast';
 import { QtyStepper } from './QtyStepper';
 import { MenuPhoto } from './MenuPhoto';
@@ -47,6 +50,7 @@ interface Props {
   onClose: () => void;
   onAdded: () => void;
   validationContext?: { noCaffeine?: boolean; noDairy?: boolean; maxBudget?: number };
+  onAdd?: (item: Omit<CartItem, 'clientId'>) => void | false;
 }
 
 const SUGAR_LEVELS = ['0%', '30%', '50%', '70%', '100%'];
@@ -62,8 +66,12 @@ export function ProductDetailModal({
   onClose,
   onAdded,
   validationContext,
+  onAdd,
 }: Props): JSX.Element {
   const addToCart = useCart((s) => s.add);
+  const navigate = useNavigate();
+  const guest = useGuestContext();
+  const needsTable = !onAdd && !guest?.tableName;
   const { toast } = useToast();
 
   const availableSizes = useMemo(() => {
@@ -138,6 +146,10 @@ export function ProductDetailModal({
   }
 
   async function handleAdd(): Promise<void> {
+    if (needsTable) {
+      navigate('/t');
+      return;
+    }
     if (validationContext) {
       setValidating(true);
       try {
@@ -168,7 +180,7 @@ export function ProductDetailModal({
         setValidating(false);
       }
     }
-    addToCart({
+    const item: Omit<CartItem, 'clientId'> = {
       productId: product!._id,
       variantId: variant?._id ?? null,
       sizeName: variant?.name ?? null,
@@ -181,7 +193,12 @@ export function ProductDetailModal({
       name: product!.name,
       variantName: variant?.name ?? '',
       image: product!.image,
-    });
+    };
+    if (onAdd) {
+      if (onAdd(item) === false) return;
+    } else {
+      addToCart(item);
+    }
     toast({
       title: 'Đã thêm vào giỏ',
       description: `${quantity} x ${product!.name}`,
@@ -309,7 +326,7 @@ export function ProductDetailModal({
             'Đang kiểm tra cấu hình…'
           ) : (
             <>
-              <span>Thêm vào giỏ</span>
+              <span>{needsTable ? 'Quét QR để đặt' : 'Thêm vào giỏ'}</span>
               <span className="tabular-nums">{vnd(unitPrice * quantity)}</span>
             </>
           )}

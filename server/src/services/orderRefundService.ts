@@ -24,7 +24,7 @@ export async function recordOrderRefund(
   session: ClientSession,
 ) {
   await assertNoPaymentCorrection(order.id, session);
-  const active = await TableSessionModel.findOneAndUpdate(
+  const active = !order.tableSessionId || await TableSessionModel.findOneAndUpdate(
     {
       _id: order.tableSessionId,
       status: { $ne: 'CLOSED' },
@@ -75,7 +75,7 @@ export async function recordOrderRefund(
   }
   await orderRepository.setPaymentStatus([order.id], 'REFUNDED', session);
   await OrderModel.updateOne({ _id: order._id }, { $set: { paidAmount: 0 } }, { session });
-  await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
+  if (order.tableSessionId) await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
 }
 
 export async function refundAndCancelOrder(

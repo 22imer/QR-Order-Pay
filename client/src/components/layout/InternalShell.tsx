@@ -49,7 +49,7 @@ export function InternalShell({
           to={item.to}
           className={({ isActive }) =>
             cn(
-              'flex items-center gap-3 rounded-xl text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              'flex min-w-0 items-center gap-3 rounded-xl text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
               mobile ? 'shrink-0 px-3 py-2.5' : 'min-h-11 px-3 py-3',
               isActive
                 ? mobile
@@ -62,11 +62,18 @@ export function InternalShell({
           }
         >
           <span className="shrink-0 [&>svg]:h-[18px] [&>svg]:w-[18px]">{item.icon}</span>
-          <span className="flex-1 whitespace-nowrap">{item.label}</span>
+          <span
+            className={cn(
+              'min-w-0 flex-1',
+              mobile ? 'whitespace-nowrap' : 'break-words leading-snug',
+            )}
+          >
+            {item.label}
+          </span>
           {item.badge != null && item.badge > 0 ? (
             <span
               aria-label={`${item.badge} chờ xử lý`}
-              className="grid h-5 min-w-5 place-items-center rounded-full bg-accent px-1.5 text-[11px] font-bold text-accent-foreground tabular-nums"
+              className="grid h-6 min-w-6 shrink-0 place-items-center rounded-full bg-accent px-1.5 text-xs font-bold text-accent-foreground tabular-nums"
             >
               {item.badge}
             </span>

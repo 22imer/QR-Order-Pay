@@ -18,6 +18,7 @@ export async function runAnomalyDetection(now = new Date()): Promise<AnomalyEval
   const [http, rawOrders] = await Promise.all([
     isRedisReady() ? getSharedHttpObservations(baselineStart, now) : Promise.resolve(getHttpObservations(baselineStart)),
     OrderModel.find({
+      'pickup.outcome': { $ne: 'NO_SHOW' },
       $or: [
         { createdAt: { $gte: baselineStart } },
         { 'statusHistory.at': { $gte: baselineStart } },

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { QrCode } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -124,6 +124,12 @@ export function JoinPage(): JSX.Element {
               {loading ? 'Đang vào...' : 'Vào bàn'}
             </Button>
           </form>
+          <Link
+            to="/pickup"
+            className="mt-4 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted"
+          >
+            Đặt mang đi / đặt trước
+          </Link>
           <details className="mt-6 border-t border-foreground/10 pt-5 text-sm text-muted-foreground">
             <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
               Mở link vào bàn

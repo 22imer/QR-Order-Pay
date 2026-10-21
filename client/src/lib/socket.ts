@@ -42,7 +42,7 @@ export class RealtimeEventGate {
   }
 }
 
-const realtimeEventGate = new RealtimeEventGate();
+const eventGates = new Set<RealtimeEventGate>();
 
 function connect(key: string, auth: Record<string, string>): Socket {
   if (socket && identity === key) return socket;
@@ -70,7 +70,7 @@ export function disconnectSocket(): void {
   socket?.disconnect();
   socket = null;
   identity = '';
-  realtimeEventGate.resetVersions();
+  for (const gate of eventGates) gate.resetVersions();
 }
 
 export function getSocket(): Socket | null {
@@ -89,6 +89,10 @@ export function useSocketEvent(
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
   useEffect(() => {
+    // Each subscriber must receive the event once. A shared gate lets the first
+    // layout subscriber consume it before the page can refresh its own data.
+    const gate = new RealtimeEventGate();
+    eventGates.add(gate);
     const handler = (payload: unknown) => {
       const parsed = realtimeEventEnvelopeSchema.safeParse(payload);
       if (!parsed.success) {
@@ -96,13 +100,14 @@ export function useSocketEvent(
         return;
       }
       const envelope = parsed.data;
-      if (!realtimeEventGate.accept(envelope)) return;
+      if (!gate.accept(envelope)) return;
       callbackRef.current(envelope.data, envelope);
     };
     const entry = { event, handler };
     subscribers.add(entry);
     socket?.on(event, handler);
     return () => {
+      eventGates.delete(gate);
       subscribers.delete(entry);
       socket?.off(event, handler);
     };

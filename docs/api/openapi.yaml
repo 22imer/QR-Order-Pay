@@ -7,9 +7,474 @@ info:
     - Prefix: `/api/v1`
     - Auth: JWT (Staff/Admin) + HttpOnly cookie (Guest)
     - Error envelope: `{ success: false, error: { code, message, details? }, requestId }`
+    - Socket nội bộ `workforce.changed`: `{refresh:true}` qua outbox sau commit tạo/sửa/hủy/chấm/điều chỉnh/cấu hình/copy; chỉ Staff/Admin, không chứa thông tin nhân sự. Client đọc lại snapshot theo quyền, refetch khi reconnect và polling 30 giây dự phòng.
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /pickups:
+    get:
+      summary: Danh sách đơn mang đi và đặt trước nhận tại quầy
+      description: "Cookie HttpOnly mc_member; chính chủ, không cần QR. Query page mặc định 1, history=true/false mặc định false; 30 dòng/trang. Trả items,total,page,limit. Khách chỉ thấy tài khoản mình; internal tất cả. DTO có contact riêng, outcome ACTIVE/COLLECTED/NO_SHOW, version, billId."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+    post:
+      summary: Tạo hoặc replay đơn mang đi
+      description: "Cookie HttpOnly mc_member; chính chủ, không cần QR. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Create bắt buộc quoteToken hợp lệ, gắn owner và contact/giờ hẹn. requestId unique theo chủ yêu cầu; retry không giữ kho/điểm/lượt lần nữa. Không tạo bàn/phiên bàn. Đơn AWAITING_PAYMENT/UNPAID. Khách tối đa 3 đơn active."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /pickups/quote:
+    post:
+      summary: Báo giá đơn mang đi trước khi đặt
+      description: "Cookie HttpOnly mc_member; chính chủ, không cần QR. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Quote không nhận quoteToken. Trả OrderQuoteResponse có chữ ký, tổng/ưu đãi/options; không ghi đơn/kho."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /pickups/{id}/cancel:
+    post:
+      summary: Hủy đơn mang đi chưa pha và chưa thu
+      description: "Cookie HttpOnly mc_member; chính chủ, không cần QR. Body strict {expectedVersion,reason 3–280 ký tự}. Trả giữ kho/ưu đãi trong transaction; đã thu cần refund. Retry đơn đã hủy trả trạng thái cũ."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /pickups/{id}/bill:
+    get:
+      summary: Đọc hóa đơn snapshot một đơn mang đi
+      description: "Cookie HttpOnly mc_member; chính chủ, không cần QR. Chỉ khi COLLECTED hoặc NO_SHOW đã pha có tiền. Trả invoiceCode,title,closedAt,total,order chứa dòng món/giảm giá. Không trả tên/SĐT, payment ID hoặc nhân viên; không tính lại giá theo catalog."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups:
+    get:
+      summary: Danh sách đơn mang đi và đặt trước nhận tại quầy
+      description: "JWT STAFF/ADMIN. Query page mặc định 1, history=true/false mặc định false; 30 dòng/trang. Trả items,total,page,limit. Khách chỉ thấy tài khoản mình; internal tất cả. DTO có contact riêng, outcome ACTIVE/COLLECTED/NO_SHOW, version, billId."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+    post:
+      summary: Tạo hoặc replay đơn mang đi
+      description: "JWT STAFF/ADMIN. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Create bắt buộc quoteToken hợp lệ, gắn owner và contact/giờ hẹn. requestId unique theo chủ yêu cầu; retry không giữ kho/điểm/lượt lần nữa. Không tạo bàn/phiên bàn. Đơn AWAITING_PAYMENT/UNPAID. Khách tối đa 3 đơn active."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/quote:
+    post:
+      summary: Báo giá đơn mang đi trước khi đặt
+      description: "JWT STAFF/ADMIN. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Quote không nhận quoteToken. Trả OrderQuoteResponse có chữ ký, tổng/ưu đãi/options; không ghi đơn/kho."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/cancel:
+    post:
+      summary: Hủy đơn mang đi chưa pha và chưa thu
+      description: "JWT STAFF/ADMIN. Body strict {expectedVersion,reason 3–280 ký tự}. Trả giữ kho/ưu đãi trong transaction; đã thu cần refund. Retry đơn đã hủy trả trạng thái cũ."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/bill:
+    get:
+      summary: Đọc hóa đơn snapshot một đơn mang đi
+      description: "JWT STAFF/ADMIN. Chỉ khi COLLECTED hoặc NO_SHOW đã pha có tiền. Trả invoiceCode,title,closedAt,total,order chứa dòng món/giảm giá. Không trả tên/SĐT, payment ID hoặc nhân viên; không tính lại giá theo catalog."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/catalog:
+    get:
+      summary: Thực đơn khả dụng để tạo đơn tại quầy
+      description: "JWT STAFF/ADMIN. Cùng nguồn menu public và tồn kho hiện tại; categories/products/toppings."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/payments:
+    post:
+      summary: Ghi nhận đã thu tiền đơn mang đi
+      description: "JWT STAFF/ADMIN. Header Idempotency-Key 8–64 ký tự. Body strict {amount nguyên >=0,method CASH/BANK_TRANSFER/OTHER,expectedVersion,note?}. Thu một phần hoặc đủ; đủ chuyển PENDING/PAID. Số tiền không vượt dư nợ; 0 chỉ cho đơn 0đ. Không yêu cầu payment claim của bàn. Thu/ca/audit/outbox cùng transaction; replay không thu hai lần."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/status:
+    patch:
+      summary: Chuyển công đoạn hoặc xác nhận khách đã nhận
+      description: "JWT STAFF/ADMIN. Body strict {status,expectedVersion}. Chỉ PAID; PENDING→CONFIRMED→PREPARING→READY→SERVED. Đặt trước không pha sớm hơn giờ hẹn trừ 15 phút. SERVED là giao khách thực tế: COLLECTED, WorkActivity, tích điểm và Bill snapshot cùng transaction. Không chuyển đơn đã NO_SHOW/COLLECTED."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/refund:
+    post:
+      summary: Xác nhận đã hoàn toàn bộ tiền và hủy trước pha chế
+      description: "JWT STAFF/ADMIN. Body strict {expectedVersion,amount,method,reason,refundConfirmed:true}. Đã hoàn thủ công, không gọi ngân hàng. Chỉ AWAITING_PAYMENT/PENDING/CONFIRMED; kiểm tổng tất cả khoản thu SUCCESS, hoàn và trả giữ/ưu đãi đúng một lần."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /staff/pickups/{id}/no-show:
+    post:
+      summary: Nhân viên ghi nhận khách không đến
+      description: "JWT STAFF/ADMIN. Body strict {expectedVersion,reason}. Chỉ sau giờ hẹn 30 phút, TAKEAWAY sau tạo 60 phút. Chưa pha/chưa thu thì hủy và trả giữ; đã thu/chưa pha phải hoàn trước. Đã pha giữ tiêu hao/khoản thu, không tích điểm, tạo Bill snapshot, outcome NO_SHOW và loại khỏi KDS. Retry không thêm giao dịch. Không tự chạy định kỳ."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups:
+    get:
+      summary: Danh sách đơn mang đi và đặt trước nhận tại quầy
+      description: "JWT ADMIN. Query page mặc định 1, history=true/false mặc định false; 30 dòng/trang. Trả items,total,page,limit. Khách chỉ thấy tài khoản mình; internal tất cả. DTO có contact riêng, outcome ACTIVE/COLLECTED/NO_SHOW, version, billId."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+    post:
+      summary: Tạo hoặc replay đơn mang đi
+      description: "JWT ADMIN. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Create bắt buộc quoteToken hợp lệ, gắn owner và contact/giờ hẹn. requestId unique theo chủ yêu cầu; retry không giữ kho/điểm/lượt lần nữa. Không tạo bàn/phiên bàn. Đơn AWAITING_PAYMENT/UNPAID. Khách tối đa 3 đơn active."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/quote:
+    post:
+      summary: Báo giá đơn mang đi trước khi đặt
+      description: "JWT ADMIN. Body strict {requestId UUID,items,pickup:{fulfillmentType TAKEAWAY/PICKUP,name,phone,scheduledAt ISO offset hoặc null},voucherCode?,redeemPoints?,quoteToken?}. TAKEAWAY không giờ; PICKUP từ 15 phút tới 7 ngày. Giờ Việt Nam. Tối đa 50 dòng × 50 phần. Giá/kho/ưu đãi tính ở server. Quote không nhận quoteToken. Trả OrderQuoteResponse có chữ ký, tổng/ưu đãi/options; không ghi đơn/kho."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/cancel:
+    post:
+      summary: Hủy đơn mang đi chưa pha và chưa thu
+      description: "JWT ADMIN. Body strict {expectedVersion,reason 3–280 ký tự}. Trả giữ kho/ưu đãi trong transaction; đã thu cần refund. Retry đơn đã hủy trả trạng thái cũ."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/bill:
+    get:
+      summary: Đọc hóa đơn snapshot một đơn mang đi
+      description: "JWT ADMIN. Chỉ khi COLLECTED hoặc NO_SHOW đã pha có tiền. Trả invoiceCode,title,closedAt,total,order chứa dòng món/giảm giá. Không trả tên/SĐT, payment ID hoặc nhân viên; không tính lại giá theo catalog."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/catalog:
+    get:
+      summary: Thực đơn khả dụng để tạo đơn tại quầy
+      description: "JWT ADMIN. Cùng nguồn menu public và tồn kho hiện tại; categories/products/toppings."
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/payments:
+    post:
+      summary: Ghi nhận đã thu tiền đơn mang đi
+      description: "JWT ADMIN. Header Idempotency-Key 8–64 ký tự. Body strict {amount nguyên >=0,method CASH/BANK_TRANSFER/OTHER,expectedVersion,note?}. Thu một phần hoặc đủ; đủ chuyển PENDING/PAID. Số tiền không vượt dư nợ; 0 chỉ cho đơn 0đ. Không yêu cầu payment claim của bàn. Thu/ca/audit/outbox cùng transaction; replay không thu hai lần."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/status:
+    patch:
+      summary: Chuyển công đoạn hoặc xác nhận khách đã nhận
+      description: "JWT ADMIN. Body strict {status,expectedVersion}. Chỉ PAID; PENDING→CONFIRMED→PREPARING→READY→SERVED. Đặt trước không pha sớm hơn giờ hẹn trừ 15 phút. SERVED là giao khách thực tế: COLLECTED, WorkActivity, tích điểm và Bill snapshot cùng transaction. Không chuyển đơn đã NO_SHOW/COLLECTED."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/refund:
+    post:
+      summary: Xác nhận đã hoàn toàn bộ tiền và hủy trước pha chế
+      description: "JWT ADMIN. Body strict {expectedVersion,amount,method,reason,refundConfirmed:true}. Đã hoàn thủ công, không gọi ngân hàng. Chỉ AWAITING_PAYMENT/PENDING/CONFIRMED; kiểm tổng tất cả khoản thu SUCCESS, hoàn và trả giữ/ưu đãi đúng một lần."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/pickups/{id}/no-show:
+    post:
+      summary: Nhân viên ghi nhận khách không đến
+      description: "JWT ADMIN. Body strict {expectedVersion,reason}. Chỉ sau giờ hẹn 30 phút, TAKEAWAY sau tạo 60 phút. Chưa pha/chưa thu thì hủy và trả giữ; đã thu/chưa pha phải hoàn trước. Đã pha giữ tiêu hao/khoản thu, không tích điểm, tạo Bill snapshot, outcome NO_SHOW và loại khỏi KDS. Retry không thêm giao dịch. Không tự chạy định kỳ."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: 'success/data envelope; DTO filtered, Cache-Control no-store' }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc không thể thao tác ở trạng thái hiện tại }
+        '409': { description: Version thay đổi, requestId xung đột hoặc cần báo giá lại }
+        '422': { description: Dữ liệu hoặc giờ nhận không hợp lệ }
+  /admin/workforce/copy-preview:
+    post:
+      summary: Admin xem trước bản sao lịch tuần, không ghi dữ liệu
+      description: 'Body strict {from,targetFrom} YYYY-MM-DD. Tuần đích sau nguồn ít nhất 7 ngày và cùng thứ; tối đa 200 ca bắt đầu trong tuần nguồn, bỏ ca hủy. Trả shifts, conflicts và snapshot; kiểm tài khoản khóa/xóa, ca đích ở tương lai và trùng lịch. Không sao chép chấm công/KDS.'
+      responses:
+        '200': { description: 'from,targetFrom,snapshot,shifts,conflicts' }
+        '403': { description: Chỉ Admin }
+        '422': { description: Tuần không hợp lệ hoặc nguồn rỗng/quá lớn }
+  /admin/workforce/copy:
+    post:
+      summary: Admin xác nhận sao chép lịch theo bản xem trước
+      description: 'Body strict {from,targetFrom,snapshot,requestId}; requestId UUID. Transaction kiểm lại nguồn/version, tài khoản và lịch đích, tạo tất cả hoặc không tạo ca nào, kèm audit và bản ghi replay. Mất phản hồi thử lại đúng payload trả kết quả cũ. Lịch sao chép reset trạng thái SCHEDULED, version 0 và giờ công rỗng.'
+      responses:
+        '200': { description: 'count,ids,targetFrom hoặc replay' }
+        '403': { description: Chỉ Admin }
+        '409': { description: Nguồn đổi, đích trùng/không còn hợp lệ hoặc requestId xung đột }
+  /staff/workforce/export:
+    get:
+      summary: Xuất CSV bảng công và hiệu suất riêng của người đăng nhập
+      description: 'JWT STAFF/ADMIN, from YYYY-MM-DD bắt buộc. CSV UTF-8 BOM, giờ Việt Nam, tổng hợp tuần và chi tiết ca/giờ gốc/điều chỉnh; chống công thức spreadsheet, không trả dữ liệu người khác. Cache-Control no-store.'
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: 'text/csv attachment bang-cong-YYYY-MM-DD.csv' }
+        '401': { description: Cần đăng nhập }
+        '422': { description: Ngày/query không hợp lệ }
+  /admin/workforce/export:
+    get:
+      summary: Admin xuất CSV bảng công và hiệu suất toàn bộ
+      description: 'CSV tổng hợp tuần và chi tiết lịch/chấm công; cùng phạm vi tuần với GET /admin/workforce. Tổng giờ thực tế cắt theo tuần, chi tiết hiển thị cả ca; không tính lương. UTF-8 BOM, chống công thức spreadsheet, Cache-Control no-store.'
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: 'text/csv attachment bang-cong-YYYY-MM-DD.csv' }
+        '403': { description: Chỉ Admin }
+  /staff/workforce:
+    get:
+      summary: Lịch 7 ngày, ca đang làm và hiệu suất riêng của người đăng nhập
+      description: STAFF hoặc ADMIN. Giờ Việt Nam, chỉ trả lịch và báo cáo chính chủ. currentShift độc lập tuần đang xem. Không trả cấu hình/danh sách người khác.
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: 'from, until, now, shifts, currentShift, metrics, shiftMetrics; staff/coverage rỗng với Staff' }
+        '401': { description: Cần đăng nhập }
+        '422': { description: Ngày hoặc query không hợp lệ }
+  /staff/workforce/{id}/clock-in:
+    post:
+      summary: Chính chủ vào ca bằng giờ server, sớm tối đa 30 phút
+      description: 'Body strict {expectedVersion}. Chỉ SCHEDULED, chưa hết ca và không trùng giờ thực tế; retry không ghi hai lần. Không cho truyền giờ hoặc staffId.'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: WorkShift DTO }
+        '403': { description: Ca của người khác hoặc tài khoản không hoạt động }
+        '409': { description: Ca đổi version, ngoài cửa sổ chấm hoặc chồng lấn giờ thực tế }
+  /staff/workforce/{id}/clock-out:
+    post:
+      summary: Chính chủ ra ca bằng giờ server
+      description: 'Body strict {expectedVersion}. Chỉ WORKING, retry không ghi hai lần. Ca mở quá 24 giờ phải được Admin điều chỉnh.'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: WorkShift DTO }
+        '403': { description: Không phải chính chủ }
+        '409': { description: Version hoặc trạng thái không hợp lệ, hoặc cần điều chỉnh giờ }
+  /admin/workforce:
+    get:
+      summary: Admin xem lịch, chấm công, hiệu suất toàn bộ và cảnh báo thiếu người
+      description: '7 ngày từ from, UTC+7. coverage lấy mức phủ đồng thời thấp nhất. metrics/shiftMetrics theo người/công đoạn và snapshot ca, có số mẫu. peaks dùng 4 tuần hoàn chỉnh trước min(tuần được chọn, hôm nay), từ 20 đơn PAID không hủy; khung cần 3 mẫu, tối đa 12 khung; trung bình chia 4 tuần kể cả tuần 0 đơn, đề xuất ceil(TB/định mức). cash chứa 50 ca gần nhất (ưu tiên OPEN) mở/chốt trong tuần hoặc đang OPEN, tổng chênh lệch trên mọi ca CLOSED theo closedAt trong tuần. Staff không nhận peaks/cash. Không backfill KDS cũ, không gán chênh lệch tiền cho nhân viên.'
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200': { description: 'from, until, now, shifts, currentShift, staff, policy, coverage, metrics, shiftMetrics, peaks, cash' }
+        '403': { description: Chỉ Admin }
+        '422': { description: Ngày không hợp lệ }
+  /admin/workforce/shifts:
+    post:
+      summary: Admin xếp ca cho một tài khoản hoạt động
+      description: 'Body strict {staffId,label,startsAt,endsAt,note?,requestId}. Timestamp ISO có timezone, ca >0 đến 16h, chưa kết thúc; UUID requestId chống tạo trùng và kiểm hash payload. Chống xếp chồng cả khi nhiều Admin thao tác đồng thời.'
+      responses:
+        '200': { description: WorkShift DTO hoặc replay }
+        '403': { description: Chỉ Admin, nhân viên phải hoạt động }
+        '409': { description: Trùng ca hoặc requestId đã dùng cho dữ liệu khác }
+        '422': { description: Payload hoặc thời gian không hợp lệ }
+  /admin/workforce/shifts/{id}:
+    patch:
+      summary: Admin sửa lịch chưa chấm công
+      description: 'Body strict {staffId,label,startsAt,endsAt,note?,expectedVersion}. Khóa lịch sau khi vào ca; kiểm chồng lấn với lịch khác.'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: WorkShift DTO }
+        '409': { description: Ca đã đổi, đã chấm/hủy hoặc trùng lịch }
+  /admin/workforce/shifts/{id}/cancel:
+    post:
+      summary: Admin hủy ca chưa chấm với lý do, không xóa lịch sử
+      description: 'Body strict {expectedVersion,reason}; reason 3–500 ký tự. Cho phép hủy lịch tài khoản đã khóa/xóa.'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: WorkShift DTO }
+        '409': { description: Ca đã chấm hoặc version cũ }
+  /admin/workforce/shifts/{id}/attendance:
+    post:
+      summary: Admin bổ sung hoặc điều chỉnh giờ thực tế, giữ giờ bấm gốc
+      description: 'Body strict {expectedVersion,startsAt,endsAt,reason}. >0 đến 24h, không ở tương lai, trong 12h quanh lịch, không trùng chấm công khác. Ghi audit before/after và người sửa cùng transaction. Không gán lại snapshot KDS.'
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: WorkShift DTO }
+        '409': { description: Ca hủy, version cũ hoặc chồng lấn giờ thực tế }
+        '422': { description: Thiếu lý do hoặc khoảng giờ không hợp lệ }
+  /admin/workforce/policy:
+    put:
+      summary: Admin thay danh sách khung nhu cầu nhân sự có version và audit
+      description: 'Body strict {expectedVersion,rules:[{day,startMinute,endMinute,minStaff,label}],ordersPerStaffHour?}; định mức nguyên 1–100, mặc định 6, dùng cho đề xuất lịch sử. Tối đa 100 khung, day 1=thứ hai đến 7=chủ nhật; phút 0–1440, minStaff 1–50; khung cùng ngày không chồng nhau. rules rỗng tắt cảnh báo. Gợi ý chỉ vào bản nháp khi Admin chọn, bấm Lưu mới đổi cấu hình. Version được giữ từ lúc mở form.'
+      responses:
+        '200': { description: version và rules đã lưu }
+        '409': { description: Cấu hình vừa được người khác thay đổi }
+        '422': { description: Khung chồng lấn hoặc payload không hợp lệ }
   /members/register:
     post:
       summary: Đăng ký thành viên bằng tên, SĐT Việt Nam và mật khẩu; không SMS
@@ -807,6 +1272,7 @@ paths:
   /ai/recommendations:
     post:
       summary: AI gợi ý món
+      description: "Cho khách có phiên QR còn hoạt động hoặc thành viên đăng nhập qua mc_member không cần bàn. Giữ rate limit và CSRF; Cache-Control no-store. Không cấp quyền đặt đơn tại bàn cho thành viên chưa quét QR."
       requestBody:
         required: true
         content:
@@ -1178,5 +1644,6 @@ paths:
     post:
       {
         summary: Kiểm tra lại variant/topping/giá/caffeine/dairy của cấu hình AI cuối,
+        description: "Cần phiên QR hoạt động hoặc cookie thành viên mc_member hợp lệ; hỗ trợ tùy chỉnh món mang đi chưa vào bàn. CSRF/rate limit giữ nguyên.",
         responses: { '200': { description: Kết quả valid, total và violations } },
       }

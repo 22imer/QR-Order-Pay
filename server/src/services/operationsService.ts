@@ -16,7 +16,8 @@ export async function operationsSummary() {
       TableSessionModel.countDocuments({ status: { $in: ['OPEN', 'CHECKOUT'] } }),
       ServiceRequestModel.countDocuments({ status: 'OPEN' }),
       OrderModel.aggregate<{ _id: string; count: number; oldestCreatedAt: Date }>([
-        { $match: { status: { $in: ACTIVE_ORDER_STATUSES } } },
+        { $match: { status: { $in: ACTIVE_ORDER_STATUSES }, 'pickup.outcome': { $ne: 'NO_SHOW' },
+          $or: [{ 'pickup.scheduledAt': null }, { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } }] } },
         { $group: { _id: '$status', count: { $sum: 1 }, oldestCreatedAt: { $min: '$createdAt' } } },
       ]),
       queueSnapshot(),

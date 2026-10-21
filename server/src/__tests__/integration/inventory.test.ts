@@ -113,7 +113,7 @@ async function order(
 async function pay(orderId: string, amount?: number) {
   const current = await OrderModel.findById(orderId).orFail();
   const token = key();
-  await claimPayment(current.tableSessionId.toString(), actorId, token);
+  await claimPayment(String(current.tableSessionId), actorId, token);
   return confirmOrderPayment({
     orderId,
     expectedVersion: current.version,

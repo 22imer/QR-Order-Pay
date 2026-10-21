@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { recordWorkActivity } from './workforceService.js';
 import { orderRepository } from '../repositories/orderRepository.js';
 import { unitOfWork } from '../infrastructure/unitOfWork.js';
 import { auditRepository } from '../repositories/auditRepository.js';
@@ -21,6 +22,7 @@ import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { guardUnpaidCancellation } from './paymentClaimService.js';
 import mongoose from 'mongoose';
 import { reserveOrderInventory } from './orderInventoryService.js';
+import { finalizePickupBill } from './pickupBillService.js';
 
 export interface PlaceOrderItemInput {
   productId: string;
@@ -223,7 +225,7 @@ export async function cancelOrderByGuest(
       (order.paidAmount ?? 0) > 0
     )
       throw new ConflictError('STATE_TRANSITION_INVALID', 'Đơn đã được nhận, không thể hủy.');
-    await guardUnpaidCancellation(order.tableSessionId.toString(), session);
+    if (order.tableSessionId) await guardUnpaidCancellation(order.tableSessionId.toString(), session);
     const updated = await orderRepository.transitionStatus(
       orderId,
       order.version,
@@ -259,10 +261,18 @@ export async function transitionByStaff(
   next: OrderStatus,
   actor: { id: string },
   reason?: string,
+  expectedVersion?: number,
 ): Promise<OrderDoc> {
   return unitOfWork.withTransaction(async (session) => {
     const order = await orderRepository.findById(orderId, session);
     if (!order) throw new NotFoundError('Đơn không tồn tại.');
+    if (expectedVersion !== undefined && order.version !== expectedVersion)
+      throw new ConflictError('CONFLICT', 'Đơn vừa thay đổi. Vui lòng tải lại.');
+    if (order.pickup && order.pickup.outcome !== 'ACTIVE')
+      throw new ConflictError('CONFLICT', 'Đơn mang đi đã kết thúc.');
+    if (next === 'PREPARING' && order.pickup?.scheduledAt &&
+      Date.now() < order.pickup.scheduledAt.getTime() - 15 * 60000)
+      throw new ForbiddenError('Chỉ pha đơn đặt trước từ 15 phút trước giờ nhận.');
     await assertNoPaymentCorrection(order.id, session);
     const allowed = allowedNext(order.status);
     if (next !== 'CANCELLED' && order.paymentStatus !== 'PAID')
@@ -275,7 +285,7 @@ export async function transitionByStaff(
         `Không thể chuyển đơn từ ${order.status} sang ${next}.`,
       );
     }
-    if (next === 'CANCELLED')
+    if (next === 'CANCELLED' && order.tableSessionId)
       await guardUnpaidCancellation(order.tableSessionId.toString(), session);
     const updated = await orderRepository.transitionStatus(
       orderId,
@@ -293,6 +303,13 @@ export async function transitionByStaff(
         'CONFLICT',
         'Đơn vừa được cập nhật bởi người khác, vui lòng tải lại.',
       );
+    await recordWorkActivity(orderId, next, actor.id, session);
+    if (next === 'SERVED' && updated.pickup) {
+      updated.pickup.outcome = 'COLLECTED';
+      updated.pickup.closedAt = new Date();
+      await updated.save({ session });
+      await finalizePickupBill(updated, actor.id, session);
+    }
     await auditRepository.log(
       {
         actorType: 'USER',
@@ -316,6 +333,10 @@ export function orderRealtimeEvents(
   order: OrderDoc,
   eventType: 'order.created' | 'order.statusChanged',
 ): RealtimeOutboxInput[] {
+  if (!order.tableSessionId) return [{
+    eventType, aggregateType: 'Order', aggregateId: order.id, aggregateVersion: order.version,
+    payload: { orderId: order.id, status: order.status, version: order.version }, target: { scope: 'staff' },
+  }];
   const tableSessionId = order.tableSessionId.toString();
   const payload = {
     orderId: order.id,

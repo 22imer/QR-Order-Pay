@@ -172,8 +172,8 @@ export async function createOrderQuote(input: {
   voucherCode?: string;
   redeemPoints?: number;
   memberId?: string | null;
-}): Promise<OrderQuote> {
-  await guestCanOrder(input.tableSessionId);
+}, pickup = false): Promise<OrderQuote> {
+  if (!pickup) await guestCanOrder(input.tableSessionId);
   const priced = await priceOrderWithBenefits(input.items, input);
   const expiresAt = Date.now() + config.orderQuoteTtlMs;
   const payload: QuotePayload = {

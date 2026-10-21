@@ -143,8 +143,8 @@ export async function staffList(req: Request, res: Response, next: NextFunction)
       success: true,
       data: {
         items: items.map((o) => {
-          const table = byId.get(o.tableId.toString());
-          return toStaffOrder(o, { name: table?.name ?? 'Bàn', code: table?.code ?? '' });
+          const table = byId.get(o.tableId?.toString() ?? '');
+          return toStaffOrder(o, { name: table?.name ?? (o.fulfillmentType === 'PICKUP' ? 'Đặt trước nhận tại quầy' : o.fulfillmentType === 'TAKEAWAY' ? 'Mang đi' : 'Bàn'), code: table?.code ?? '' });
         }),
       },
     });
@@ -164,11 +164,11 @@ export async function staffGetOne(req: Request, res: Response, next: NextFunctio
       });
       return;
     }
-    const table = await tableRepository.findById(order.tableId.toString());
+    const table = order.tableId ? await tableRepository.findById(order.tableId.toString()) : null;
     res.json({
       success: true,
       data: {
-        order: toStaffOrder(order, { name: table?.name ?? 'Bàn', code: table?.code ?? '' }),
+        order: toStaffOrder(order, { name: table?.name ?? (order.fulfillmentType === 'PICKUP' ? 'Đặt trước nhận tại quầy' : order.fulfillmentType === 'TAKEAWAY' ? 'Mang đi' : 'Bàn'), code: table?.code ?? '' }),
       },
     });
   } catch (e) {

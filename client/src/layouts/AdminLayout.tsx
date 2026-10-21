@@ -11,11 +11,19 @@ import {
   MessageSquareText,
   ReceiptText,
   Package,
+  CalendarDays,
 } from 'lucide-react';
 import { useAuth } from '../features/auth/useAuth';
 import { InternalShell } from '../components/layout/InternalShell';
+import { connectStaffSocket, disconnectSocket } from '../lib/socket';
 
 const NAV = [
+  { to: '/admin/pickups', label: 'Mang đi & đặt trước', icon: <Package className="h-4 w-4" /> },
+  {
+    to: '/admin/workforce',
+    label: 'Lịch ca & hiệu suất',
+    icon: <CalendarDays className="h-4 w-4" />,
+  },
   { to: '/admin/vouchers', label: 'Voucher', icon: <Sparkles className="h-4 w-4" /> },
   { to: '/admin/members', label: 'Thành viên', icon: <Users className="h-4 w-4" /> },
   { to: '/admin/inventory', label: 'Kho & công thức', icon: <Package className="h-4 w-4" /> },
@@ -33,13 +41,19 @@ const NAV = [
 
 export function AdminLayout(): JSX.Element {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, accessToken, logout } = useAuth();
+  useEffect(() => {
+    if (!accessToken) return;
+    connectStaffSocket(accessToken);
+    return () => disconnectSocket();
+  }, [accessToken]);
   const [now, setNow] = useState(new Date());
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
   const orderedNav = [
+    '/admin/pickups',
     '/admin/tables',
     '/admin/products',
     '/admin/categories',
@@ -51,6 +65,7 @@ export function AdminLayout(): JSX.Element {
     '/admin/payments',
     '/admin/reviews',
     '/admin/users',
+    '/admin/workforce',
     '/admin/dashboard',
     '/admin/operations',
   ].map((path) => NAV.find((item) => item.to === path)!);

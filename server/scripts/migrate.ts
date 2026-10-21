@@ -26,6 +26,8 @@ import '../src/models/Recipe.js';
 import '../src/models/StockMovement.js';
 import '../src/models/Member.js';
 import '../src/models/Voucher.js';
+import '../src/models/WorkShift.js';
+import { migratePickupIndexes } from '../src/infrastructure/pickupIndexes.js';
 
 interface Migration {
   id: string;
@@ -34,6 +36,30 @@ interface Migration {
   up: () => Promise<void>;
 }
 const migrations: Migration[] = [
+  {
+    id: '20261020-001-pickup-indexes',
+    description: 'Extend order and invoice uniqueness for standalone pickup without rewriting data',
+    checksumSource: 'v1:partial-dine-in-order-bill,pickup-owner-request,pickup-outcome-due,pickup-order-bill-unique',
+    up: () => migratePickupIndexes(mongoose.connection.db!),
+  },
+  {
+    id: '20261019-004-workforce-planning-indexes',
+    description: 'Create schedule copy replay storage and cash shift date lookup indexes',
+    checksumSource: 'v1:workScheduleCopy-createdAt,cashShift-openedAt-closedAt',
+    up: async () => {
+      for (const name of ['WorkScheduleCopy', 'CashShift'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
+  {
+    id: '20261019-003-workforce-indexes',
+    description: 'Create work schedule, attendance and KDS activity indexes without backfilling history',
+    checksumSource: 'v1:workshift-request-unique,staff-range,working-unique,activity-order-stage-unique-at-staff-shift-preparation',
+    up: async () => {
+      for (const name of ['WorkShift', 'StaffingPolicy', 'WorkActivity'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
   {
     id: '20261019-002-promotions-members-indexes',
     description: 'Create member, member session, points ledger and voucher indexes',

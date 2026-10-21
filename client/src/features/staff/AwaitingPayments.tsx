@@ -61,7 +61,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
   const [amount, setAmount] = useState(String(remaining));
   const [claiming, setClaiming] = useState(false);
   const [uncertain, setUncertain] = useState(false);
-  const claim = usePaymentClaim(order.tableSessionId, open);
+  const claim = usePaymentClaim(order.tableSessionId ?? '', open);
   const attempt = useRef<{
     signature: string;
     key: string;

@@ -102,15 +102,15 @@ export async function awaiting(_req: Request, res: Response, next: NextFunction)
   try {
     const orders = await listAwaitingPayments();
     const tables = await tableRepository.list();
-    const claims = await paymentClaims(orders.map((o) => o.tableSessionId.toString()));
+    const claims = await paymentClaims(orders.map((o) => o.tableSessionId?.toString() ?? ''));
     const names = new Map(tables.map((t) => [t.id, t.name]));
     res.json({
       success: true,
       data: {
         items: orders.map((o) => ({
           ...toStaffOrder(o),
-          tableName: names.get(o.tableId.toString()) ?? 'Bàn',
-          collectionClaim: claims.get(o.tableSessionId.toString()) ?? null,
+          tableName: names.get(o.tableId?.toString() ?? '') ?? 'Bàn',
+          collectionClaim: claims.get(o.tableSessionId?.toString() ?? '') ?? null,
         })),
       },
     });

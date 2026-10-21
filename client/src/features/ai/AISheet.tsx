@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useGuestContext } from '../guest/guestContext';
+import type { CartItem } from '../../store/cart';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles, Send, ArrowUpRight, LoaderCircle } from 'lucide-react';
 import { Modal } from '../../components/ui/Modal';
@@ -51,12 +54,12 @@ interface MenuResponse {
 
 const PRESETS = [
   {
-    label: 'Chua nhẹ, ít ngọt, không cà phê',
+    label: 'Chua nhẹ',
     prompt: 'Mình thích vị chua nhẹ, không uống cà phê, muốn ít ngọt, dưới 50 nghìn.',
   },
-  { label: 'Món ít ngọt cho người mới', prompt: 'Gợi ý món ít ngọt cho người mới uống.' },
-  { label: 'Không sữa, vị trái cây', prompt: 'Đồ uống không có sữa, có vị trái cây.' },
-  { label: 'Món signature nổi bật', prompt: 'Món signature nổi bật nhất hôm nay?' },
+  { label: 'Ít ngọt', prompt: 'Gợi ý món ít ngọt cho người mới uống.' },
+  { label: 'Không sữa', prompt: 'Đồ uống không có sữa, có vị trái cây.' },
+  { label: 'Signature', prompt: 'Món signature nổi bật nhất hôm nay?' },
 ];
 
 interface Props {
@@ -65,10 +68,19 @@ interface Props {
   products: MenuProduct[];
   toppings?: Topping[];
   children?: ReactNode;
+  onAdd?: (item: Omit<CartItem, 'clientId'>) => void;
 }
 
-export function AISheet({ open, onOpenChange, products, toppings = [] }: Props): JSX.Element {
+export function AISheet({
+  open,
+  onOpenChange,
+  products,
+  toppings = [],
+  onAdd,
+}: Props): JSX.Element {
   useDocumentTitle('AI Barista');
+  const guest = useGuestContext();
+  const needsTable = !onAdd && !guest?.tableName;
   const [prompt, setPrompt] = useState(PRESETS[0]?.prompt ?? '');
   const [busy, setBusy] = useState(false);
   const [response, setResponse] = useState<AIRecommendResponse | null>(null);
@@ -128,13 +140,19 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
         onOpenChange={onOpenChange}
         title="AI Barista"
         titleIcon={<Sparkles className="h-5 w-5" />}
-        description="Mô tả khẩu vị, AI sẽ gợi ý món phù hợp từ thực đơn."
         className="g-sheet ai-sheet"
       >
         <div className="space-y-4">
+          {needsTable ? (
+            <p className="text-sm text-muted-foreground">
+              <Link to="/t" className="underline">
+                Quét QR để dùng tại bàn
+              </Link>
+            </p>
+          ) : null}
           <div className="ai-preferences">
             <label className="block text-xs font-semibold">
-              Ngân sách mỗi món (VND)
+              Ngân sách / món (đ)
               <Input
                 type="number"
                 min="1000"
@@ -155,7 +173,7 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
             </div>
           </div>
           <label className="block text-xs font-semibold">
-            Mô tả khẩu vị
+            Khẩu vị
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
@@ -163,7 +181,7 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
               maxLength={500}
               aria-label="Mô tả khẩu vị"
               className="ai-prompt mt-2 w-full rounded-2xl border border-foreground/15 p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="Bạn thích vị gì? Ngân sách bao nhiêu?"
+              placeholder="Bạn thích vị gì?"
             />
           </label>
           <div className="ai-presets">
@@ -183,7 +201,7 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
             size="lg"
             className="w-full"
             onClick={() => void ask()}
-            disabled={busy || prompt.trim().length === 0}
+            disabled={busy || prompt.trim().length === 0 || needsTable}
           >
             {busy ? (
               <LoaderCircle
@@ -267,6 +285,7 @@ export function AISheet({ open, onOpenChange, products, toppings = [] }: Props):
         product={selected}
         toppings={toppings}
         validationContext={selectedConstraints}
+        onAdd={onAdd}
         onClose={() => {
           setSelected(null);
           setSelectedConstraints(undefined);
@@ -307,7 +326,6 @@ export function AIPage(): JSX.Element {
       {!open ? (
         <EmptyState
           title="AI Barista đã đóng"
-          description="Mở lại bằng cách vào menu và bấm Hỏi AI Barista."
           action={<Button onClick={() => setOpen(true)}>Mở AI Barista</Button>}
         />
       ) : null}

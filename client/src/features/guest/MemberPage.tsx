@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PointEntry } from '@may-cafe/contracts';
 import { api, unwrap, getErrorMessage } from '../../lib/api';
@@ -10,6 +10,8 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useMember } from './useMember';
 
 export function MemberPage(): JSX.Element {
+  const pickupMode = useLocation().pathname.startsWith('/pickup');
+  const navigate = useNavigate();
   useDocumentTitle('Thành viên');
   const qc = useQueryClient();
   const query = useMember();
@@ -37,7 +39,10 @@ export function MemberPage(): JSX.Element {
         qc.setQueryData(['member'], { member: null });
       await qc.invalidateQueries({ queryKey: ['member'] });
       qc.removeQueries({ queryKey: ['member-points'] });
+      qc.removeQueries({ queryKey: ['pickups'] });
+      qc.removeQueries({ queryKey: ['pickup-bill'] });
       setPage(1);
+      if (pickupMode && (input.path === 'login' || input.path === 'register')) navigate('/pickup');
     },
   });
   function submit(e: FormEvent<HTMLFormElement>) {
@@ -54,11 +59,7 @@ export function MemberPage(): JSX.Element {
   }
   return (
     <div className="mx-auto max-w-xl space-y-5 pt-2">
-      <h1 className="g-display text-3xl">Thành viên Fantastic</h1>
-      <p className="text-sm text-muted-foreground">
-        Tích 1 điểm / 10.000đ thực trả sau khi được phục vụ. Đổi 1 điểm = 1.000đ, tối đa 50% số tiền
-        sau voucher. Dùng kèm điểm khi voucher cho phép.
-      </p>
+      <h1 className="g-display text-3xl">Thành viên</h1>
       {query.isError ? (
         <ErrorState message={getErrorMessage(query.error)} onRetry={() => query.refetch()} />
       ) : query.isPending ? (
@@ -69,13 +70,9 @@ export function MemberPage(): JSX.Element {
             <h2 className="text-xl font-semibold">{member.name}</h2>
             <p>{member.phone}</p>
             <p className="g-display text-3xl">{member.points} điểm</p>
-            <Link className="inline-block underline" to="/cart">
-              Đổi điểm trong giỏ hàng
+            <Link className="inline-block underline" to={pickupMode ? '/pickup' : '/cart'}>
+              {pickupMode ? 'Đặt món' : 'Đổi điểm trong giỏ hàng'}
             </Link>
-            <p className="text-sm text-muted-foreground">
-              Điểm gắn với tài khoản đăng nhập lúc đặt đơn. Đăng nhập sau khi đặt không cộng điểm
-              cho đơn cũ.
-            </p>
             <Button
               variant="ghost"
               disabled={mutation.isPending}
@@ -215,12 +212,24 @@ export function MemberPage(): JSX.Element {
           >
             {register ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký'}
           </Button>
-          <p className="text-sm text-muted-foreground">
-            Quên mật khẩu? Liên hệ quầy để được hỗ trợ. SĐT dùng làm tên đăng nhập, chưa được xác
-            minh qua SMS.
-          </p>
+          <p className="text-sm text-muted-foreground">Quên mật khẩu? Liên hệ quầy.</p>
         </section>
       )}
+      <details className="text-sm text-muted-foreground">
+        <summary className="cursor-pointer py-2">Quyền lợi & tài khoản</summary>
+        <div className="space-y-2 pt-2">
+          <p>
+            Tích 1 điểm / 10.000đ sau khi phục vụ. Đổi 1 điểm = 1.000đ, tối đa 50% tiền sau voucher;
+            dùng kèm khi voucher cho phép.
+          </p>
+          <p>Đăng nhập trước khi đặt để tích điểm. Đơn cũ không được cộng lại.</p>
+          <p>
+            Ghi nhớ đăng nhập 14 ngày, dùng chung tại bàn và mang đi. Rời bàn không đăng xuất thành
+            viên.
+          </p>
+          <p>SĐT là tên đăng nhập, chưa xác minh qua SMS.</p>
+        </div>
+      </details>
       {notice ? <p role="status">{notice}</p> : null}
       {mutation.isError ? (
         <p role="alert" className="text-danger">

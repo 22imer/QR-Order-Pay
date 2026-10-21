@@ -3,6 +3,7 @@ import { Route, Routes, Navigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast';
 import { NetworkStatus } from './components/ui/NetworkStatus';
 import { GuestLayout } from './layouts/GuestLayout';
+import { PickupLayout } from './layouts/PickupLayout';
 import { StaffLayout } from './layouts/StaffLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
@@ -23,6 +24,7 @@ const MenuPage = lazy(() =>
 const MemberPage = lazy(() =>
   import('./features/guest/MemberPage').then((m) => ({ default: m.MemberPage })),
 );
+const PickupPage = lazy(() => import('./features/pickup/PickupPage').then(m => ({ default: m.PickupPage })));
 const AdminVouchers = lazy(() =>
   import('./features/admin/Vouchers').then((m) => ({ default: m.AdminVouchers })),
 );
@@ -43,6 +45,9 @@ const AIPage = lazy(() =>
 );
 const StaffKDS = lazy(() =>
   import('./features/staff/KDS').then((module) => ({ default: module.StaffKDS })),
+);
+const Workforce = lazy(() =>
+  import('./features/staff/Workforce').then((m) => ({ default: m.Workforce })),
 );
 const StaffTables = lazy(() =>
   import('./features/staff/Tables').then((module) => ({ default: module.StaffTables })),
@@ -128,6 +133,11 @@ export function App(): JSX.Element {
                 <Route path="/receipt" element={<ReceiptPage />} />
                 <Route path="/ai" element={<AIPage />} />
               </Route>
+              <Route element={<PickupLayout />}>
+                <Route path="/pickup" element={<PickupPage view="order" />} />
+                <Route path="/pickup/orders" element={<PickupPage view="orders" />} />
+                <Route path="/pickup/member" element={<MemberPage />} />
+              </Route>
             </>
           ) : null}
 
@@ -145,6 +155,8 @@ export function App(): JSX.Element {
                 <Route path="/staff/cash-shift" element={<StaffCashShift />} />
                 <Route path="/staff/payments" element={<PaymentAccounting />} />
                 <Route path="/staff/account" element={<AccountPage />} />
+                <Route path="/staff/workforce" element={<Workforce />} />
+                <Route path="/staff/pickups" element={<PickupPage staff />} />
               </Route>
             </Route>
           ) : null}
@@ -165,6 +177,8 @@ export function App(): JSX.Element {
                 <Route path="/admin/toppings" element={<AdminToppings />} />
                 <Route path="/admin/tables" element={<AdminTables />} />
                 <Route path="/admin/users" element={<AdminUsers />} />
+                <Route path="/admin/workforce" element={<Workforce admin />} />
+                <Route path="/admin/pickups" element={<PickupPage staff admin />} />
                 <Route path="/admin/account" element={<AccountPage />} />
                 <Route path="/admin/reviews" element={<AdminReviews />} />
               </Route>

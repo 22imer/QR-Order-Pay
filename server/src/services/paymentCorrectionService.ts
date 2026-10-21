@@ -31,6 +31,11 @@ export async function assertNoPaymentCorrection(orderId: string, session: Client
 }
 
 async function guardSession(order: OrderDoc, session: ClientSession, allowClosed = false) {
+  if (!order.tableSessionId) {
+    if (order.pickup?.outcome !== 'ACTIVE' && !allowClosed) throw new ForbiddenError('Đơn mang đi đã kết thúc.');
+    await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
+    return;
+  }
   const tableSession = await TableSessionModel.findOneAndUpdate(
     {
       _id: order.tableSessionId,
@@ -275,7 +280,7 @@ function receiptDto(payment: PaymentDoc) {
   return {
     id: payment.id,
     orderIds: payment.orderIds.map(String),
-    tableSessionId: String(payment.tableSessionId),
+    tableSessionId: payment.tableSessionId?.toString() ?? null,
     amount: payment.amount,
     method: payment.method,
     status: payment.status,
@@ -315,12 +320,12 @@ export async function listPaymentAccounting(page: number, limit: number, session
       ],
     },
   })
-    .select('code tableId')
+    .select('code tableId fulfillmentType')
     .populate('tableId', 'name');
   const names = new Map(
     orders.map((o) => [
       o.id,
-      { code: o.code, tableName: (o.tableId as unknown as { name?: string })?.name ?? '' },
+      { code: o.code, tableName: (o.tableId as unknown as { name?: string })?.name ?? (o.fulfillmentType !== 'DINE_IN' ? 'Mang đi' : '') },
     ]),
   );
   return {

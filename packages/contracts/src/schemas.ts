@@ -4,6 +4,7 @@ import { benefitSelectionSchema, benefitBreakdownSchema } from './promotions.js'
 export const moneyVndSchema = z.number().int().nonnegative();
 
 export const realtimeEventTypeSchema = z.enum([
+  'workforce.changed',
   'order.created',
   'order.statusChanged',
   'menu.availabilityChanged',
@@ -260,7 +261,7 @@ export const orderSchema = z.object({
   ...benefitBreakdownSchema.shape,
   id: z.string(),
   code: z.string(),
-  tableSessionId: z.string(),
+  tableSessionId: z.string().nullable(),
   participantId: z.string(),
   items: z.array(orderItemSchema),
   total: moneyVndSchema,
@@ -288,10 +289,12 @@ const orderDtoItemSchema = orderItemSchema.extend({
   variantNameSnapshot: z.string(),
 });
 const orderDtoBaseSchema = z.object({
+  fulfillmentType: z.enum(['DINE_IN', 'TAKEAWAY', 'PICKUP']).optional(),
+  scheduledAt: z.string().datetime().nullable().optional(),
   ...benefitBreakdownSchema.shape,
   _id: z.string(),
   code: z.string(),
-  tableSessionId: z.string(),
+  tableSessionId: z.string().nullable(),
   participantId: z.string(),
   items: z.array(orderDtoItemSchema),
   total: moneyVndSchema,
@@ -327,7 +330,7 @@ export const staffOrderSchema = orderDtoBaseSchema.extend({
     .object({ ownerId: z.string(), ownerName: z.string(), expiresAt: z.string() })
     .nullable()
     .optional(),
-  tableId: z.string(),
+  tableId: z.string().nullable(),
   version: z.number().int().nonnegative(),
   tableName: z.string().optional(),
   tableCode: z.string().optional(),
@@ -687,7 +690,7 @@ export const billHistoryListResponseSchema = z.object({
 export type BillHistoryListResponse = z.infer<typeof billHistoryListResponseSchema>;
 
 export const billHistoryDetailSchema = billHistoryRowSchema.extend({
-  tableSessionId: z.string(),
+  tableSessionId: z.string().nullable(),
   source: z.enum(['STAFF', 'GUEST']),
   openedAt: z.string().datetime(),
   subtotal: moneyVndSchema,
@@ -724,7 +727,7 @@ export const billHistoryDetailSchema = billHistoryRowSchema.extend({
 export type BillHistoryDetail = z.infer<typeof billHistoryDetailSchema>;
 
 export const billSchema = z.object({
-  tableSessionId: z.string(),
+  tableSessionId: z.string().nullable(),
   tableCode: z.string(),
   status: tableSessionStatusSchema,
   openedAt: z.string(),

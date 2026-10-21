@@ -6,6 +6,7 @@ import * as order from '../controllers/orderController.js';
 import * as payment from '../controllers/paymentController.js';
 import * as tableDisplay from '../controllers/tableDisplayController.js';
 import * as ai from '../controllers/aiController.js';
+import { requireAiCustomer } from '../middlewares/aiAccess.js';
 import * as serviceRequest from '../controllers/serviceRequestController.js';
 import * as admin from '../controllers/adminController.js';
 import { requireAuth, requireRole } from '../middlewares/auth.js';
@@ -15,6 +16,8 @@ import * as cancelRequest from '../controllers/cancelRequestController.js';
 import * as cashShift from '../controllers/cashShiftController.js';
 import * as inventory from '../controllers/inventoryController.js';
 import * as promotion from '../controllers/promotionController.js';
+import * as workforce from '../controllers/workforceController.js';
+import * as pickup from '../controllers/pickupController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -90,6 +93,26 @@ const guestServiceLimiter = rateLimitOrPassthrough(
   tableKey,
 );
 const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
+
+apiRouter.get('/pickups', authLimiter, pickup.list(false));
+apiRouter.post('/pickups/quote', guestCsrfGuard, guestMutationLimiter, pickup.quote(false));
+apiRouter.post('/pickups', guestCsrfGuard, guestMutationLimiter, pickup.create(false));
+apiRouter.post('/pickups/:id/cancel', guestCsrfGuard, guestMutationLimiter, pickup.cancel(false));
+apiRouter.get('/pickups/:id/bill', authLimiter, pickup.bill(false));
+for (const prefix of ['/staff/pickups', '/admin/pickups']) {
+  const roles = prefix.startsWith('/admin') ? ['ADMIN'] as const : ['STAFF', 'ADMIN'] as const;
+  apiRouter.use(prefix, requireAuth, requireRole(...roles));
+  apiRouter.get(prefix, pickup.list(true));
+  apiRouter.get(`${prefix}/catalog`, pickup.catalog);
+  apiRouter.post(`${prefix}/quote`, pickup.quote(true));
+  apiRouter.post(prefix, pickup.create(true));
+  apiRouter.post(`${prefix}/:id/cancel`, pickup.cancel(true));
+  apiRouter.post(`${prefix}/:id/no-show`, pickup.cancel(true, true));
+  apiRouter.post(`${prefix}/:id/payments`, pickup.pay);
+  apiRouter.post(`${prefix}/:id/refund`, pickup.refund);
+  apiRouter.patch(`${prefix}/:id/status`, pickup.transition);
+  apiRouter.get(`${prefix}/:id/bill`, pickup.bill(true));
+}
 
 // auth
 apiRouter.post('/auth/login', authLimiter, auth.login);
@@ -204,7 +227,7 @@ apiRouter.post(
   aiLimiter,
   loadGuest,
   guestCsrfGuard,
-  requireGuest,
+  requireAiCustomer,
   ai.recommend,
 );
 apiRouter.post(
@@ -212,11 +235,59 @@ apiRouter.post(
   aiLimiter,
   loadGuest,
   guestCsrfGuard,
-  requireGuest,
+  requireAiCustomer,
   ai.validateConfiguration,
 );
 
 // staff/admin
+apiRouter.get('/staff/workforce', requireAuth, requireRole('STAFF', 'ADMIN'), workforce.staffWeek);
+apiRouter.get(
+  '/staff/workforce/export',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  workforce.exportCsv(false),
+);
+apiRouter.get(
+  '/admin/workforce/export',
+  requireAuth,
+  requireRole('ADMIN'),
+  workforce.exportCsv(true),
+);
+apiRouter.post(
+  '/admin/workforce/copy-preview',
+  requireAuth,
+  requireRole('ADMIN'),
+  workforce.copyPreview,
+);
+apiRouter.post('/admin/workforce/copy', requireAuth, requireRole('ADMIN'), workforce.copy);
+apiRouter.post(
+  '/staff/workforce/:id/clock-in',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  workforce.clockIn,
+);
+apiRouter.post(
+  '/staff/workforce/:id/clock-out',
+  requireAuth,
+  requireRole('STAFF', 'ADMIN'),
+  workforce.clockOut,
+);
+apiRouter.get('/admin/workforce', requireAuth, requireRole('ADMIN'), workforce.adminWeek);
+apiRouter.post('/admin/workforce/shifts', requireAuth, requireRole('ADMIN'), workforce.create);
+apiRouter.patch('/admin/workforce/shifts/:id', requireAuth, requireRole('ADMIN'), workforce.update);
+apiRouter.post(
+  '/admin/workforce/shifts/:id/cancel',
+  requireAuth,
+  requireRole('ADMIN'),
+  workforce.cancel,
+);
+apiRouter.post(
+  '/admin/workforce/shifts/:id/attendance',
+  requireAuth,
+  requireRole('ADMIN'),
+  workforce.correction,
+);
+apiRouter.put('/admin/workforce/policy', requireAuth, requireRole('ADMIN'), workforce.policy);
 apiRouter.get('/staff/payments', requireAuth, requireRole('STAFF', 'ADMIN'), payment.accounting);
 apiRouter.post(
   '/staff/payments/:id/corrections',

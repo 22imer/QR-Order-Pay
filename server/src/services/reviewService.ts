@@ -18,7 +18,7 @@ export async function submitReview(input: {
   if (!order) throw new NotFoundError('Đơn không tồn tại.');
   if (
     order.participantId !== input.participantId ||
-    order.tableSessionId.toString() !== input.tableSessionId
+    (order.tableSessionId?.toString() ?? '') !== input.tableSessionId
   )
     throw new ForbiddenError('Bạn không thể đánh giá đơn của khách khác.');
   if (order.status !== 'SERVED') throw new ValidationError('Đơn chưa được phục vụ xong.');
@@ -28,7 +28,7 @@ export async function submitReview(input: {
   try {
     return await reviewRepository.create({
       orderId: order._id.toString(),
-      tableSessionId: order.tableSessionId.toString(),
+      tableSessionId: order.tableSessionId?.toString() ?? '',
       participantId: input.participantId,
       rating: input.rating,
       comment: input.comment,

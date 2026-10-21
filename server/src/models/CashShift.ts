@@ -28,4 +28,6 @@ cashShiftSchema.index(
   },
 );
 export type CashShiftDoc = HydratedDocument<InferSchemaType<typeof cashShiftSchema>>;
+cashShiftSchema.index({ openedAt: -1 });
+cashShiftSchema.index({ closedAt: -1 });
 export const CashShiftModel = model('CashShift', cashShiftSchema);

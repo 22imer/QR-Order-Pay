@@ -5,7 +5,7 @@ export const paymentSchema = new Schema(
     tableSessionId: {
       type: Schema.Types.ObjectId,
       ref: 'TableSession',
-      required: true,
+      default: null,
       index: true,
     },
     shiftId: { type: Schema.Types.ObjectId, ref: 'CashShift', default: null, index: true },

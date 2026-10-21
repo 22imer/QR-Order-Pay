@@ -82,9 +82,12 @@ export const orderRepository = {
   },
   /** Feed KDS: chỉ đơn của các phiên đang hoạt động, nên không phình theo lịch sử. */
   async listForStaff(filters: StaffOrderFeedFilters): Promise<OrderDoc[]> {
-    if (filters.tableSessionIds.length === 0) return [];
     return OrderModel.find({
-      tableSessionId: { $in: filters.tableSessionIds },
+      $or: [
+        { tableSessionId: { $in: filters.tableSessionIds } },
+        { fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] }, 'pickup.outcome': 'ACTIVE',
+          $or: [{ 'pickup.scheduledAt': null }, { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } }] },
+      ],
       paymentStatus: 'PAID',
       status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },
     }).sort({ createdAt: 1 });
