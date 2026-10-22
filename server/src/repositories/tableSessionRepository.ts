@@ -1,6 +1,7 @@
 import type { ClientSession } from 'mongoose';
 import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.js';
 import { ConflictError } from '../errors/AppError.js';
+import { completeSessionReservation } from '../services/reservationGuards.js';
 
 export interface ITableSessionRepository {
   findActiveByTable(
@@ -64,7 +65,7 @@ export const tableSessionRepository: ITableSessionRepository = {
     const options = { new: true, session: session ?? undefined };
 
     if (update.status === 'CLOSED') {
-      return TableSessionModel.findOneAndUpdate(
+      const closed = await TableSessionModel.findOneAndUpdate(
         filter,
         {
           $set: {
@@ -78,6 +79,8 @@ export const tableSessionRepository: ITableSessionRepository = {
         },
         options,
       );
+      if (closed && session) await completeSessionReservation(id, session);
+      return closed;
     }
 
     // Mở lại phiên (OPEN / CHECKOUT) phải sạch mọi dấu vết đã đóng trước đó.

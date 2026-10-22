@@ -12,12 +12,15 @@ import {
   ReceiptText,
   Package,
   CalendarDays,
+  Music2,
 } from 'lucide-react';
 import { useAuth } from '../features/auth/useAuth';
 import { InternalShell } from '../components/layout/InternalShell';
 import { connectStaffSocket, disconnectSocket } from '../lib/socket';
 
 const NAV = [
+  { to: '/admin/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
+  { to: '/admin/reservations', label: 'Đặt bàn', icon: <CalendarDays className="h-4 w-4" /> },
   { to: '/admin/pickups', label: 'Mang đi & đặt trước', icon: <Package className="h-4 w-4" /> },
   {
     to: '/admin/workforce',
@@ -53,6 +56,8 @@ export function AdminLayout(): JSX.Element {
     return () => clearInterval(timer);
   }, []);
   const orderedNav = [
+    '/admin/jukebox',
+    '/admin/reservations',
     '/admin/pickups',
     '/admin/tables',
     '/admin/products',

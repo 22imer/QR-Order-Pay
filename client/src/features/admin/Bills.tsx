@@ -1,3 +1,4 @@
+import { GiftLabel } from '../../components/GiftLabel';
 import { useState } from 'react';
 import { BenefitBreakdown } from '../../components/BenefitBreakdown';
 import { Link } from 'react-router-dom';
@@ -186,6 +187,7 @@ function BillPrint({ bill }: { bill: BillDetail }): JSX.Element {
       {bill.orders.map((order) => (
         <div key={order._id}>
           <BenefitBreakdown order={order} />
+          <GiftLabel gift={order.gift} />
         </div>
       ))}
       <div className="flex justify-between text-lg font-semibold">

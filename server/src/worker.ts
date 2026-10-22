@@ -3,6 +3,8 @@ import { connectRedis, disconnectRedis } from './infrastructure/redis.js';
 import { logger } from './infrastructure/logger.js';
 import { startIdleSessionSweeper } from './services/idleSessionSweeper.js';
 import { startAnomalyScheduler } from './services/anomalyService.js';
+import { startReservationSweeper } from './services/reservationService.js';
+import { startGiftSweeper } from './services/giftService.js';
 import {
   startRealtimeJobWorker,
   startReportJobWorker,
@@ -29,6 +31,8 @@ async function main(): Promise<void> {
     throw new Error('SCHEDULER_LEASE_UNAVAILABLE');
   const stopIdle = schedulerEnabled ? startIdleSessionSweeper() : null;
   const stopAnomaly = schedulerEnabled ? startAnomalyScheduler() : null;
+  const stopReservations = schedulerEnabled ? startReservationSweeper() : null;
+  const stopGifts = schedulerEnabled ? startGiftSweeper() : null;
   const outboxRelay = schedulerEnabled ? startOutboxRelay() : null;
   const queueWorkers: QueueWorker[] = [];
   if (role === 'all' || role === 'realtime') queueWorkers.push(startRealtimeJobWorker());
@@ -72,6 +76,8 @@ async function main(): Promise<void> {
     clearInterval(heartbeatTimer);
     stopIdle?.();
     stopAnomaly?.();
+    stopReservations?.();
+    stopGifts?.();
     const drains = queueWorkers.map((worker) => worker.stop());
     if (outboxRelay) drains.push(outboxRelay.stop());
     const drained = await waitForDrain(drains, config.shutdownTimeoutMs);

@@ -6,6 +6,8 @@ import { ErrorState } from '../../components/ui/EmptyState';
 import { Modal } from '../../components/ui/Modal';
 import './paid-bill-print.css';
 import { BenefitBreakdown } from '../../components/BenefitBreakdown';
+import { GiftLabel } from '../../components/GiftLabel';
+import type { GiftDelivery } from '@may-cafe/contracts';
 
 interface PaidBill {
   tableCode: string;
@@ -14,6 +16,7 @@ interface PaidBill {
   total: number;
   paidAmount: number;
   orders: Array<{
+    gift?: GiftDelivery | null;
     _id: string;
     code: string;
     voucherCode?: string;
@@ -79,6 +82,7 @@ export function PaidBillModal({
           {bill.orders.map((order) => (
             <section key={order._id} className="space-y-2 border-t pt-3">
               <h3 className="text-sm font-semibold">Đơn {order.code}</h3>
+              <GiftLabel gift={order.gift} />
               {order.items.map((item, index) => (
                 <div key={index} className="flex justify-between gap-3 text-sm break-inside-avoid">
                   <div>

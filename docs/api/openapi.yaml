@@ -1,4 +1,39 @@
 openapi: 3.0.3
+components:
+  schemas:
+    JukeboxDeviceInput:
+      type: object
+      additionalProperties: false
+      required: [deviceId]
+      properties:
+        deviceId: { type: string, format: uuid }
+    JukeboxControlInput:
+      type: object
+      additionalProperties: false
+      required: [deviceId, requestId, playbackVersion]
+      properties:
+        deviceId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        playbackVersion: { type: integer, minimum: 0 }
+    JukeboxVoteInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, expectedVersion, trackId]
+      properties:
+        requestId: { type: string, format: uuid }
+        expectedVersion: { type: integer, minimum: 0 }
+        trackId: { type: string, nullable: true, pattern: '^[a-fA-F0-9]{24}$' }
+    JukeboxTrackInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, expectedVersion, title, artist, audioUrl, enabled]
+      properties:
+        requestId: { type: string, format: uuid }
+        expectedVersion: { type: integer, minimum: 0 }
+        title: { type: string, minLength: 1, maxLength: 100 }
+        artist: { type: string, minLength: 1, maxLength: 100 }
+        audioUrl: { type: string, format: uri, maxLength: 2048, description: HTTPS trực tiếp mp3/ogg/wav/m4a/aac/opus; không credentials/hash; có thể query }
+        enabled: { type: boolean }
 info:
   title: Fantastic cafe API
   version: 1.0.0
@@ -11,6 +46,500 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /jukebox:
+    get:
+      summary: Nhạc và lựa chọn chung của phiên bàn QR
+      description: "Cookie mc_guest, no-store. Guest không có URL/audio, danh tính hay ID phiên/bàn/device. Vote một lựa chọn chung/phiên, 5 lượt tiêu thụ khi chọn phát; chỉ OPEN góp hàng đợi. Queue giảm theo số bàn vote, hòa theo lượt chọn sớm còn hiệu lực rồi ID. current là bài được quầy chọn, không cam kết loa đang phát. jukebox.changed chỉ refresh qua outbox, polling 5 giây/reconnect."
+      responses:
+        '200': { description: 'Envelope data JukeboxFeed: tracks/queue(votes)/current/playbackVersion/serverNow/vote(trackId,version,remaining,canVote)' }
+        '401': { description: Cần capability QR }
+        '403': { description: Phiên kết thúc }
+  /jukebox/vote:
+    post:
+      summary: Chọn/đổi/hủy bài chung cho phiên bàn
+      description: "Cookie QR + CSRF, 20 mutation/phút/phiên, no-store. Strict body, chỉ OPEN; trackId null để hủy. Đổi/hủy không trừ lượt; cùng bài giữ thời điểm. UUID/hash/journal transaction, retry cùng payload không thêm vote/trừ lượt. Version chung của ballot, không theo participant. Chặn bài hiện tại/tắt/hết 5 lượt; không đổi Order/Payment/Bill."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxVoteInput' } } } }
+      responses:
+        '200': { description: JukeboxFeed mới nhất hoặc replay }
+        '401': { description: Cần QR }
+        '403': { description: Không OPEN hoặc CSRF }
+        '404': { description: Bài không mở }
+        '409': { description: Version/key conflict hoặc hết lượt/bài hiện tại }
+        '422': { description: Input không hợp lệ }
+  /staff/jukebox:
+    get: &jukeboxStaffFeed
+      summary: Hàng đợi và quyền thiết bị phát tại quầy
+      description: "JWT active STAFF/ADMIN (admin prefix chỉ ADMIN), no-store. Query deviceId UUID, không trả ID chủ lease. current.audioUrl chỉ có giá trị khi đúng user/device giữ lease còn hạn; lease {owned,busy,until}, vote null. PlaybackVersion riêng không tăng theo vote."
+      parameters: [{ in: query, name: deviceId, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: 'Envelope data JukeboxStaffFeed = feed + current.audioUrl + lease' }
+        '401': { description: Cần đăng nhập nội bộ }
+        '403': { description: Không đúng role }
+        '422': { description: deviceId không hợp lệ }
+  /admin/jukebox:
+    get: *jukeboxStaffFeed
+  /staff/jukebox/claim:
+    post: &jukeboxClaim
+      summary: Lấy quyền thiết bị phát 30 giây
+      description: JWT STAFF/ADMIN (admin prefix chỉ ADMIN). Không giành lease còn hạn của user/device khác. Mỗi mount một UUID riêng; heartbeat mỗi 10 giây. Lease không phải bằng chứng loa phát hoặc DRM.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxDeviceInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Sai role }
+        '409': { description: Thiết bị khác đang giữ quyền }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/claim:
+    post: *jukeboxClaim
+  /staff/jukebox/heartbeat:
+    post: &jukeboxHeartbeat
+      summary: Gia hạn đúng lease user/device đang còn hạn
+      description: JWT STAFF/ADMIN (admin prefix chỉ ADMIN). Không tự nhận lại lease hết hạn. Client dừng audio khi lỗi/mất lease, ẩn/rời trang và nhả best effort.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxDeviceInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed với hạn mới }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Sai role }
+        '409': { description: Không còn đúng lease }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/heartbeat:
+    post: *jukeboxHeartbeat
+  /staff/jukebox/release:
+    post: &jukeboxRelease
+      summary: Nhả lease của đúng user/device
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxDeviceInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed không giữ lease }
+        '401': { description: Cần JWT STAFF/ADMIN (admin prefix chỉ ADMIN) }
+        '403': { description: Sai role }
+        '409': { description: Không còn đúng lease }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/release:
+    post: *jukeboxRelease
+  /staff/jukebox/next:
+    post: &jukeboxNext
+      summary: Chọn đầu hàng đợi hoặc dừng nếu không có vote
+      description: "JWT STAFF/ADMIN (admin prefix chỉ ADMIN), đúng lease. PlaybackVersion chống next/ended cũ; UUID/hash journal idempotent cùng transaction. Chốt snapshot tên/nghệ sĩ/URL; tiêu thụ một lượt ở từng phiên OPEN vote bài đó và xóa lựa chọn đã dùng. Queue còn lại giữ nguyên; không fallback bài không vote."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxControlInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed hoặc replay }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Sai role }
+        '409': { description: Lease/version/key conflict }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/next:
+    post: *jukeboxNext
+  /staff/jukebox/stop:
+    post: &jukeboxStop
+      summary: Bỏ bài đang chọn phát và giữ hàng đợi
+      description: JWT đúng role/lease, strict control body. Tăng playbackVersion, current null, không trừ thêm lượt; retry journal như next. Không đồng nghĩa pause cục bộ.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxControlInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed hoặc replay }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Sai role }
+        '409': { description: Lease/version/key conflict }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/stop:
+    post: *jukeboxStop
+  /admin/jukebox/tracks:
+    get:
+      summary: Catalog nhạc đầy đủ gồm nguồn audio (chỉ ADMIN)
+      responses:
+        '200': { description: 'Envelope data array id/title/artist/audioUrl/enabled/version, tối đa 100 bài' }
+        '401': { description: Cần JWT }
+        '403': { description: Cần ADMIN }
+    post:
+      summary: Thêm bài audio HTTPS (chỉ ADMIN)
+      description: "Strict body, expectedVersion=0. Tối đa100 bài, không upload/proxy/server fetch hay hỗ trợ link trang YouTube/Spotify. URL cú pháp không chứng minh codec/nguồn phát được. Replay trả cùng id, không tạo trùng."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxTrackInput' } } } }
+      responses:
+        '200': { description: 'Envelope data {id}' }
+        '401': { description: Cần JWT }
+        '403': { description: Cần ADMIN }
+        '409': { description: Version/key hoặc giới hạn100 }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/tracks/{id}:
+    put:
+      summary: Sửa/tắt/mở bài theo version (chỉ ADMIN)
+      description: Tắt bài bỏ vote chưa phát không trừ lượt. Snapshot lượt đang phát giữ nguyên. UUID/hash replay trả id, không sửa hai lần.
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxTrackInput' } } } }
+      responses:
+        '200': { description: 'Envelope data {id}' }
+        '401': { description: Cần JWT }
+        '403': { description: Cần ADMIN }
+        '404': { description: Không tìm thấy bài }
+        '409': { description: Version/key conflict }
+        '422': { description: Input không hợp lệ }
+  /game:
+    get:
+      summary: Vòng chơi hiện tại và 10 vòng gần nhất của phiên QR
+      description: "Cookie mc_guest; no-store. Trả {current,history,serverNow,nextRoundAt,open}. GameRound gồm id,phase,version,players:[{id công khai,name,isYou,isHost,eligible}],isHost,canSpin,winnerId,spinStartsAt,revealsAt,expiresAt,createdAt. Thời gian là epoch milliseconds. Không participantId/token/requestHash/member/financial data. game.changed chỉ refresh:true tới room phiên; refetch/reconnect + polling 3 giây. WAITING hết 10 phút thành EXPIRED khi đọc, DRAWN tính SPINNING/FINISHED từ revealsAt. CHECKOUT chỉ đọc; phiên CLOSED không cấp quyền. Winner được truyền lúc bắt đầu để đồng bộ đích animation, UI mở tên lúc reveal."
+      responses:
+        '200': { description: success/data envelope chứa GameFeed }
+        '401': { description: Cần QR guest capability; member/staff/receipt không thay thế }
+        '403': { description: Phiên đã kết thúc }
+    post:
+      summary: Tạo phòng chờ Ai trả tiền và tự tham gia làm chủ vòng
+      description: "Cookie mc_guest/CSRF/no-store, phiên OPEN. Strict requestId UUID/name 1..24 ký tự, không control chars, chuẩn hóa Unicode/khoảng trắng. Replay theo session/host/request an toàn. Một WAITING mỗi phiên, tối đa 12 vị trí, 6 vòng mới/phút/bàn và limiter mutation 40/phút/bàn. Lobby 10 phút; đợi vòng DRAWN reveal +5 giây mới mở vòng mới. Transaction cùng audit/outbox, không sửa đơn hoặc tạo khoản thu."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId, name]
+              properties:
+                requestId: { type: string, format: uuid }
+                name: { type: string, minLength: 1, maxLength: 24 }
+      responses:
+        '200': { description: GameRound hoặc replay }
+        '401': { description: Cần QR }
+        '403': { description: Không OPEN hoặc CSRF bị chặn }
+        '409': { description: Đã có lobby/cooldown/đạt giới hạn/key xung đột }
+        '422': { description: Input không hợp lệ }
+  /game/{id}/join:
+    post:
+      summary: Tự tham gia hoặc đổi tên vị trí của mình trong phòng chờ
+      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion,name 1..24}. Đúng phiên OPEN/WAITING còn hạn, tên riêng không trùng sau chuẩn hóa, max12. Chỉ cập nhật participant lấy từ cookie; không nhận roster hoặc participantId tự khai."
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: GameRound hoặc replay cùng actor/request/payload }
+        '401': { description: Cần QR }
+        '403': { description: Phiên không OPEN hoặc CSRF }
+        '404': { description: Không thuộc phiên hoặc không tồn tại }
+        '409': { description: Stale version/đã quay/hết hạn/tên trùng/đủ người/key conflict }
+        '422': { description: Input không hợp lệ }
+  /game/{id}/leave:
+    post:
+      summary: Rời vị trí chơi của chính mình khi còn chờ
+      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion}. Đúng phiên OPEN/WAITING. Host dùng cancel; không sửa danh sách sau DRAWN. Journal idempotent cùng transaction với roster/audit/outbox."
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: GameRound hoặc replay }
+        '401': { description: Cần QR }
+        '403': { description: Host không rời; phiên/CSRF bị chặn }
+        '404': { description: Vòng không thuộc phiên }
+        '409': { description: Version/state/key thay đổi hoặc chưa tham gia }
+        '422': { description: Input không hợp lệ }
+  /game/{id}/spin:
+    post:
+      summary: Chủ vòng chốt danh sách và quay kết quả do server chọn
+      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion}; không nhận winner, tiền hoặc roster. Chỉ host ở phiên OPEN/WAITING chưa hết hạn, >=2 guest capability còn hiệu lực. Server lọc revoked/expired, crypto.randomInt chọn một vị trí, lưu DRAWN/winner/start+500ms/reveal+4500ms trong transaction cùng journal/audit/outbox. Snapshot bất biến, retry không bốc lại, đổi payload trên requestId cũ conflict. Game giải trí không đổi bên trả tiền/thanh toán/Order/Payment/Bill."
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: GameRound có winner/timestamps cố định hoặc replay }
+        '401': { description: Cần QR }
+        '403': { description: Không phải host/OPEN hoặc CSRF }
+        '404': { description: Vòng không thuộc phiên }
+        '409': { description: Version/state/key thay đổi hoặc thiếu người hợp lệ }
+        '422': { description: Input không hợp lệ }
+  /game/{id}/cancel:
+    post:
+      summary: Chủ vòng hủy phòng chờ
+      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion}, đúng phiên OPEN, chỉ host khi WAITING còn hạn. Không hủy hoặc thay kết quả DRAWN. Game không chặn CHECKOUT/đóng/chuyển bàn; cùng session chuyển bàn thì giữ vòng, session mới không thấy vòng cũ."
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: GameRound CANCELLED hoặc replay }
+        '401': { description: Cần QR }
+        '403': { description: Không phải host/OPEN hoặc CSRF }
+        '404': { description: Vòng không thuộc phiên }
+        '409': { description: Version/state/key thay đổi }
+        '422': { description: Input không hợp lệ }
+  /gifts/tables:
+    get:
+      summary: Danh sách thẻ bàn có thể nhận quà
+      description: "Cookie mc_guest, phiên gửi OPEN; no-store. Trả {items:[{tableId,sessionId,name,code,available}]}. Không trả QR/token/participant/contact. Không có phiên OPEN và guest capability hợp lệ thì available=false; bỏ chính bàn gửi."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần quét QR tại bàn }
+        '403': { description: Phiên không còn OPEN }
+  /gifts:
+    get:
+      summary: Lịch sử quà gửi chính chủ và quà nhận của phiên bàn
+      description: "Cookie mc_guest, no-store. Trả {items,total,page,incomingCount}, 30 dòng/trang; quà gửi chỉ participant chính chủ, quà nhận thuộc cả phiên. GiftView gồm id,direction,status,recipientTableName,message,items,expiresAt,createdAt,version,orderStatus,showSenderTable; chỉ người gửi có orderId. Khi showSenderTable=true mới có senderTable:{name,code} là snapshot bàn gửi thực tế; mặc định false và quà legacy không có senderTable. Không lộ tài khoản/participant/session, requestId/hash, giá/ưu đãi hoặc mã đơn cho người nhận. Quét hết hạn khi đọc; polling 10 giây và gift.changed qua outbox chỉ {refresh:true}, room người gửi/phiên nhận, không Staff/bàn khác."
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, maximum: 10000, default: 1 }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần quét QR tại bàn }
+    post:
+      summary: Gửi lời mời tặng quà với lựa chọn ẩn hoặc hiện bàn gửi
+      description: "Cookie mc_guest, CSRF/rate/no-store. Strict {requestId UUID,recipientTableId,recipientSessionId,message tối đa 140,items 1..10 dòng,quantity 1..10,showSenderTable boolean mặc định false}. Chỉ server xác định tên/mã bàn gửi, snapshot khi true; không nhận senderTable tự khai. Chế độ cố định sau khi gửi, đổi chế độ cùng requestId bị conflict; pending legacy ẩn danh vẫn replay được. Items có productId,variantId nullable,sugarLevel,iceLevel,toppingIds,note. Hai phiên khác nhau phải OPEN, bàn nhận active/có guest hợp lệ. PENDING 5 phút; replay cùng owner/requestId và payload an toàn. Trần 3 active/người gửi, 5 active/phiên nhận, 5 lần gửi/10 phút/người gửi. Chưa Order/Payment/giữ kho/ưu đãi."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [requestId, recipientTableId, recipientSessionId, items]
+              additionalProperties: false
+              properties:
+                requestId: { type: string, format: uuid }
+                recipientTableId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+                recipientSessionId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+                message: { type: string, maxLength: 140 }
+                showSenderTable: { type: boolean, default: false }
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [productId, variantId, sugarLevel, iceLevel, toppingIds, quantity]
+                    additionalProperties: false
+                    properties:
+                      productId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+                      variantId: { type: string, nullable: true, pattern: '^[a-fA-F0-9]{24}$' }
+                      sugarLevel: { type: string, maxLength: 40 }
+                      iceLevel: { type: string, maxLength: 40 }
+                      toppingIds: { type: array, maxItems: 20, items: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+                      note: { type: string, maxLength: 280 }
+                      quantity: { type: integer, minimum: 1, maximum: 10 }
+      responses:
+        '200': { description: GiftView của người gửi hoặc replay }
+        '401': { description: Cần quét QR tại bàn }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '409': { description: Bàn thay đổi hoặc đạt trần hoặc requestId dùng với payload khác }
+        '422': { description: Dữ liệu món hoặc cấu hình không hợp lệ }
+  /gifts/{id}/decision:
+    post:
+      summary: Nhận hoặc từ chối quà của phiên nhận; người gửi hủy lời mời
+      description: "Cookie mc_guest, CSRF/rate/no-store. Bàn nhận quyết định PENDING; ACCEPTED thêm 5 phút để người gửi đặt; DECLINED kết thúc. Chỉ participant gửi được CANCEL PENDING/ACCEPTED. Quyết định đầu tiên thắng, replay cùng actor/version/quyết định không thêm event. Quá hạn hoặc một phiên không OPEN chuyển EXPIRED. ORDERED không hủy qua endpoint này; dùng hủy/hoàn đơn hiện có. Người gửi lấy /orders/quote rồi POST /orders với giftId, items đúng đã nhận, quoteToken và Idempotency-Key; transaction kiểm hạn/ownership, giữ kho/ưu đãi và tạo đúng một payer order. Bàn nhận không nợ, không được xem/hủy/đánh giá đơn người gửi. KDS có gift đích giao riêng, Bill chỉ thuộc người gửi."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expectedVersion, decision]
+              additionalProperties: false
+              properties:
+                expectedVersion: { type: integer, minimum: 0 }
+                decision: { type: string, enum: [ACCEPT, DECLINE, CANCEL] }
+      responses:
+        '200': { description: GiftView theo quyền actor }
+        '401': { description: Cần quét QR tại bàn }
+        '403': { description: Không đúng người gửi hoặc phiên nhận }
+        '404': { description: Quà không tồn tại }
+        '409': { description: Hết hạn hoặc version/trạng thái thay đổi }
+        '422': { description: Body hoặc ID không hợp lệ }
+  /reservations/availability:
+    get:
+      summary: Tìm bàn trống đủ chỗ trong khoảng 60 phút
+      description: "Cookie HttpOnly mc_member, không cần QR; danh sách/chỉnh sửa chính chủ. Query startsAt ISO có offset, partySize 1..30. Bắt đầu từ 15 phút tới 7 ngày. Trả tables [{id,name,code,capacity}], startsAt,endsAt,durationMinutes=60,graceMinutes=15. Không QR token/contact. Loại phiên đang phục vụ cho lịch bắt đầu trong 60 phút tới; lịch xa hơn cần xử lý quá giờ tại check-in. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: query
+          name: startsAt
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: partySize
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 30 }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /reservations:
+    get:
+      summary: Danh sách lịch đặt bàn
+      description: "Cookie HttpOnly mc_member, không cần QR; danh sách/chỉnh sửa chính chủ. Query page>=1 (30 dòng/trang), history=true/false mặc định false, date=YYYY-MM-DD tùy chọn theo giờ VN. Trả {items,total}. DTO Reservation có id/code/tableId/tableName/partySize/startsAt/endsAt/arrivalDeadline/name/phone/note/status/version/tableSessionId/checkedInAt/closedAt/reason. Status CONFIRMED/CHECKED_IN/COMPLETED/CANCELLED/NO_SHOW. Quét no-show khi quá hạn đến 15 phút; scheduler 30 giây. Đóng phiên hoàn tất lịch, không tự đóng khi đủ 60 phút. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+    post:
+      summary: Tạo hoặc replay lịch đặt bàn
+      description: "Cookie HttpOnly mc_member, không cần QR; danh sách/chỉnh sửa chính chủ. Body strict {requestId UUID,tableId ObjectId,startsAt ISO offset,partySize 1..30,name 1..80,phone,note? 0..280}. Một lượt cố định 60 phút, giờ VN; bắt đầu từ 15 phút tới 7 ngày. Chống trùng khoảng và QR mở phiên bằng transaction/write lock Table. Thành viên tối đa 3 active, không hai bàn trùng giờ; counter không tự gán member theo SĐT. CONFIRMED; không mở phiên/đơn/thu tiền. Unique actor+request, hash payload; replay kiểm trước hạn thời gian. Trả {reservation,created}. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /reservations/{id}/cancel:
+    post:
+      summary: Hủy lịch chưa check-in
+      description: "Cookie HttpOnly mc_member, không cần QR; danh sách/chỉnh sửa chính chủ. Body strict {expectedVersion,reason 3..280 ký tự}. Chỉ CONFIRMED chưa hết hạn đến. Nhả giữ chỗ, lưu lịch sử/audit; không tiền/điểm. Retry lịch đã hủy trả trạng thái hiện tại. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /staff/reservations/availability:
+    get:
+      summary: Tìm bàn trống đủ chỗ trong khoảng 60 phút
+      description: "JWT STAFF/ADMIN; toàn bộ lịch tại quán. Query startsAt ISO có offset, partySize 1..30. Bắt đầu từ 15 phút tới 7 ngày. Trả tables [{id,name,code,capacity}], startsAt,endsAt,durationMinutes=60,graceMinutes=15. Không QR token/contact. Loại phiên đang phục vụ cho lịch bắt đầu trong 60 phút tới; lịch xa hơn cần xử lý quá giờ tại check-in. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: query
+          name: startsAt
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: partySize
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 30 }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /staff/reservations:
+    get:
+      summary: Danh sách lịch đặt bàn
+      description: "JWT STAFF/ADMIN; toàn bộ lịch tại quán. Query page>=1 (30 dòng/trang), history=true/false mặc định false, date=YYYY-MM-DD tùy chọn theo giờ VN. Trả {items,total}. DTO Reservation có id/code/tableId/tableName/partySize/startsAt/endsAt/arrivalDeadline/name/phone/note/status/version/tableSessionId/checkedInAt/closedAt/reason. Status CONFIRMED/CHECKED_IN/COMPLETED/CANCELLED/NO_SHOW. Quét no-show khi quá hạn đến 15 phút; scheduler 30 giây. Đóng phiên hoàn tất lịch, không tự đóng khi đủ 60 phút. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+    post:
+      summary: Tạo hoặc replay lịch đặt bàn
+      description: "JWT STAFF/ADMIN; toàn bộ lịch tại quán. Body strict {requestId UUID,tableId ObjectId,startsAt ISO offset,partySize 1..30,name 1..80,phone,note? 0..280}. Một lượt cố định 60 phút, giờ VN; bắt đầu từ 15 phút tới 7 ngày. Chống trùng khoảng và QR mở phiên bằng transaction/write lock Table. Thành viên tối đa 3 active, không hai bàn trùng giờ; counter không tự gán member theo SĐT. CONFIRMED; không mở phiên/đơn/thu tiền. Unique actor+request, hash payload; replay kiểm trước hạn thời gian. Trả {reservation,created}. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /staff/reservations/{id}/cancel:
+    post:
+      summary: Hủy lịch chưa check-in
+      description: "JWT STAFF/ADMIN; toàn bộ lịch tại quán. Body strict {expectedVersion,reason 3..280 ký tự}. Chỉ CONFIRMED chưa hết hạn đến. Nhả giữ chỗ, lưu lịch sử/audit; không tiền/điểm. Retry lịch đã hủy trả trạng thái hiện tại. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /staff/reservations/{id}/check-in:
+    post:
+      summary: Check-in khách đến và mở phiên phục vụ
+      description: "JWT STAFF/ADMIN; toàn bộ lịch tại quán. Body strict {expectedVersion}. Cửa sổ từ bắt đầu -15 phút tới trước bắt đầu +15 phút. Bàn phải không còn phiên phục vụ và đủ chỗ. Mở một phiên STAFF, gắn tableSessionId; replay không mở thêm. Khách quét QR hiện có; không cấp guest capability từ đặt bàn. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /admin/reservations/availability:
+    get:
+      summary: Tìm bàn trống đủ chỗ trong khoảng 60 phút
+      description: "JWT ADMIN; toàn bộ lịch tại quán. Query startsAt ISO có offset, partySize 1..30. Bắt đầu từ 15 phút tới 7 ngày. Trả tables [{id,name,code,capacity}], startsAt,endsAt,durationMinutes=60,graceMinutes=15. Không QR token/contact. Loại phiên đang phục vụ cho lịch bắt đầu trong 60 phút tới; lịch xa hơn cần xử lý quá giờ tại check-in. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: query
+          name: startsAt
+          required: true
+          schema: { type: string, format: date-time }
+        - in: query
+          name: partySize
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 30 }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /admin/reservations:
+    get:
+      summary: Danh sách lịch đặt bàn
+      description: "JWT ADMIN; toàn bộ lịch tại quán. Query page>=1 (30 dòng/trang), history=true/false mặc định false, date=YYYY-MM-DD tùy chọn theo giờ VN. Trả {items,total}. DTO Reservation có id/code/tableId/tableName/partySize/startsAt/endsAt/arrivalDeadline/name/phone/note/status/version/tableSessionId/checkedInAt/closedAt/reason. Status CONFIRMED/CHECKED_IN/COMPLETED/CANCELLED/NO_SHOW. Quét no-show khi quá hạn đến 15 phút; scheduler 30 giây. Đóng phiên hoàn tất lịch, không tự đóng khi đủ 60 phút. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+    post:
+      summary: Tạo hoặc replay lịch đặt bàn
+      description: "JWT ADMIN; toàn bộ lịch tại quán. Body strict {requestId UUID,tableId ObjectId,startsAt ISO offset,partySize 1..30,name 1..80,phone,note? 0..280}. Một lượt cố định 60 phút, giờ VN; bắt đầu từ 15 phút tới 7 ngày. Chống trùng khoảng và QR mở phiên bằng transaction/write lock Table. Thành viên tối đa 3 active, không hai bàn trùng giờ; counter không tự gán member theo SĐT. CONFIRMED; không mở phiên/đơn/thu tiền. Unique actor+request, hash payload; replay kiểm trước hạn thời gian. Trả {reservation,created}. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /admin/reservations/{id}/cancel:
+    post:
+      summary: Hủy lịch chưa check-in
+      description: "JWT ADMIN; toàn bộ lịch tại quán. Body strict {expectedVersion,reason 3..280 ký tự}. Chỉ CONFIRMED chưa hết hạn đến. Nhả giữ chỗ, lưu lịch sử/audit; không tiền/điểm. Retry lịch đã hủy trả trạng thái hiện tại. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
+  /admin/reservations/{id}/check-in:
+    post:
+      summary: Check-in khách đến và mở phiên phục vụ
+      description: "JWT ADMIN; toàn bộ lịch tại quán. Body strict {expectedVersion}. Cửa sổ từ bắt đầu -15 phút tới trước bắt đầu +15 phút. Bàn phải không còn phiên phục vụ và đủ chỗ. Mở một phiên STAFF, gắn tableSessionId; replay không mở thêm. Khách quét QR hiện có; không cấp guest capability từ đặt bàn. Cache-Control no-store; mutation CSRF cho member. Socket reservation.changed chỉ staff, không chứa contact."
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+      responses:
+        '200': { description: success/data envelope }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Không đủ quyền hoặc CSRF bị từ chối }
+        '404': { description: Không tồn tại hoặc không thuộc quyền truy cập }
+        '409': { description: Trùng lịch hoặc version/key/trạng thái thay đổi }
+        '422': { description: Dữ liệu hoặc ngày giờ không hợp lệ }
   /pickups:
     get:
       summary: Danh sách đơn mang đi và đặt trước nhận tại quầy

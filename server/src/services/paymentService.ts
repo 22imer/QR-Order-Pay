@@ -1,3 +1,4 @@
+import { assertNoIncomingGiftOrders } from './giftGuards.js';
 import { paymentRepository } from '../repositories/paymentRepository.js';
 import { billRepository } from '../repositories/billRepository.js';
 import { orderRepository } from '../repositories/orderRepository.js';
@@ -85,12 +86,13 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
         throw new ValidationError(
           `Số tiền thực nhận phải lớn hơn 0 và không quá ${remaining} VND còn thiếu.`,
         );
-      if (order.tableSessionId) await guardPaymentClaim(
-        order.tableSessionId.toString(),
-        input.staffId,
-        input.claimToken,
-        session,
-      );
+      if (order.tableSessionId)
+        await guardPaymentClaim(
+          order.tableSessionId.toString(),
+          input.staffId,
+          input.claimToken,
+          session,
+        );
       const shift = await ensureOpenShift(input.staffId, session);
       const payment = await paymentRepository.create(
         {
@@ -133,7 +135,8 @@ export async function confirmOrderPayment(input: ConfirmOrderPaymentInput) {
       );
       if (!updated) throw new ConflictError('CONFLICT', 'Đơn vừa được cập nhật.');
       if (updated.status === 'SERVED') await settleOrderBenefits(updated, 'SERVED', session);
-      if (order.tableSessionId) await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
+      if (order.tableSessionId)
+        await clearCommittedPaymentClaim(order.tableSessionId.toString(), session);
       await auditRepository.log(
         {
           actorType: 'USER',
@@ -172,6 +175,7 @@ export async function finalizeSessionBill(
   staffId: string | null,
   session: ClientSession,
 ) {
+  await assertNoIncomingGiftOrders(tableSession.id, session);
   if (
     await CancelRequestModel.exists({
       tableSessionId: tableSession._id,
@@ -478,6 +482,7 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
         orders: snapshot.orders.map((o) => ({
           _id: o.orderId,
           code: o.code,
+          gift: o.gift ?? null,
           total: o.total,
           subtotal: o.subtotal ?? o.total,
           voucherCode: o.voucherCode,
@@ -519,6 +524,7 @@ export async function buildBill(tableSessionId: string): Promise<BillSummary> {
       .map((o) => ({
         _id: o._id,
         code: o.code,
+        gift: o.gift ?? null,
         total: o.total,
         subtotal: o.subtotal ?? o.total,
         voucherCode: o.voucherCode,

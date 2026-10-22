@@ -4,6 +4,8 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { Badge } from '../../components/ui/Badge';
 import { ErrorState } from '../../components/ui/EmptyState';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
+import { GiftLabel } from '../../components/GiftLabel';
+import type { GiftDelivery } from '@may-cafe/contracts';
 
 interface OrderItem {
   productId: string;
@@ -30,6 +32,7 @@ interface StatusEntry {
 }
 
 interface OrderDetail {
+  gift?: GiftDelivery | null;
   _id: string;
   code: string;
   tableSessionId: string;
@@ -84,6 +87,7 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
   const ageMin = Math.max(0, Math.round((Date.now() - created.getTime()) / 60000));
   return (
     <div className="space-y-4">
+      <GiftLabel gift={order.gift} />
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="info">
           {order.tableCode} · {order.tableName}

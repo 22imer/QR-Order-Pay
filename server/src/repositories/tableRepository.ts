@@ -1,5 +1,8 @@
 import type { ClientSession } from 'mongoose';
 import { TableModel, type TableDoc } from '../models/Table.js';
+import { ReservationModel } from '../models/Reservation.js';
+import { unitOfWork } from '../infrastructure/unitOfWork.js';
+import { ConflictError } from '../errors/AppError.js';
 
 export interface ITableRepository {
   list(): Promise<TableDoc[]>;
@@ -63,6 +66,17 @@ export const tableRepository: ITableRepository = {
     return TableModel.create(data);
   },
   async update(id, update) {
-    return TableModel.findByIdAndUpdate(id, update, { new: true });
+    return unitOfWork.withTransaction(async session => {
+      const table = await TableModel.findByIdAndUpdate(id, { $inc: { admissionCount: 1 } }, { new: true, session });
+      if (!table) return null;
+      if (update.isActive === false || update.capacity !== undefined) {
+        const held = await ReservationModel.exists({ tableId: id,
+          $or: [{ status: 'CONFIRMED', arrivalDeadline: { $gt: new Date() } }, { status: 'CHECKED_IN' }],
+          ...(update.isActive === false ? {} : { partySize: { $gt: update.capacity! } }),
+        }).session(session);
+        if (held) throw new ConflictError('TABLE_HAS_RESERVATIONS', 'Bàn còn lịch đặt. Hãy xử lý lịch trước khi ngừng bàn hoặc giảm số chỗ.');
+      }
+      return TableModel.findByIdAndUpdate(id, update, { new: true, session });
+    });
   },
 };

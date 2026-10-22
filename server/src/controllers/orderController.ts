@@ -60,6 +60,7 @@ export async function place(req: Request, res: Response, next: NextFunction): Pr
       redeemPoints: input.redeemPoints,
       memberId: (await resolveMember(req.cookies?.[MEMBER_COOKIE]))?.id ?? null,
       quoteToken: input.quoteToken,
+      giftId: input.giftId,
     });
     if (result.created) {
       recordBusinessEvent('order_created');
@@ -144,7 +145,16 @@ export async function staffList(req: Request, res: Response, next: NextFunction)
       data: {
         items: items.map((o) => {
           const table = byId.get(o.tableId?.toString() ?? '');
-          return toStaffOrder(o, { name: table?.name ?? (o.fulfillmentType === 'PICKUP' ? 'Đặt trước nhận tại quầy' : o.fulfillmentType === 'TAKEAWAY' ? 'Mang đi' : 'Bàn'), code: table?.code ?? '' });
+          return toStaffOrder(o, {
+            name:
+              table?.name ??
+              (o.fulfillmentType === 'PICKUP'
+                ? 'Đặt trước nhận tại quầy'
+                : o.fulfillmentType === 'TAKEAWAY'
+                  ? 'Mang đi'
+                  : 'Bàn'),
+            code: table?.code ?? '',
+          });
         }),
       },
     });
@@ -168,7 +178,16 @@ export async function staffGetOne(req: Request, res: Response, next: NextFunctio
     res.json({
       success: true,
       data: {
-        order: toStaffOrder(order, { name: table?.name ?? (order.fulfillmentType === 'PICKUP' ? 'Đặt trước nhận tại quầy' : order.fulfillmentType === 'TAKEAWAY' ? 'Mang đi' : 'Bàn'), code: table?.code ?? '' }),
+        order: toStaffOrder(order, {
+          name:
+            table?.name ??
+            (order.fulfillmentType === 'PICKUP'
+              ? 'Đặt trước nhận tại quầy'
+              : order.fulfillmentType === 'TAKEAWAY'
+                ? 'Mang đi'
+                : 'Bàn'),
+          code: table?.code ?? '',
+        }),
       },
     });
   } catch (e) {

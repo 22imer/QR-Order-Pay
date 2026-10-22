@@ -27,8 +27,10 @@ export async function sweepIdleSessions(now: Date = new Date()): Promise<number>
     try {
       const didClose = await unitOfWork.withTransaction(async (mongoSession) => {
         const hasOrder = await OrderModel.exists({
-          tableSessionId: candidate._id,
-          status: { $ne: 'CANCELLED' },
+          $or: [
+            { tableSessionId: candidate._id, status: { $ne: 'CANCELLED' } },
+            { 'gift.recipientSessionId': candidate._id, status: { $nin: ['SERVED', 'CANCELLED'] } },
+          ],
         }).session(mongoSession);
         if (hasOrder) return false;
 

@@ -3,3 +3,7 @@ export * from './inventory.js';
 export * from './promotions.js';
 export * from './workforce.js';
 export * from './pickup.js';
+export * from './reservations.js';
+export * from './gifts.js';
+export * from './miniGame.js';
+export * from './jukebox.js';

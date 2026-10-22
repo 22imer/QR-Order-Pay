@@ -28,6 +28,7 @@ type OrderSource = Pick<
     Pick<
       OrderDoc,
       | 'fulfillmentType'
+      | 'gift'
       | 'pickup'
       | 'subtotal'
       | 'voucherCode'
@@ -45,6 +46,13 @@ const idOrNull = (value: unknown): string | null =>
 
 function baseOrder(order: OrderSource) {
   return {
+    gift: order.gift
+      ? {
+          recipientTableName: order.gift.recipientTableName,
+          recipientTableCode: order.gift.recipientTableCode,
+          message: order.gift.message,
+        }
+      : null,
     _id: order._id.toString(),
     code: order.code,
     tableSessionId: order.tableSessionId?.toString() ?? null,

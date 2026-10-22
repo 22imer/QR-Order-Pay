@@ -8,6 +8,13 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+- **Jukebox (#3)**: Admin quản lý URL audio HTTPS; khách QR vote chung theo phiên bàn (5 lượt), hàng đợi theo vote, quầy giữ một thiết bị phát có pause/volume/next và tự chuyển khi hết bài. [Hướng dẫn và 14 ca thử](docs/jukebox.md).
+
+- **Mini-game “Ai trả tiền?” (#2)**: `/game` trong phiên QR, từng thiết bị tự tham gia bằng tên; vòng quay chung do server chốt kết quả, retry không bốc lại. Có nút Quay/lắc trên thiết bị hỗ trợ; game không sửa đơn hay tự thu/chuyển tiền. [Hướng dẫn và 14 ca thử](docs/mini-game.md).
+
+- **Tặng quà cho bàn khác (#1)**: `/gifts`, chọn Ẩn danh hoặc Hiện bàn gửi (tên/mã bàn); lời mời Nhận/Từ chối trong 5 phút, nhận rồi người gửi xác nhận giá/đặt/trả tiền. KDS giao đúng bàn nhận, đơn và hóa đơn thuộc người gửi; giỏ quà riêng, retry an toàn và thông báo realtime. [Quy tắc và kịch bản test](docs/gifts.md).
+
+- **Đặt bàn theo khung giờ (#10)**: trang độc lập `/reservations`, mỗi lượt 60 phút, lọc bàn đủ chỗ/trống, chống trùng; Staff/Admin check-in mở phiên QR, tự đánh no-show sau hạn đến 15 phút, hủy/lịch sử/thông báo. [Hướng dẫn và 14 ca test](docs/reservations.md).
 - **Mang đi & đặt trước nhận tại quầy (#6)**: trang riêng `/pickup` với thực đơn/AI/giỏ, `/pickup/orders` xem đơn và `/pickup/member` đăng nhập; độc lập luồng QR tại bàn. Nhân viên tạo tại quầy; giờ hẹn Việt Nam, thu đủ trước pha, KDS/giao khách, hủy/hoàn/no-show và hóa đơn snapshot. Staff/Admin → Mang đi & đặt trước. Xem [quy tắc và 18 kịch bản test](docs/pickup.md).
 
 - Kho nguyên liệu, nhập/xuất/kiểm kê và công thức theo món/size/topping; giữ kho khi đặt, xuất khi pha chế, trả giữ khi hủy và tự báo hết trên menu/AI. Quản lý ở **Admin → Kho & công thức**. Xem [hướng dẫn kho](docs/inventory.md).

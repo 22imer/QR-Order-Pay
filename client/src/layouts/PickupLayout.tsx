@@ -31,6 +31,12 @@ export function PickupLayout(): JSX.Element {
             aria-label="Điều hướng mang đi"
             className="mx-auto flex max-w-6xl gap-2 overflow-x-auto px-4 pb-3 lg:px-6"
           >
+            <Link
+              to="/reservations"
+              className="flex shrink-0 items-center rounded-full px-4 py-2.5 text-sm text-muted-foreground hover:bg-card"
+            >
+              Đặt bàn
+            </Link>
             {[
               { to: '/pickup', label: 'Đặt món', icon: ShoppingBag },
               { to: '/pickup/orders', label: 'Đơn của tôi', icon: ListChecks },

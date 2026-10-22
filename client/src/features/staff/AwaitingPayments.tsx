@@ -1,3 +1,4 @@
+import { GiftLabel } from '../../components/GiftLabel';
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -135,6 +136,7 @@ function PaymentCard({ order }: { order: StaffOrder }): JSX.Element {
       <p className="font-semibold">
         {order.tableName} · {order.code}
       </p>
+      <GiftLabel gift={order.gift} />
       <ul className="text-sm">
         {order.items.map((item, index) => (
           <li key={index}>

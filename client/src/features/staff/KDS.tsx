@@ -13,6 +13,8 @@ import { ChevronRight, Eye } from 'lucide-react';
 import { OrderDetailModal } from './OrderDetailModal';
 import { Link } from 'react-router-dom';
 import { WalletCards } from 'lucide-react';
+import { GiftLabel } from '../../components/GiftLabel';
+import type { GiftDelivery } from '@may-cafe/contracts';
 
 interface OrderItem {
   productId: string;
@@ -30,6 +32,7 @@ interface OrderItem {
 }
 
 interface Order {
+  gift?: GiftDelivery | null;
   fulfillmentType?: 'DINE_IN' | 'TAKEAWAY' | 'PICKUP';
   scheduledAt?: string | null;
   _id: string;
@@ -356,8 +359,18 @@ function OrderCard({
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="font-display font-semibold">{order.code}</p>
-          <p className="font-semibold text-primary">{order.tableName}</p>
-          {order.scheduledAt ? <p className="text-xs">Hẹn {new Date(order.scheduledAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p> : null}
+          <p className="font-semibold text-primary">
+            {order.gift ? `Bàn trả tiền: ${order.tableName}` : order.tableName}
+          </p>
+          <GiftLabel gift={order.gift} />
+          {order.scheduledAt ? (
+            <p className="text-xs">
+              Hẹn{' '}
+              {new Date(order.scheduledAt).toLocaleString('vi-VN', {
+                timeZone: 'Asia/Ho_Chi_Minh',
+              })}
+            </p>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {new Date(order.createdAt).toLocaleTimeString('vi-VN', {
               hour: '2-digit',
@@ -397,7 +410,10 @@ function OrderCard({
             className="flex-1"
             aria-label={`Chuyển sang ${nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)}`}
           >
-            {nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN' ? 'Khách đã nhận' : statusLabel(nextStatus)} <ChevronRight className="h-4 w-4 shrink-0" />
+            {nextStatus === 'SERVED' && order.fulfillmentType && order.fulfillmentType !== 'DINE_IN'
+              ? 'Khách đã nhận'
+              : statusLabel(nextStatus)}{' '}
+            <ChevronRight className="h-4 w-4 shrink-0" />
           </Button>
         ) : null}
         <Button variant="outline" size="sm" onClick={onView} title="Xem chi tiết">

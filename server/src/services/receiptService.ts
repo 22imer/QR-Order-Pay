@@ -61,6 +61,11 @@ function serializeOrder(
   id: string,
   order: {
     code: string;
+    gift?: {
+      recipientTableName?: string | null;
+      recipientTableCode?: string | null;
+      message?: string | null;
+    } | null;
     total: number;
     subtotal?: number | null;
     voucherCode?: string;
@@ -79,6 +84,7 @@ function serializeOrder(
   return {
     _id: id,
     code: order.code,
+    gift: order.gift ?? null,
     total: order.total,
     subtotal: order.subtotal ?? order.total,
     voucherCode: order.voucherCode ?? '',

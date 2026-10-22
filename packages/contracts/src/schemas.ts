@@ -2,9 +2,17 @@ import { z } from 'zod';
 import { benefitSelectionSchema, benefitBreakdownSchema } from './promotions.js';
 
 export const moneyVndSchema = z.number().int().nonnegative();
+const giftDeliverySchema = z
+  .object({ recipientTableName: z.string(), recipientTableCode: z.string(), message: z.string() })
+  .nullable()
+  .optional();
 
 export const realtimeEventTypeSchema = z.enum([
   'workforce.changed',
+  'reservation.changed',
+  'gift.changed',
+  'game.changed',
+  'jukebox.changed',
   'order.created',
   'order.statusChanged',
   'menu.availabilityChanged',
@@ -258,6 +266,7 @@ export const orderItemSchema = z.object({
 });
 
 export const orderSchema = z.object({
+  gift: giftDeliverySchema,
   ...benefitBreakdownSchema.shape,
   id: z.string(),
   code: z.string(),
@@ -289,6 +298,7 @@ const orderDtoItemSchema = orderItemSchema.extend({
   variantNameSnapshot: z.string(),
 });
 const orderDtoBaseSchema = z.object({
+  gift: giftDeliverySchema,
   fulfillmentType: z.enum(['DINE_IN', 'TAKEAWAY', 'PICKUP']).optional(),
   scheduledAt: z.string().datetime().nullable().optional(),
   ...benefitBreakdownSchema.shape,
@@ -360,6 +370,10 @@ export const joinTableRequestSchema = z.object({
 });
 
 export const placeOrderRequestSchema = z.object({
+  giftId: z
+    .string()
+    .regex(/^[a-f\d]{24}$/i)
+    .optional(),
   ...benefitSelectionSchema.shape,
   items: z
     .array(
@@ -624,6 +638,7 @@ export const receiptResponseSchema = z.object({
   total: moneyVndSchema,
   orders: z.array(
     z.object({
+      gift: giftDeliverySchema,
       ...benefitBreakdownSchema.shape,
       _id: z.string(),
       code: z.string(),
@@ -703,6 +718,7 @@ export const billHistoryDetailSchema = billHistoryRowSchema.extend({
   ),
   orders: z.array(
     z.object({
+      gift: giftDeliverySchema,
       ...benefitBreakdownSchema.shape,
       _id: z.string(),
       code: z.string(),

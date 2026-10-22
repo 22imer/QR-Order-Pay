@@ -4,6 +4,7 @@ import { ToastProvider } from './components/ui/Toast';
 import { NetworkStatus } from './components/ui/NetworkStatus';
 import { GuestLayout } from './layouts/GuestLayout';
 import { PickupLayout } from './layouts/PickupLayout';
+import { ReservationLayout } from './layouts/ReservationLayout';
 import { StaffLayout } from './layouts/StaffLayout';
 import { AdminLayout } from './layouts/AdminLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
@@ -24,7 +25,12 @@ const MenuPage = lazy(() =>
 const MemberPage = lazy(() =>
   import('./features/guest/MemberPage').then((m) => ({ default: m.MemberPage })),
 );
-const PickupPage = lazy(() => import('./features/pickup/PickupPage').then(m => ({ default: m.PickupPage })));
+const PickupPage = lazy(() =>
+  import('./features/pickup/PickupPage').then((m) => ({ default: m.PickupPage })),
+);
+const ReservationsPage = lazy(() =>
+  import('./features/reservations/ReservationsPage').then((m) => ({ default: m.ReservationsPage })),
+);
 const AdminVouchers = lazy(() =>
   import('./features/admin/Vouchers').then((m) => ({ default: m.AdminVouchers })),
 );
@@ -33,6 +39,18 @@ const AdminMembers = lazy(() =>
 );
 const CartPage = lazy(() =>
   import('./features/guest/CartPage').then((module) => ({ default: module.CartPage })),
+);
+const GiftsPage = lazy(() =>
+  import('./features/gifts/GiftsPage').then((m) => ({ default: m.GiftsPage })),
+);
+const GamePage = lazy(() =>
+  import('./features/game/GamePage').then((m) => ({ default: m.GamePage })),
+);
+const JukeboxPage = lazy(() =>
+  import('./features/jukebox/JukeboxPage').then((m) => ({ default: m.JukeboxPage })),
+);
+const JukeboxPlayer = lazy(() =>
+  import('./features/jukebox/JukeboxPlayer').then((m) => ({ default: m.JukeboxPlayer })),
 );
 const OrdersPage = lazy(() =>
   import('./features/guest/OrdersPage').then((module) => ({ default: module.OrdersPage })),
@@ -130,6 +148,9 @@ export function App(): JSX.Element {
                 <Route path="/member" element={<MemberPage />} />
                 <Route path="/cart" element={<CartPage />} />
                 <Route path="/orders" element={<OrdersPage />} />
+                <Route path="/gifts" element={<GiftsPage />} />
+                <Route path="/game" element={<GamePage />} />
+                <Route path="/jukebox" element={<JukeboxPage />} />
                 <Route path="/receipt" element={<ReceiptPage />} />
                 <Route path="/ai" element={<AIPage />} />
               </Route>
@@ -137,6 +158,11 @@ export function App(): JSX.Element {
                 <Route path="/pickup" element={<PickupPage view="order" />} />
                 <Route path="/pickup/orders" element={<PickupPage view="orders" />} />
                 <Route path="/pickup/member" element={<MemberPage />} />
+              </Route>
+              <Route element={<ReservationLayout />}>
+                <Route path="/reservations" element={<ReservationsPage />} />
+                <Route path="/reservations/mine" element={<ReservationsPage mine />} />
+                <Route path="/reservations/member" element={<MemberPage />} />
               </Route>
             </>
           ) : null}
@@ -149,6 +175,7 @@ export function App(): JSX.Element {
               <Route element={<StaffLayout />}>
                 <Route path="/staff" element={<Navigate to="/staff/kds" replace />} />
                 <Route path="/staff/kds" element={<StaffKDS />} />
+                <Route path="/staff/jukebox" element={<JukeboxPlayer />} />
                 <Route path="/staff/tables" element={<StaffTables />} />
                 <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
                 <Route path="/staff/availability" element={<StaffAvailability />} />
@@ -157,6 +184,7 @@ export function App(): JSX.Element {
                 <Route path="/staff/account" element={<AccountPage />} />
                 <Route path="/staff/workforce" element={<Workforce />} />
                 <Route path="/staff/pickups" element={<PickupPage staff />} />
+                <Route path="/staff/reservations" element={<ReservationsPage staff />} />
               </Route>
             </Route>
           ) : null}
@@ -166,6 +194,7 @@ export function App(): JSX.Element {
               <Route element={<AdminLayout />}>
                 <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                <Route path="/admin/jukebox" element={<JukeboxPlayer admin />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
                 <Route path="/admin/bills" element={<AdminBills />} />
                 <Route path="/admin/payments" element={<PaymentAccounting admin />} />
@@ -179,6 +208,7 @@ export function App(): JSX.Element {
                 <Route path="/admin/users" element={<AdminUsers />} />
                 <Route path="/admin/workforce" element={<Workforce admin />} />
                 <Route path="/admin/pickups" element={<PickupPage staff admin />} />
+                <Route path="/admin/reservations" element={<ReservationsPage staff admin />} />
                 <Route path="/admin/account" element={<AccountPage />} />
                 <Route path="/admin/reviews" element={<AdminReviews />} />
               </Route>

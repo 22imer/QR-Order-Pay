@@ -8,11 +8,14 @@ import {
   BellRing,
   ReceiptText,
   QrCode,
+  Gift,
+  Dices,
+  Music2,
 } from 'lucide-react';
 import { useCart, cartTotals } from '../store/cart';
 import { api, unwrap, vnd, getErrorMessage } from '../lib/api';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { connectGuestSocket, disconnectSocket, useSocketEvent } from '../lib/socket';
 import { Button } from '../components/ui/Button';
 import { useToast } from '../components/ui/useToast';
@@ -20,9 +23,10 @@ import { cn } from '../lib/cn';
 import { CloudMark } from '../features/guest/CloudMark';
 import type { GuestContext } from '../features/guest/guestContext';
 import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
+import { useGifts } from '../features/gifts/useGifts';
 
 const dockItem =
-  'relative flex flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50';
+  'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50';
 
 export function GuestLayout(): JSX.Element {
   const navigate = useNavigate();
@@ -44,6 +48,22 @@ export function GuestLayout(): JSX.Element {
   const session = sessionQuery.data;
   const activeSession = session?.active ? session : undefined;
   const activeParticipantId = activeSession?.participantId;
+  const giftOwner = activeSession
+    ? `${activeSession.tableSessionId}:${activeSession.participantId}`
+    : null;
+  const gifts = useGifts(giftOwner);
+  const giftCount = gifts.data?.incomingCount ?? 0;
+  const previousGifts = useRef<{ owner: string | null; count: number } | null>(null);
+  useEffect(() => {
+    if (!gifts.data) return;
+    if (previousGifts.current?.owner === giftOwner && giftCount > previousGifts.current.count)
+      toast({
+        title: 'Bàn bạn có quà mới',
+        description: 'Mở Tặng quà để nhận hoặc từ chối.',
+        tone: 'info',
+      });
+    previousGifts.current = { owner: giftOwner, count: giftCount };
+  }, [giftCount, giftOwner, gifts.data, toast]);
   const receiptAvailable = session?.active === false && session.receiptAvailable;
   const refreshSession = () => {
     void qc.invalidateQueries({ queryKey: ['guest-session'] });
@@ -55,6 +75,8 @@ export function GuestLayout(): JSX.Element {
     setConnected(true);
     refreshSession();
     refreshOrders();
+    void qc.invalidateQueries({ queryKey: ['gifts'] });
+    void qc.invalidateQueries({ queryKey: ['game'] });
     void qc.invalidateQueries({ queryKey: ['menu'] });
   });
   useSocketEvent('disconnect', () => {
@@ -62,6 +84,9 @@ export function GuestLayout(): JSX.Element {
     refreshSession();
   });
   useSocketEvent('order.statusChanged', refreshOrders);
+  useSocketEvent('gift.changed', () => {
+    void qc.invalidateQueries({ queryKey: ['gifts'] });
+  });
   useSocketEvent('order.created', refreshOrders);
   useSocketEvent('menu.availabilityChanged', () => {
     void qc.invalidateQueries({ queryKey: ['menu'] });
@@ -83,7 +108,10 @@ export function GuestLayout(): JSX.Element {
       setSession(session.tableSessionId, session.participantId);
     else if (session && !session.active) {
       resetSession();
-      if (session.receiptAvailable && !['/receipt', '/member', '/pickup', '/ai'].includes(location.pathname))
+      if (
+        session.receiptAvailable &&
+        !['/receipt', '/member', '/pickup', '/ai'].includes(location.pathname)
+      )
         navigate('/receipt', { replace: true });
     }
   }, [session, setSession, resetSession, navigate, location.pathname]);
@@ -172,6 +200,11 @@ export function GuestLayout(): JSX.Element {
             {[
               { to: '/menu', label: 'Thực đơn' },
               { to: '/ai', label: 'AI Barista' },
+              ...(activeSession
+                ? [{ to: '/gifts', label: `Tặng quà${giftCount ? ` (${giftCount})` : ''}` }]
+                : []),
+              ...(activeSession ? [{ to: '/game', label: 'Vòng quay' }] : []),
+              ...(activeSession ? [{ to: '/jukebox', label: 'Chọn nhạc' }] : []),
               {
                 to: receiptAvailable ? '/receipt' : '/orders',
                 label: receiptAvailable ? 'Hóa đơn' : 'Đơn của tôi',
@@ -243,6 +276,15 @@ export function GuestLayout(): JSX.Element {
             </Button>
           </div>
         ) : null}
+        {giftCount > 0 && location.pathname !== '/gifts' && (
+          <NavLink
+            to="/gifts"
+            role="status"
+            className="mx-4 mb-4 block rounded-2xl border border-primary/40 bg-card p-4 font-semibold"
+          >
+            🎁 Bàn bạn có {giftCount} lời mời tặng quà · Mở để nhận hoặc từ chối
+          </NavLink>
+        )}
         <Outlet context={context} />
       </main>
 
@@ -274,10 +316,23 @@ export function GuestLayout(): JSX.Element {
           ) : null}
           <nav
             aria-label="Điều hướng chính"
-            className="guest-dock pointer-events-auto flex rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden"
+            className="guest-dock pointer-events-auto flex overflow-x-auto rounded-3xl border border-foreground/10 bg-card/95 px-1 shadow-soft backdrop-blur lg:hidden [&>*]:min-w-[4rem] [&>*]:shrink-0"
           >
             <DockLink to="/menu" label="Thực đơn" icon={<Coffee className="h-5 w-5" />} />
             <DockLink to="/ai" label="AI Barista" icon={<Sparkles className="h-5 w-5" />} />
+            {activeSession && (
+              <DockLink to="/game" label="Vòng quay" icon={<Dices className="h-5 w-5" />} />
+            )}
+            {activeSession && (
+              <DockLink to="/jukebox" label="Chọn nhạc" icon={<Music2 className="h-5 w-5" />} />
+            )}
+            {activeSession && (
+              <DockLink
+                to="/gifts"
+                label={`Tặng quà${giftCount ? ` (${giftCount})` : ''}`}
+                icon={<Gift className="h-5 w-5" />}
+              />
+            )}
             <DockLink
               to={receiptAvailable ? '/receipt' : '/orders'}
               label={receiptAvailable ? 'Hóa đơn' : 'Đơn của tôi'}

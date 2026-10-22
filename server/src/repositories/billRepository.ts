@@ -58,6 +58,13 @@ export const billRepository: IBillRepository = {
       participants,
       orders: orders.map((o) => ({
         orderId: o._id,
+        gift: o.gift
+          ? {
+              recipientTableName: o.gift.recipientTableName,
+              recipientTableCode: o.gift.recipientTableCode,
+              message: o.gift.message,
+            }
+          : null,
         code: o.code,
         status: o.status,
         paymentStatus: o.paymentStatus,

@@ -10,6 +10,7 @@ import {
   WalletCards,
   CalendarDays,
   ShoppingBag,
+  Music2,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
@@ -45,6 +46,13 @@ interface ServiceReqRow {
 }
 
 const NAV = [
+  { to: '/staff/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
+  {
+    to: '/staff/reservations',
+    label: 'Đặt bàn',
+    icon: <CalendarDays className="h-4 w-4" />,
+    badgeKey: 'reservations' as const,
+  },
   {
     to: '/staff/pickups',
     label: 'Mang đi & đặt trước',
@@ -111,6 +119,21 @@ export function StaffLayout(): JSX.Element {
       ),
     refetchInterval: 5_000,
   });
+  const reservationsQuery = useQuery({
+    queryKey: ['reservation-alerts', user?.id],
+    queryFn: async () =>
+      unwrap(
+        await api.get<{ items: Array<{ id: string }>; total: number }>('/staff/reservations', {
+          params: { history: false, page: 1 },
+        }),
+      ),
+    refetchInterval: 10000,
+  });
+  useCountDelta(reservationsQuery.data?.total, (delta) => {
+    playAlert('request');
+    notifyBrowser('Lịch đặt bàn mới', `${delta} lịch mới. Vào Đặt bàn để kiểm tra.`);
+    toast({ title: `Lịch đặt bàn mới (${delta})`, tone: 'info' });
+  });
 
   const pendingCount = useMemo(
     () => (ordersQuery.data?.items ?? []).filter((o) => o.status === 'PENDING').length,
@@ -124,6 +147,8 @@ export function StaffLayout(): JSX.Element {
   const refresh = useCallback(() => {
     for (const key of [
       'staff-orders',
+      'reservation-alerts',
+      'reservations',
       'staff-pickup-alerts',
       'pickups',
       'staff-awaiting-payments',
@@ -176,6 +201,7 @@ export function StaffLayout(): JSX.Element {
   });
   useSocketEvent('disconnect', () => setConnected(false));
   useSocketEvent('order.created', refresh);
+  useSocketEvent('reservation.changed', refresh);
   useSocketEvent('order.statusChanged', refresh);
   useSocketEvent('tableSession.statusChanged', refresh);
   useSocketEvent('payment.confirmed', () => {
@@ -212,7 +238,10 @@ export function StaffLayout(): JSX.Element {
     if (next) playAlert('order');
   }
 
-  function badgeFor(key: 'pending' | 'requests' | 'awaiting' | 'pickups'): number | null {
+  function badgeFor(
+    key: 'pending' | 'requests' | 'awaiting' | 'pickups' | 'reservations',
+  ): number | null {
+    if (key === 'reservations') return reservationsQuery.data?.total || null;
     if (key === 'pickups') return pickupsQuery.data?.total || null;
     if (key === 'awaiting') return awaitingQuery.data?.items.length || null;
     if (key === 'pending') return pendingCount > 0 ? pendingCount : null;

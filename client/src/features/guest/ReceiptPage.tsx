@@ -1,3 +1,4 @@
+import { GiftLabel } from '../../components/GiftLabel';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap, vnd, getErrorMessage } from '../../lib/api';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
@@ -69,6 +70,7 @@ export function ReceiptPage(): JSX.Element {
               <section key={order._id} aria-label={`Đơn ${order.code}`}>
                 <div className="slip-rule mt-4" />
                 <p className="mt-4 text-sm font-semibold">Đơn {order.code}</p>
+                <GiftLabel gift={order.gift} />
                 <ul className="mt-3 space-y-3">
                   {order.items.map((item, i) => (
                     <li key={i}>

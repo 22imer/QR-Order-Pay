@@ -14,6 +14,10 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { socketRedisClients } from '../infrastructure/redis.js';
 
 interface ServerToClientEvents {
+  'reservation.changed': (payload: RealtimeEventEnvelope) => void;
+  'gift.changed': (payload: RealtimeEventEnvelope) => void;
+  'game.changed': (payload: RealtimeEventEnvelope) => void;
+  'jukebox.changed': (payload: RealtimeEventEnvelope) => void;
   'workforce.changed': (payload: RealtimeEventEnvelope) => void;
   'order.created': (payload: RealtimeEventEnvelope) => void;
   'order.statusChanged': (payload: RealtimeEventEnvelope) => void;
@@ -167,6 +171,13 @@ export function publishGuest(
 
 export function publishMenuChange(payload: RealtimeEventEnvelope): void {
   io?.emit('menu.availabilityChanged', payload);
+}
+
+export function publishAll(
+  event: keyof ServerToClientEvents,
+  payload: RealtimeEventEnvelope,
+): void {
+  io?.emit(event, payload);
 }
 
 export function closeSessionSockets(tableSessionId: string): void {

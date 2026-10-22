@@ -27,6 +27,10 @@ import '../src/models/StockMovement.js';
 import '../src/models/Member.js';
 import '../src/models/Voucher.js';
 import '../src/models/WorkShift.js';
+import '../src/models/Reservation.js';
+import '../src/models/Gift.js';
+import '../src/models/MiniGame.js';
+import '../src/models/Jukebox.js';
 import { migratePickupIndexes } from '../src/infrastructure/pickupIndexes.js';
 
 interface Migration {
@@ -37,9 +41,50 @@ interface Migration {
 }
 const migrations: Migration[] = [
   {
+    id: '20261022-003-jukebox-indexes',
+    description: 'Create jukebox catalog, singleton, table ballot and replay indexes',
+    checksumSource:
+      'v1:jukeboxTrack,jukeboxState-id,jukeboxVote-session-unique-track-date,jukeboxAction-actor-request-unique',
+    up: async () => {
+      for (const name of ['JukeboxTrack', 'JukeboxState', 'JukeboxVote', 'JukeboxAction'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
+  {
+    id: '20261022-002-mini-game-indexes',
+    description: 'Create session mini game lobby, history and idempotent action indexes',
+    checksumSource:
+      'v1:miniGameRound-owner-request-unique,one-waiting-session,history,miniGameAction-actor-request-unique',
+    up: async () => {
+      await mongoose.models['MiniGameRound']!.createIndexes();
+      await mongoose.models['MiniGameAction']!.createIndexes();
+    },
+  },
+  {
+    id: '20261022-001-gift-indexes',
+    description: 'Create gift invitation replay, expiry, delivery and order uniqueness indexes',
+    checksumSource:
+      'v1:gift-owner-request-unique,sender-recipient-history,expiry,order-gift-unique,delivery-session',
+    up: async () => {
+      await mongoose.models['Gift']!.createIndexes();
+      await mongoose.models['Order']!.createIndexes();
+    },
+  },
+  {
+    id: '20261021-001-reservation-indexes',
+    description:
+      'Create reservation replay, interval, owner and expiry indexes without changing existing data',
+    checksumSource:
+      'v1:reservation-code,actor-request-unique,table-interval,owner-history,expiry,session-unique',
+    up: async () => {
+      await mongoose.models['Reservation']!.createIndexes();
+    },
+  },
+  {
     id: '20261020-001-pickup-indexes',
     description: 'Extend order and invoice uniqueness for standalone pickup without rewriting data',
-    checksumSource: 'v1:partial-dine-in-order-bill,pickup-owner-request,pickup-outcome-due,pickup-order-bill-unique',
+    checksumSource:
+      'v1:partial-dine-in-order-bill,pickup-owner-request,pickup-outcome-due,pickup-order-bill-unique',
     up: () => migratePickupIndexes(mongoose.connection.db!),
   },
   {
@@ -53,8 +98,10 @@ const migrations: Migration[] = [
   },
   {
     id: '20261019-003-workforce-indexes',
-    description: 'Create work schedule, attendance and KDS activity indexes without backfilling history',
-    checksumSource: 'v1:workshift-request-unique,staff-range,working-unique,activity-order-stage-unique-at-staff-shift-preparation',
+    description:
+      'Create work schedule, attendance and KDS activity indexes without backfilling history',
+    checksumSource:
+      'v1:workshift-request-unique,staff-range,working-unique,activity-order-stage-unique-at-staff-shift-preparation',
     up: async () => {
       for (const name of ['WorkShift', 'StaffingPolicy', 'WorkActivity'])
         await mongoose.models[name]!.createIndexes();

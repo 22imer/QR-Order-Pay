@@ -15,6 +15,7 @@ import { Skeleton } from '../../components/ui/Skeleton';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSocket } from '../../lib/socket';
 import { OrderReview } from './OrderReview';
+import { GiftLabel } from '../../components/GiftLabel';
 
 type Order = GuestOrder;
 
@@ -156,6 +157,7 @@ export function OrdersPage(): JSX.Element {
                     </p>
                   ) : null}
                   <h2 className="g-display text-2xl">{order.code}</h2>
+                  <GiftLabel gift={order.gift} />
                 </div>
                 <Badge
                   tone={

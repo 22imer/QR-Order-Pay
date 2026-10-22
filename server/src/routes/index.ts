@@ -18,6 +18,10 @@ import * as inventory from '../controllers/inventoryController.js';
 import * as promotion from '../controllers/promotionController.js';
 import * as workforce from '../controllers/workforceController.js';
 import * as pickup from '../controllers/pickupController.js';
+import * as reservations from '../controllers/reservationController.js';
+import * as gifts from '../controllers/giftController.js';
+import * as miniGame from '../controllers/miniGameController.js';
+import * as jukebox from '../controllers/jukeboxController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -94,13 +98,32 @@ const guestServiceLimiter = rateLimitOrPassthrough(
 );
 const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
 
+apiRouter.get('/reservations/availability', authLimiter, reservations.availability(false));
+apiRouter.get('/reservations', authLimiter, reservations.list(false));
+apiRouter.post('/reservations', guestCsrfGuard, guestMutationLimiter, reservations.create(false));
+apiRouter.post(
+  '/reservations/:id/cancel',
+  guestCsrfGuard,
+  guestMutationLimiter,
+  reservations.action(false, 'cancel'),
+);
+for (const prefix of ['/staff/reservations', '/admin/reservations']) {
+  const roles = prefix.startsWith('/admin') ? (['ADMIN'] as const) : (['STAFF', 'ADMIN'] as const);
+  apiRouter.use(prefix, requireAuth, requireRole(...roles));
+  apiRouter.get(`${prefix}/availability`, reservations.availability(true));
+  apiRouter.get(prefix, reservations.list(true));
+  apiRouter.post(prefix, reservations.create(true));
+  apiRouter.post(`${prefix}/:id/cancel`, reservations.action(true, 'cancel'));
+  apiRouter.post(`${prefix}/:id/check-in`, reservations.action(true, 'check-in'));
+}
+
 apiRouter.get('/pickups', authLimiter, pickup.list(false));
 apiRouter.post('/pickups/quote', guestCsrfGuard, guestMutationLimiter, pickup.quote(false));
 apiRouter.post('/pickups', guestCsrfGuard, guestMutationLimiter, pickup.create(false));
 apiRouter.post('/pickups/:id/cancel', guestCsrfGuard, guestMutationLimiter, pickup.cancel(false));
 apiRouter.get('/pickups/:id/bill', authLimiter, pickup.bill(false));
 for (const prefix of ['/staff/pickups', '/admin/pickups']) {
-  const roles = prefix.startsWith('/admin') ? ['ADMIN'] as const : ['STAFF', 'ADMIN'] as const;
+  const roles = prefix.startsWith('/admin') ? (['ADMIN'] as const) : (['STAFF', 'ADMIN'] as const);
   apiRouter.use(prefix, requireAuth, requireRole(...roles));
   apiRouter.get(prefix, pickup.list(true));
   apiRouter.get(`${prefix}/catalog`, pickup.catalog);
@@ -167,6 +190,56 @@ apiRouter.get('/table-sessions/current', loadGuest, tableSession.current);
 apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.leave);
 
 // guest orders
+const gameLimiter = rateLimitOrPassthrough(40, 'table-game', tableKey);
+const jukeboxLimiter = rateLimitOrPassthrough(20, 'table-jukebox', tableKey);
+apiRouter.get('/jukebox', loadGuest, requireGuest, jukebox.feed);
+apiRouter.post(
+  '/jukebox/vote',
+  loadGuest,
+  requireGuest,
+  guestCsrfGuard,
+  jukeboxLimiter,
+  jukebox.vote,
+);
+for (const prefix of ['/staff/jukebox', '/admin/jukebox']) {
+  apiRouter.use(
+    prefix,
+    requireAuth,
+    requireRole(
+      ...(prefix.startsWith('/admin') ? ['ADMIN' as const] : ['STAFF' as const, 'ADMIN' as const]),
+    ),
+  );
+  apiRouter.get(prefix, jukebox.staffFeed);
+  for (const kind of ['claim', 'heartbeat', 'release'] as const)
+    apiRouter.post(`${prefix}/${kind}`, jukebox.lease(kind));
+  for (const kind of ['next', 'stop'] as const)
+    apiRouter.post(`${prefix}/${kind}`, jukebox.control(kind));
+}
+apiRouter.get('/admin/jukebox/tracks', jukebox.catalog);
+apiRouter.post('/admin/jukebox/tracks', jukebox.saveTrack);
+apiRouter.put('/admin/jukebox/tracks/:id', jukebox.saveTrack);
+apiRouter.get('/game', loadGuest, requireGuest, miniGame.feed);
+apiRouter.post('/game', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.create);
+for (const kind of ['join', 'leave', 'spin', 'cancel'] as const)
+  apiRouter.post(
+    `/game/:id/${kind}`,
+    loadGuest,
+    requireGuest,
+    guestCsrfGuard,
+    gameLimiter,
+    miniGame.action(kind),
+  );
+apiRouter.get('/gifts/tables', loadGuest, requireGuest, gifts.tables);
+apiRouter.get('/gifts', loadGuest, requireGuest, gifts.list);
+apiRouter.post('/gifts', loadGuest, requireGuest, guestCsrfGuard, guestOrderLimiter, gifts.create);
+apiRouter.post(
+  '/gifts/:id/decision',
+  loadGuest,
+  requireGuest,
+  guestCsrfGuard,
+  guestMutationLimiter,
+  gifts.decide,
+);
 apiRouter.post(
   '/orders/quote',
   loadGuest,

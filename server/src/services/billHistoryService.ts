@@ -22,6 +22,7 @@ interface RawItem extends Record<string, unknown> {
   toppingIds: unknown[];
 }
 interface RawOrder {
+  gift?: { recipientTableName: string; recipientTableCode: string; message: string } | null;
   subtotal?: number | null;
   voucherCode?: string;
   voucherDiscount?: number;
@@ -123,6 +124,7 @@ function serializeBill(bill: RawBill) {
     })),
     orders: (bill.orders ?? []).map((order) => ({
       _id: String(order.orderId),
+      gift: order.gift ?? null,
       code: order.code,
       status: order.status,
       paymentStatus: order.paymentStatus,

@@ -130,6 +130,7 @@ export function JoinPage(): JSX.Element {
           >
             Đặt mang đi / đặt trước
           </Link>
+          <Link to="/reservations" className="mt-3 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted">Đặt bàn</Link>
           <details className="mt-6 border-t border-foreground/10 pt-5 text-sm text-muted-foreground">
             <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
               Mở link vào bàn

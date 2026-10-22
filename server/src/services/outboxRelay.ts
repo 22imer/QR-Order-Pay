@@ -11,7 +11,7 @@ import {
   closeSessionSockets,
   getIO,
   publishGuest,
-  publishMenuChange,
+  publishAll,
   publishSession,
   publishStaff,
 } from '../realtime/socket.js';
@@ -112,7 +112,7 @@ async function drainBatch(owner: string): Promise<number> {
 
 function publishDirect(target: RealtimeTarget, envelope: RealtimeEnvelope): void {
   const event = envelope.eventType;
-  if (target.scope === 'all') publishMenuChange(envelope);
+  if (target.scope === 'all') publishAll(event, envelope);
   else if (target.scope === 'staff') publishStaff(event, envelope);
   else if (target.scope === 'session') publishSession(target.tableSessionId, event, envelope);
   else publishGuest(target.tableSessionId, target.participantId, event, envelope);

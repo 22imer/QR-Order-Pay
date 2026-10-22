@@ -19,6 +19,12 @@ import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.
 import { outboxRepository } from '../repositories/outboxRepository.js';
 import { verifyAdmissionTicket } from './tableQrService.js';
 import { finalizeSessionBill } from './paymentService.js';
+import {
+  assertWalkInAllowed,
+  lockReservationTable,
+  moveSessionReservation,
+} from './reservationGuards.js';
+import { assertGiftTransferAllowed } from './giftGuards.js';
 
 /**
  * Single entry point for "this table must have a live session".
@@ -32,7 +38,10 @@ export async function ensureActiveSession(input: {
   if (active) {
     if (input.actor.type === 'STAFF' && active.status === 'CHECKOUT') {
       if (active.collectionExpiresAt && active.collectionExpiresAt.getTime() > Date.now())
-        throw new ConflictError('PAYMENT_CLAIMED', 'Bàn đang được thu tiền, chưa thể mở lại phiên.');
+        throw new ConflictError(
+          'PAYMENT_CLAIMED',
+          'Bàn đang được thu tiền, chưa thể mở lại phiên.',
+        );
       const reverted = await unitOfWork.withTransaction(async (mongoSession) => {
         const result = await tableSessionRepository.updateStatus(
           active._id.toString(),
@@ -68,6 +77,8 @@ export async function ensureActiveSession(input: {
 
   try {
     const session = await unitOfWork.withTransaction(async (mongoSession) => {
+      await lockReservationTable(input.tableId, mongoSession);
+      await assertWalkInAllowed(input.tableId, mongoSession);
       const created = await tableSessionRepository.create(
         {
           tableId: input.tableId,
@@ -251,6 +262,7 @@ export async function joinAsGuest(tablePublicToken: string) {
         let session = await tableSessionRepository.findActiveByTable(table.id, mongoSession);
         let sessionCreated = false;
         if (!session) {
+          await assertWalkInAllowed(table.id, mongoSession);
           if (!config.guestAutoOpen)
             throw new ForbiddenError('Bàn chưa mở phiên phục vụ, vui lòng báo nhân viên.');
           session = await tableSessionRepository.create(
@@ -351,10 +363,14 @@ export async function transferSession(
       throw new ConflictError('STATE_TRANSITION_INVALID', 'Chỉ chuyển được phiên đang mở.');
     if (source.version !== expectedVersion)
       throw new ConflictError('CONFLICT', 'Phiên vừa được cập nhật.');
+    await assertGiftTransferAllowed(id, session);
     if (source.tableId.toString() === targetTableId)
       throw new ValidationError('Bàn đích phải khác bàn hiện tại.');
     if (await tableSessionRepository.findActiveByTable(targetTableId, session))
       throw new ConflictError('TABLE_SESSION_ALREADY_OPEN', 'Bàn đích đang có phiên phục vụ.');
+    await lockReservationTable(targetTableId, session);
+    await assertWalkInAllowed(targetTableId, session);
+    await moveSessionReservation(id, targetTableId, session);
     let moved;
     try {
       moved = await TableSessionModel.findOneAndUpdate(

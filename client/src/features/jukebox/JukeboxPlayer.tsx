@@ -1,0 +1,309 @@
+import { useEffect, useRef, useState } from 'react';
+import type { JukeboxStaffFeed } from '@may-cafe/contracts';
+import { api, getAxiosError, getErrorMessage, unwrap } from '../../lib/api';
+import { Button } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { useAuth } from '../auth/useAuth';
+import { JukeboxCatalog } from './JukeboxCatalog';
+import { jukeboxUuid, useJukeboxQuery } from './useJukebox';
+
+export function JukeboxPlayer({ admin = false }: { admin?: boolean }): JSX.Element {
+  useDocumentTitle('Jukebox');
+  const { user } = useAuth();
+  return <Player key={user?.id} admin={admin} />;
+}
+function Player({ admin }: { admin: boolean }): JSX.Element {
+  const [deviceId] = useState(jukeboxUuid),
+    prefix = `/${admin ? 'admin' : 'staff'}/jukebox`;
+  const feed = useJukeboxQuery<JukeboxStaffFeed>(
+    `player:${deviceId}`,
+    `${prefix}?deviceId=${deviceId}`,
+  );
+  const audio = useRef<HTMLAudioElement>(null),
+    live = useRef(false),
+    expiry = useRef(0),
+    flight = useRef(false);
+  const mounted = useRef(true);
+  const [active, setActive] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [playing, setPlaying] = useState(false);
+  const [pending, setPending] = useState<{
+    kind: 'next' | 'stop';
+    body: Record<string, unknown>;
+  } | null>(null);
+  const [volume, setVolume] = useState(0.5);
+  const data = feed.data;
+  const currentVersion = useRef(0);
+  currentVersion.current = data?.playbackVersion ?? 0;
+  function halt() {
+    live.current = false;
+    setActive(false);
+    audio.current?.pause();
+    setPlaying(false);
+  }
+  async function play() {
+    if (
+      !live.current ||
+      Date.now() >= expiry.current ||
+      document.hidden ||
+      !audio.current?.getAttribute('src')
+    )
+      return;
+    try {
+      await audio.current.play();
+      if (!live.current || Date.now() >= expiry.current) audio.current?.pause();
+    } catch {
+      setError(
+        'Chưa phát được âm thanh. Bấm Phát / thử lại; nếu vẫn lỗi, kiểm tra URL hoặc chuyển bài.',
+      );
+      setPlaying(false);
+    }
+  }
+  const source = data?.current?.audioUrl ?? '',
+    generation = data?.playbackVersion ?? 0;
+  useEffect(() => {
+    if (audio.current) audio.current.volume = volume;
+  }, [volume, generation]);
+  useEffect(() => {
+    const element = audio.current;
+    if (!active || !source) {
+      audio.current?.pause();
+      return;
+    }
+    void play();
+    return () => element?.pause();
+    // Source/generation changes start the selected snapshot from the beginning.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, generation, active]);
+  useEffect(() => {
+    mounted.current = true;
+    let heartbeatBusy = false;
+    const element = audio.current;
+    const release = () => {
+      if (!live.current) return;
+      halt();
+      void api.post(`${prefix}/release`, { deviceId }).catch(() => {});
+    };
+    const visibility = () => {
+      if (document.hidden) release();
+    };
+    const deadline = window.setInterval(() => {
+      if (live.current && Date.now() >= expiry.current) {
+        halt();
+        setError('Quyền phát đã hết hạn. Bấm Bật thiết bị phát để kết nối lại.');
+      }
+    }, 500);
+    const heartbeat = window.setInterval(() => {
+      if (!live.current || heartbeatBusy) return;
+      heartbeatBusy = true;
+      void api
+        .post(`${prefix}/heartbeat`, { deviceId })
+        .then((r) => {
+          if (!mounted.current || !live.current) return;
+          const result = unwrap<JukeboxStaffFeed>(r);
+          // Use remaining server duration: local clocks may be skewed.
+          expiry.current = Date.now() + Math.max(0, result.lease.until - result.serverNow - 1000);
+        })
+        .catch((err) => {
+          if (mounted.current) {
+            halt();
+            setError(getErrorMessage(err));
+          }
+        })
+        .finally(() => {
+          heartbeatBusy = false;
+        });
+    }, 10000);
+    document.addEventListener('visibilitychange', visibility);
+    window.addEventListener('pagehide', release);
+    return () => {
+      mounted.current = false;
+      element?.pause();
+      if (live.current) void api.post(`${prefix}/release`, { deviceId }).catch(() => {});
+      live.current = false;
+      window.clearInterval(deadline);
+      window.clearInterval(heartbeat);
+      document.removeEventListener('visibilitychange', visibility);
+      window.removeEventListener('pagehide', release);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefix, deviceId]);
+  async function claim() {
+    if (flight.current) return;
+    flight.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      const result = unwrap<JukeboxStaffFeed>(await api.post(`${prefix}/claim`, { deviceId }));
+      if (!mounted.current || document.hidden) {
+        void api.post(`${prefix}/release`, { deviceId }).catch(() => {});
+        return;
+      }
+      expiry.current = Date.now() + Math.max(0, result.lease.until - result.serverNow - 1000);
+      live.current = true;
+      setActive(true);
+      await feed.accept(result);
+    } catch (err) {
+      halt();
+      setError(getErrorMessage(err));
+    } finally {
+      flight.current = false;
+      setBusy(false);
+    }
+  }
+  async function control(kind: 'next' | 'stop', retry = false) {
+    if (flight.current || !live.current || !data || (!retry && pending)) return;
+    const command =
+      retry && pending
+        ? pending
+        : {
+            kind,
+            body: { deviceId, requestId: jukeboxUuid(), playbackVersion: data.playbackVersion },
+          };
+    flight.current = true;
+    setBusy(true);
+    setError('');
+    setPending(command);
+    audio.current?.pause();
+    try {
+      const result = unwrap<JukeboxStaffFeed>(
+        await api.post(`${prefix}/${command.kind}`, command.body),
+      );
+      setPending(null);
+      await feed.accept(result);
+    } catch (err) {
+      const status = getAxiosError(err)?.response?.status;
+      if (status && status < 500) setPending(null);
+      setError(getErrorMessage(err));
+    } finally {
+      flight.current = false;
+      setBusy(false);
+      feed.refresh();
+    }
+  }
+  async function release() {
+    halt();
+    setPending(null);
+    try {
+      await api.post(`${prefix}/release`, { deviceId });
+      feed.refresh();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    }
+  }
+  return (
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-3xl font-semibold">Jukebox</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Mở trang này trên máy nối loa và giữ tab hiển thị. Rời hoặc ẩn trang sẽ dừng âm thanh; bật
+          lại sẽ phát bài hiện tại từ đầu.
+        </p>
+      </header>
+      {feed.isError && <p role="alert">{getErrorMessage(feed.error)}</p>}
+      {error && <p role="alert">{error}</p>}
+      <audio
+        key={generation}
+        ref={audio}
+        src={active && source ? source : undefined}
+        preload="none"
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onError={() => {
+          if (active && source)
+            setError('Nguồn nhạc không phát được. Kiểm tra URL hoặc chuyển bài.');
+        }}
+        onEnded={() => {
+          if (live.current && !flight.current && currentVersion.current === generation)
+            void control('next');
+        }}
+      />
+      <Card className="space-y-4 p-5">
+        <p role="status">
+          {active
+            ? playing
+              ? 'Đang phát trên thiết bị này'
+              : 'Thiết bị này giữ quyền phát · đang dừng'
+            : data?.lease.busy
+              ? 'Có thiết bị đang giữ quyền phát'
+              : 'Chưa bật thiết bị phát'}
+        </p>
+        <h2 className="text-2xl font-semibold">{data?.current?.title ?? 'Chưa chọn bài'}</h2>
+        {data?.current && <p>{data.current.artist}</p>}
+        <div className="flex flex-wrap gap-2">
+          {!active ? (
+            <Button
+              disabled={busy || !data || feed.isError || !!data.lease.busy}
+              onClick={() => void claim()}
+            >
+              Bật thiết bị phát
+            </Button>
+          ) : (
+            <>
+              <Button
+                disabled={busy || !!pending || !source}
+                onClick={() => {
+                  setError('');
+                  if (playing) audio.current?.pause();
+                  else void play();
+                }}
+              >
+                {playing ? 'Tạm dừng' : 'Phát / thử lại'}
+              </Button>
+              <Button disabled={busy || !!pending} onClick={() => void control('next')}>
+                Bài tiếp theo
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || !!pending || !data?.current}
+                onClick={() => void control('stop')}
+              >
+                Dừng chọn phát
+              </Button>
+              <Button variant="outline" disabled={busy} onClick={() => void release()}>
+                Nhả thiết bị
+              </Button>
+            </>
+          )}
+        </div>
+        {pending && (
+          <div>
+            <p>Chưa xác nhận thao tác. Thử lại trước khi chuyển bài khác.</p>
+            <Button disabled={busy || !active} onClick={() => void control(pending.kind, true)}>
+              Thử lại thao tác
+            </Button>
+          </div>
+        )}
+        <label className="flex items-center gap-3">
+          Âm lượng
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={volume}
+            onChange={(e) => setVolume(Number(e.target.value))}
+          />
+        </label>
+      </Card>
+      <section aria-label="Hàng đợi" className="space-y-3">
+        <h2 className="text-xl font-semibold">Hàng đợi theo vote</h2>
+        <p className="text-sm text-muted-foreground">
+          Nhiều vote trước; bằng nhau ưu tiên lượt chọn sớm nhất. Hết bài thì chờ quầy chọn tiếp.
+        </p>
+        {!data?.queue.length && <p>Chưa có bình chọn.</p>}
+        <ol className="space-y-2">
+          {data?.queue.map((t, i) => (
+            <li key={t.id} className="rounded-2xl bg-card p-4">
+              {i + 1}. {t.title} · {t.artist}
+              <span className="ml-3 font-semibold">{t.votes} vote</span>
+            </li>
+          ))}
+        </ol>
+      </section>
+      {admin && <JukeboxCatalog />}
+    </div>
+  );
+}

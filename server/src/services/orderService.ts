@@ -23,6 +23,7 @@ import { guardUnpaidCancellation } from './paymentClaimService.js';
 import mongoose from 'mongoose';
 import { reserveOrderInventory } from './orderInventoryService.js';
 import { finalizePickupBill } from './pickupBillService.js';
+import { claimGiftForOrder } from './giftGuards.js';
 
 export interface PlaceOrderItemInput {
   productId: string;
@@ -35,6 +36,7 @@ export interface PlaceOrderItemInput {
 }
 
 export interface PlaceOrderInput {
+  giftId?: string;
   voucherCode?: string;
   redeemPoints?: number;
   memberId?: string | null;
@@ -61,6 +63,7 @@ export async function placeOrder(
     }
   }
   const requestHash = hashRequest({
+    ...(input.giftId ? { giftId: input.giftId } : {}),
     items: input.items,
     note: input.note,
     participantId: input.participantId,
@@ -88,6 +91,11 @@ export async function placeOrder(
     try {
       return { order: await createOrder(input, idempotencyKey, requestHash), created: true };
     } catch (error) {
+      // A transaction retry can observe the gift already claimed by this same request.
+      if (input.giftId) {
+        const raced = await replay();
+        if (raced) return raced;
+      }
       // Request cùng key có thể đã commit sau bước kiểm tra phía trên: trả lại đơn đó thay vì lỗi.
       if (isDuplicateKey(error, 'idempotencyKey')) {
         const raced = await replay();
@@ -111,6 +119,17 @@ async function createOrder(
 ): Promise<OrderDoc> {
   const code = `MC${randomShortCode(5)}`;
   return unitOfWork.withTransaction(async (mongoSession) => {
+    const orderId = new mongoose.Types.ObjectId();
+    const gift = input.giftId
+      ? await claimGiftForOrder(
+          input.giftId,
+          input.tableSessionId,
+          input.participantId,
+          input.items,
+          String(orderId),
+          mongoSession,
+        )
+      : null;
     const open = await TableSessionModel.findOneAndUpdate(
       { _id: input.tableSessionId, status: 'OPEN' },
       { $inc: { version: 1 } },
@@ -137,7 +156,6 @@ async function createOrder(
       },
       priced,
     );
-    const orderId = new mongoose.Types.ObjectId();
     if (priced.benefits)
       await reserveBenefits(String(orderId), code, priced.benefits, mongoSession);
     const inventorySnapshot = await reserveOrderInventory(
@@ -148,6 +166,7 @@ async function createOrder(
     const order = await orderRepository.createWithSession(
       {
         _id: orderId,
+        gift,
         inventorySnapshot,
         inventoryState: inventorySnapshot.length ? 'RESERVED' : 'NONE',
         code,
@@ -200,6 +219,7 @@ async function createOrder(
 }
 
 function hashRequest(payload: {
+  giftId?: string;
   voucherCode?: string;
   redeemPoints?: number;
   items: PlaceOrderItemInput[];
@@ -225,7 +245,8 @@ export async function cancelOrderByGuest(
       (order.paidAmount ?? 0) > 0
     )
       throw new ConflictError('STATE_TRANSITION_INVALID', 'Đơn đã được nhận, không thể hủy.');
-    if (order.tableSessionId) await guardUnpaidCancellation(order.tableSessionId.toString(), session);
+    if (order.tableSessionId)
+      await guardUnpaidCancellation(order.tableSessionId.toString(), session);
     const updated = await orderRepository.transitionStatus(
       orderId,
       order.version,
@@ -270,8 +291,11 @@ export async function transitionByStaff(
       throw new ConflictError('CONFLICT', 'Đơn vừa thay đổi. Vui lòng tải lại.');
     if (order.pickup && order.pickup.outcome !== 'ACTIVE')
       throw new ConflictError('CONFLICT', 'Đơn mang đi đã kết thúc.');
-    if (next === 'PREPARING' && order.pickup?.scheduledAt &&
-      Date.now() < order.pickup.scheduledAt.getTime() - 15 * 60000)
+    if (
+      next === 'PREPARING' &&
+      order.pickup?.scheduledAt &&
+      Date.now() < order.pickup.scheduledAt.getTime() - 15 * 60000
+    )
       throw new ForbiddenError('Chỉ pha đơn đặt trước từ 15 phút trước giờ nhận.');
     await assertNoPaymentCorrection(order.id, session);
     const allowed = allowedNext(order.status);
@@ -333,10 +357,17 @@ export function orderRealtimeEvents(
   order: OrderDoc,
   eventType: 'order.created' | 'order.statusChanged',
 ): RealtimeOutboxInput[] {
-  if (!order.tableSessionId) return [{
-    eventType, aggregateType: 'Order', aggregateId: order.id, aggregateVersion: order.version,
-    payload: { orderId: order.id, status: order.status, version: order.version }, target: { scope: 'staff' },
-  }];
+  if (!order.tableSessionId)
+    return [
+      {
+        eventType,
+        aggregateType: 'Order',
+        aggregateId: order.id,
+        aggregateVersion: order.version,
+        payload: { orderId: order.id, status: order.status, version: order.version },
+        target: { scope: 'staff' },
+      },
+    ];
   const tableSessionId = order.tableSessionId.toString();
   const payload = {
     orderId: order.id,
@@ -352,6 +383,23 @@ export function orderRealtimeEvents(
     payload,
   } as const;
   return [
+    ...(order.gift
+      ? [
+          {
+            eventType: 'gift.changed' as const,
+            aggregateType: 'GiftDelivery',
+            // Keep the payer's order ID out of recipient envelopes. A distinct entity
+            // also keeps delivery versions separate from invitation decision versions.
+            aggregateId: `delivery:${order.gift.giftId}`,
+            aggregateVersion: order.version,
+            payload: { refresh: true },
+            target: {
+              scope: 'session' as const,
+              tableSessionId: String(order.gift.recipientSessionId),
+            },
+          },
+        ]
+      : []),
     { ...base, target: { scope: 'staff' } },
     { ...base, target: { scope: 'guest', tableSessionId, participantId: order.participantId } },
   ];
