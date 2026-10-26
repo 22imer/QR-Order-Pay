@@ -24,6 +24,8 @@ import { ProductDetailModal, type Product, type Topping } from '../guest/Product
 import { MenuPhoto } from '../guest/MenuPhoto';
 import type { CartItem } from '../../store/cart';
 import { useGifts } from './useGifts';
+import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { AISheet } from '../ai/AISheet';
 
 type Pending = { url: string; payload: unknown; key: string };
 const statusLabel: Record<GiftView['status'], string> = {
@@ -52,6 +54,8 @@ const toItems = (items: Array<GiftView['items'][number] | Omit<CartItem, 'client
     toppingIds: i.toppingIds,
     note: i.note,
     quantity: i.quantity,
+    ...(i.cupPhotoId ? { cupPhotoId: i.cupPhotoId } : {}),
+    ...(i.freestyleToken ? { freestyleToken: i.freestyleToken } : {}),
   }));
 function uuid() {
   const h = generateIdempotencyKey();
@@ -97,6 +101,8 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
   });
   const [selected, setSelected] = useState<GiftTable | null>(null);
   const [items, setItems] = useState<Array<Omit<CartItem, 'clientId'>>>([]);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
   const [message, setMessage] = useState('');
   const [search, setSearch] = useState('');
@@ -133,7 +139,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
     const timer = window.setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(timer);
   }, []);
-  const locked = busy || !!pending || checking;
+  const locked = busy || !!pending || checking || photoBusy;
   const targetValid = tables.data?.items.some(
     (t) => t.available && t.tableId === selected?.tableId && t.sessionId === selected.sessionId,
   );
@@ -289,10 +295,13 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                 Xem thêm món
               </Button>
             )}
+            <Button variant="outline" disabled={locked} onClick={() => setAiOpen(true)}>
+              AI Barista
+            </Button>
             {!!items.length && (
               <div className="space-y-2 rounded-xl bg-background/50 p-3">
                 {items.map((i, index) => (
-                  <div key={index} className="flex items-center justify-between gap-2">
+                  <div key={index} className="space-y-2">
                     <span>
                       {i.quantity} × {i.name} {i.variantName} · {vnd(i.unitPrice * i.quantity)}
                     </span>
@@ -301,9 +310,19 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                       size="sm"
                       onClick={() => setItems((values) => values.filter((_, n) => n !== index))}
                       aria-label={`Bỏ ${i.name}`}
+                      disabled={locked}
                     >
                       Bỏ
                     </Button>
+                    <CupPhotoPicker
+                      label={`Ảnh in tem quà ${i.name}`}
+                      photoId={i.cupPhotoId}
+                      disabled={locked}
+                      onBusyChange={setPhotoBusy}
+                      onChange={(cupPhotoId) =>
+                        setItems((v) => v.map((x, n) => (n === index ? { ...x, cupPhotoId } : x)))
+                      }
+                    />
                   </div>
                 ))}
               </div>
@@ -397,6 +416,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                 {g.items.map((i, n) => (
                   <li key={n}>
                     {i.quantity} × {i.name} {i.variantName}
+                    {i.hasCupPhoto ? ' · Có ảnh in tem' : ''}
                     <span className="block text-xs text-muted-foreground">
                       {[i.sugarLevel, i.iceLevel, ...i.toppingNames, i.note]
                         .filter(Boolean)
@@ -481,6 +501,20 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
             return false;
           }
           setItems((values) => [...values, i]);
+        }}
+      />
+      <AISheet
+        open={aiOpen}
+        onOpenChange={setAiOpen}
+        freestyleContext="TABLE"
+        products={menu.data?.products ?? []}
+        toppings={menu.data?.toppings ?? []}
+        onAdd={(i) => {
+          if (locked || items.length >= 10 || i.quantity > 10) {
+            setError('Tối đa 10 dòng món, mỗi dòng 10 phần.');
+            return;
+          }
+          setItems((v) => [...v, i]);
         }}
       />
       <Modal

@@ -29,6 +29,8 @@ import {
 import { randomShortCode } from '../utils/crypto.js';
 import { assertNoPaymentCorrection } from './paymentCorrectionService.js';
 import { finalizePickupBill } from './pickupBillService.js';
+import { assertCupPhotos } from './cupPhotoService.js';
+import { assertFreestyleScope } from './freestyleService.js';
 
 export interface PickupActor {
   id: string;
@@ -109,6 +111,7 @@ export async function createPickup(actor: PickupActor, raw: unknown) {
           throw new ForbiddenError(
             'Bạn có 3 đơn mang đi chưa kết thúc. Vui lòng nhận hoặc hủy trước khi đặt thêm.',
           );
+        await assertFreestyleScope(input.items, owner, session);
         const priced = await priceOrderWithBenefits(
           input.items,
           { ...input, memberId: actor.staff ? null : actor.id },
@@ -127,6 +130,7 @@ export async function createPickup(actor: PickupActor, raw: unknown) {
           session,
         );
         const b = priced.benefits;
+        await assertCupPhotos(input.items, owner, session, true);
         const order = await orderRepository.createWithSession(
           {
             _id: orderId,

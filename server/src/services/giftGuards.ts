@@ -90,6 +90,8 @@ export async function claimGiftForOrder(
           toppingIds: [...i.toppingIds],
           note: i.note,
           quantity: i.quantity,
+          ...(i.freestyleToken ? { freestyleToken: i.freestyleToken } : {}),
+          ...(i.cupPhotoId ? { cupPhotoId: i.cupPhotoId } : {}),
         })),
       ),
     )

@@ -6,8 +6,11 @@ import { ErrorState } from '../../components/ui/EmptyState';
 import { api, getErrorMessage, unwrap, vnd } from '../../lib/api';
 import { GiftLabel } from '../../components/GiftLabel';
 import type { GiftDelivery } from '@may-cafe/contracts';
+import type { FreestyleView } from '@may-cafe/contracts';
+import { FreestyleRecipe } from '../../components/FreestyleRecipe';
 
 interface OrderItem {
+  freestyle?: FreestyleView;
   productId: string;
   variantId: string | null;
   sizeName: string | null;
@@ -127,6 +130,7 @@ function Detail({ order }: { order: OrderDetail }): JSX.Element {
               {it.note ? (
                 <div className="text-xs italic text-accent">Ghi chú: {it.note}</div>
               ) : null}
+              <FreestyleRecipe value={it.freestyle} />
             </li>
           ))}
         </ul>
@@ -206,5 +210,6 @@ function statusTone(s: string): 'success' | 'warning' | 'danger' | 'info' | 'neu
 }
 
 function labelIce(v: string): string {
+  if (v === 'Theo công thức') return v;
   return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
 }

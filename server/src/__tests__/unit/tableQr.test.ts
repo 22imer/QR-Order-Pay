@@ -1,9 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { createAdmissionTicket, verifyAdmissionTicket } from '../../services/tableQrService.js';
+import {
+  createAdmissionTicket,
+  verifyAdmissionTicket,
+  createStaticAdmissionTicket,
+  verifyTableTicket,
+} from '../../services/tableQrService.js';
 
 describe('short-lived table admission QR', () => {
   const tableId = '0123456789abcdef01234567';
   const now = 1_800_000_000_000;
+  it('issues stable static QR without a clock deadline and rejects tampering', () => {
+    const ticket = createStaticAdmissionTicket(tableId, 2);
+    expect(createStaticAdmissionTicket(tableId, 2)).toEqual(ticket);
+    expect(verifyTableTicket(ticket.token)).toEqual({ tableId, epoch: 2, fixed: true });
+    expect(createStaticAdmissionTicket(tableId, 3)).not.toEqual(ticket);
+    expect(() => verifyTableTicket(`${ticket.token}x`)).toThrow();
+    expect(() => verifyTableTicket(`${ticket.token}.extra`)).toThrow();
+    expect(() => verifyAdmissionTicket(ticket.token, now)).toThrow();
+  });
   it('expires at the next 60-second boundary and is shared by a group during that period', () => {
     const ticket = createAdmissionTicket(tableId, 2, now);
     expect(ticket.expiresAt).toBe(now + 60_000);

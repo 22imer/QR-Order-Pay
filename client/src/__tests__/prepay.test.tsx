@@ -36,6 +36,33 @@ afterEach(() => {
 });
 
 describe('table QR display and manual prepayment', () => {
+  it('keeps a static QR and download link unchanged after a minute without refreshing or joining', async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, '', '/display#display-secret');
+    mock.qr.mockResolvedValue('data:image/png;base64,aW1hZ2U=');
+    mock.get.mockResolvedValue(
+      response({
+        tableId: 't1',
+        tableName: 'Bàn 01',
+        url: 'https://cafe.test/t/qrs1.fixed.signature',
+        expiresAt: null,
+        serverTime: Date.now(),
+      }),
+    );
+    mount(<TableDisplayPage />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(screen.getByText('QR cố định · Có thể tải ảnh để in tại bàn')).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(65000);
+    });
+    expect(mock.get).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('link', { name: 'Tải ảnh QR' }).getAttribute('download')).toContain(
+      'Bàn 01',
+    );
+    expect(mock.post).not.toHaveBeenCalled();
+  });
   it('records the entered installment and keeps the order waiting instead of claiming it reached KDS', async () => {
     mock.get.mockResolvedValue(
       response({

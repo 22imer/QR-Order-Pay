@@ -1,4 +1,5 @@
 location /api/ {
+  client_max_body_size 4m;
   limit_req zone=guest_api_per_session burst=30 nodelay;
   limit_req_status 429;
   limit_conn guest_connections_per_session 20;

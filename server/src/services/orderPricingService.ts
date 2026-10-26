@@ -9,9 +9,17 @@ import type { PlaceOrderItemInput } from './orderService.js';
 import { guestCanOrder } from './tableSessionService.js';
 import { assertInventoryAvailable } from './inventoryAvailabilityService.js';
 import { priceBenefits, type BenefitSelection, type Benefits } from './promotionService.js';
+import { assertCupPhotos, photoOwner } from './cupPhotoService.js';
+import {
+  assertFreestyleScope,
+  priceFreestyleItems,
+  type FreestyleSnapshot,
+} from './freestyleService.js';
 
 export interface PricedCart {
   items: Array<{
+    freestyle?: FreestyleSnapshot;
+    cupPhotoId?: mongoose.Types.ObjectId;
     productId: mongoose.Types.ObjectId;
     variantId: mongoose.Types.ObjectId | null;
     sizeName: string | null;
@@ -80,7 +88,10 @@ export async function priceOrderItems(
   items: PlaceOrderItemInput[],
   session?: ClientSession | null,
 ): Promise<PricedCart> {
-  const productIds = [...new Set(items.map((item) => item.productId))];
+  const freestyle = await priceFreestyleItems(items, session);
+  const productIds = [
+    ...new Set(items.filter((item) => !item.freestyleToken).map((item) => item.productId)),
+  ];
   const toppingIds = [...new Set(items.flatMap((item) => item.toppingIds))];
   const [products, toppings, categories] = await Promise.all([
     productRepository.findManyByIds(productIds, session),
@@ -96,6 +107,7 @@ export async function priceOrderItems(
   const invalidOptions: Array<{ index: number; field: string; value?: string }> = [];
 
   const priced = items.map((item, index) => {
+    if (freestyle.has(index)) return freestyle.get(index)!;
     const product = productMap.get(item.productId);
     if (
       !product ||
@@ -148,6 +160,7 @@ export async function priceOrderItems(
       unitPrice,
       lineTotal: unitPrice * item.quantity,
       nameSnapshot: product.name,
+      ...(item.cupPhotoId ? { cupPhotoId: new mongoose.Types.ObjectId(item.cupPhotoId) } : {}),
       variantNameSnapshot: variant?.name ?? '',
     };
   });
@@ -165,15 +178,20 @@ export async function priceOrderItems(
   return { items: normalized, total, catalogFingerprint: digest(normalized.map(serializableItem)) };
 }
 
-export async function createOrderQuote(input: {
-  tableSessionId: string;
-  participantId: string;
-  items: PlaceOrderItemInput[];
-  voucherCode?: string;
-  redeemPoints?: number;
-  memberId?: string | null;
-}, pickup = false): Promise<OrderQuote> {
+export async function createOrderQuote(
+  input: {
+    tableSessionId: string;
+    participantId: string;
+    items: PlaceOrderItemInput[];
+    voucherCode?: string;
+    redeemPoints?: number;
+    memberId?: string | null;
+  },
+  pickup = false,
+): Promise<OrderQuote> {
   if (!pickup) await guestCanOrder(input.tableSessionId);
+  await assertFreestyleScope(input.items, photoOwner(input.tableSessionId, input.participantId));
+  await assertCupPhotos(input.items, photoOwner(input.tableSessionId, input.participantId));
   const priced = await priceOrderWithBenefits(input.items, input);
   const expiresAt = Date.now() + config.orderQuoteTtlMs;
   const payload: QuotePayload = {

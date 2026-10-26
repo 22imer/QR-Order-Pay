@@ -12,6 +12,8 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../errors/AppError
 import { priceOrderItems } from './orderPricingService.js';
 import { giftChanged, lockGiftSessions } from './giftGuards.js';
 import { logger } from '../infrastructure/logger.js';
+import { assertCupPhotos, photoOwner } from './cupPhotoService.js';
+import { assertFreestyleScope } from './freestyleService.js';
 
 export interface GiftActor {
   tableSessionId: string;
@@ -108,7 +110,18 @@ export async function createGift(actor: GiftActor, raw: unknown) {
         )) >= 5
       )
         throw new ConflictError('GIFT_LIMIT', 'Đã đủ lời mời đang chờ. Vui lòng thử lại sau.');
+      await assertFreestyleScope(
+        input.items,
+        photoOwner(actor.tableSessionId, actor.participantId),
+        session,
+      );
       const priced = await priceOrderItems(input.items, session);
+      await assertCupPhotos(
+        input.items,
+        photoOwner(actor.tableSessionId, actor.participantId),
+        session,
+        true,
+      );
       const [gift] = await GiftModel.create(
         [
           {
@@ -164,6 +177,8 @@ function viewGift(gift: GiftDoc, actor: GiftActor, orderStatus: string | null = 
       toppingIds: [...i.toppingIds],
       note: i.note,
       quantity: i.quantity,
+      ...(sent && i.freestyleToken ? { freestyleToken: i.freestyleToken } : {}),
+      ...(i.cupPhotoId ? { hasCupPhoto: true, ...(sent ? { cupPhotoId: i.cupPhotoId } : {}) } : {}),
       name: i.name,
       variantName: i.variantName,
       toppingNames: [...i.toppingNames],

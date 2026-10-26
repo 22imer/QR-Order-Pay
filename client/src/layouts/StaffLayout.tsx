@@ -11,6 +11,7 @@ import {
   CalendarDays,
   ShoppingBag,
   Music2,
+  Printer,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../features/auth/useAuth';
@@ -46,6 +47,7 @@ interface ServiceReqRow {
 }
 
 const NAV = [
+  { to: '/staff/cup-prints', label: 'In tem ảnh', icon: <Printer className="h-4 w-4" /> },
   { to: '/staff/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
   {
     to: '/staff/reservations',

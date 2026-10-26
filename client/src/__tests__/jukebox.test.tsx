@@ -220,7 +220,7 @@ describe('jukebox guest and admin', () => {
     mock.post.mockRejectedValueOnce(new Error('lost response'));
     fireEvent.change(screen.getByLabelText('Tên bài'), { target: { value: 'Mới' } });
     fireEvent.change(screen.getByLabelText('Nghệ sĩ'), { target: { value: 'Bình' } });
-    fireEvent.change(screen.getByLabelText(/URL audio HTTPS/), {
+    fireEvent.change(screen.getByLabelText(/Link YouTube hoặc file nhạc/), {
       target: { value: 'https://music.example.test/new.mp3' },
     });
     fireEvent.submit(screen.getByRole('button', { name: 'Thêm bài' }).closest('form')!);
@@ -238,7 +238,7 @@ describe('counter audio authority and recovery', () => {
     mock.player!.lease.busy = true;
     mount(<JukeboxPlayer />);
     expect(
-      (await screen.findByRole('button', { name: 'Bật thiết bị phát' })).hasAttribute('disabled'),
+      (await screen.findByRole('button', { name: 'Bật phát trên máy này' })).hasAttribute('disabled'),
     ).toBe(true);
     expect(play).not.toHaveBeenCalled();
     expect(mock.post).not.toHaveBeenCalled();
@@ -248,10 +248,10 @@ describe('counter audio authority and recovery', () => {
     const view = mount(<JukeboxPlayer />);
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Bật thiết bị phát' }).hasAttribute('disabled'),
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
       ).toBe(false),
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Bật thiết bị phát' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bật phát trên máy này' }));
     await screen.findByRole('button', { name: 'Nhả thiết bị' });
     return view;
   }
@@ -310,10 +310,10 @@ describe('counter audio authority and recovery', () => {
     const next = mount(<JukeboxPlayer />);
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Bật thiết bị phát' }).hasAttribute('disabled'),
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
       ).toBe(false),
     );
-    fireEvent.click(await screen.findByRole('button', { name: 'Bật thiết bị phát' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Bật phát trên máy này' }));
     next.unmount();
     const before = play.mock.calls.length;
     await act(async () => {

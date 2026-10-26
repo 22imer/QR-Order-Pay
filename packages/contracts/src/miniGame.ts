@@ -19,6 +19,9 @@ export const gameCommandSchema = z
   .object({ requestId: z.string().uuid(), expectedVersion: z.number().int().nonnegative() })
   .strict();
 export const gameJoinSchema = gameCommandSchema.extend({ name: gameNameSchema }).strict();
+export const gameRemovePlayerSchema = gameCommandSchema
+  .extend({ playerId: z.string().uuid() })
+  .strict();
 export type GamePhase = 'WAITING' | 'SPINNING' | 'FINISHED' | 'CANCELLED' | 'EXPIRED';
 export interface GamePlayer {
   id: string;
@@ -26,6 +29,7 @@ export interface GamePlayer {
   isYou: boolean;
   isHost: boolean;
   eligible: boolean;
+  managedByHost?: boolean;
 }
 export interface GameRound {
   id: string;

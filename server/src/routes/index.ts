@@ -22,6 +22,9 @@ import * as reservations from '../controllers/reservationController.js';
 import * as gifts from '../controllers/giftController.js';
 import * as miniGame from '../controllers/miniGameController.js';
 import * as jukebox from '../controllers/jukeboxController.js';
+import * as cupPhotos from '../controllers/cupPhotoController.js';
+import * as freestyle from '../controllers/freestyleController.js';
+import * as insights from '../controllers/insightsController.js';
 import { rateLimit as expressRateLimit } from 'express-rate-limit';
 import { config } from '../config/index.js';
 import { createRateLimitStore } from '../infrastructure/redis.js';
@@ -97,6 +100,37 @@ const guestServiceLimiter = rateLimitOrPassthrough(
   tableKey,
 );
 const aiLimiter = rateLimitOrPassthrough(config.rateLimits.aiPerMinute, 'ai');
+apiRouter.get(
+  '/recommendations/companions',
+  rateLimitOrPassthrough(config.rateLimits.menuSearchPerMinute, 'companions'),
+  insights.recommendations,
+);
+apiRouter.get(
+  '/admin/insights',
+  requireAuth,
+  requireRole('ADMIN'),
+  rateLimitOrPassthrough(30, 'insights'),
+  insights.overview,
+);
+apiRouter.get('/ai/freestyle', loadGuest, requireAiCustomer, freestyle.catalog);
+apiRouter.post(
+  '/ai/freestyle',
+  loadGuest,
+  requireAiCustomer,
+  guestCsrfGuard,
+  aiLimiter,
+  freestyle.recommend,
+);
+apiRouter.post(
+  '/ai/freestyle/validate',
+  loadGuest,
+  requireAiCustomer,
+  guestCsrfGuard,
+  aiLimiter,
+  freestyle.validate,
+);
+apiRouter.get('/admin/freestyle', requireAuth, requireRole('ADMIN'), freestyle.admin);
+apiRouter.put('/admin/freestyle', requireAuth, requireRole('ADMIN'), freestyle.save);
 
 apiRouter.get('/reservations/availability', authLimiter, reservations.availability(false));
 apiRouter.get('/reservations', authLimiter, reservations.list(false));
@@ -191,6 +225,62 @@ apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.
 
 // guest orders
 const gameLimiter = rateLimitOrPassthrough(40, 'table-game', tableKey);
+const photoLimiter = rateLimitOrPassthrough(5, 'cup-photo-upload', tableKey);
+apiRouter.post(
+  '/cup-photos',
+  loadGuest,
+  requireGuest,
+  guestCsrfGuard,
+  photoLimiter,
+  cupPhotos.authorize('guest'),
+  cupPhotos.rawUpload,
+  cupPhotos.upload,
+);
+apiRouter.get(
+  '/cup-photos/:id',
+  loadGuest,
+  requireGuest,
+  cupPhotos.authorize('guest'),
+  cupPhotos.own,
+);
+apiRouter.post(
+  '/pickup/cup-photos',
+  guestCsrfGuard,
+  photoLimiter,
+  cupPhotos.authorize('member'),
+  cupPhotos.rawUpload,
+  cupPhotos.upload,
+);
+apiRouter.get('/pickup/cup-photos/:id', cupPhotos.authorize('member'), cupPhotos.own);
+for (const prefix of ['/staff/cup-photos', '/admin/cup-photos']) {
+  apiRouter.use(
+    prefix,
+    requireAuth,
+    requireRole(
+      ...(prefix.startsWith('/admin') ? ['ADMIN' as const] : ['STAFF' as const, 'ADMIN' as const]),
+    ),
+  );
+  apiRouter.post(
+    prefix,
+    photoLimiter,
+    cupPhotos.authorize('staff'),
+    cupPhotos.rawUpload,
+    cupPhotos.upload,
+  );
+  apiRouter.get(`${prefix}/:id`, cupPhotos.authorize('staff'), cupPhotos.own);
+}
+for (const prefix of ['/staff/cup-prints', '/admin/cup-prints']) {
+  apiRouter.use(
+    prefix,
+    requireAuth,
+    requireRole(
+      ...(prefix.startsWith('/admin') ? ['ADMIN' as const] : ['STAFF' as const, 'ADMIN' as const]),
+    ),
+  );
+  apiRouter.get(prefix, cupPhotos.feed);
+  apiRouter.get(`${prefix}/:id/:index/image`, cupPhotos.image);
+  apiRouter.post(prefix, cupPhotos.print);
+}
 const jukeboxLimiter = rateLimitOrPassthrough(20, 'table-jukebox', tableKey);
 apiRouter.get('/jukebox', loadGuest, requireGuest, jukebox.feed);
 apiRouter.post(
@@ -220,7 +310,7 @@ apiRouter.post('/admin/jukebox/tracks', jukebox.saveTrack);
 apiRouter.put('/admin/jukebox/tracks/:id', jukebox.saveTrack);
 apiRouter.get('/game', loadGuest, requireGuest, miniGame.feed);
 apiRouter.post('/game', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.create);
-for (const kind of ['join', 'leave', 'spin', 'cancel'] as const)
+for (const kind of ['join', 'leave', 'spin', 'cancel', 'add-player', 'remove-player'] as const)
   apiRouter.post(
     `/game/:id/${kind}`,
     loadGuest,
@@ -411,6 +501,8 @@ apiRouter.post(
   requireRole('STAFF', 'ADMIN'),
   payment.refundOrder,
 );
+apiRouter.get('/staff/tables/:id/qr', requireAuth, requireRole('STAFF', 'ADMIN'), tableDisplay.staticQr);
+apiRouter.get('/admin/tables/:id/qr', requireAuth, requireRole('ADMIN'), tableDisplay.staticQr);
 apiRouter.post(
   '/staff/tables/:id/display',
   requireAuth,

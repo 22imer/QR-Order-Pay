@@ -8,7 +8,7 @@ import { randomToken, sha256 } from '../utils/crypto.js';
 
 export const QR_PERIOD_MS = 60_000;
 const invalidQr = () =>
-  new ForbiddenError('QR đã hết hạn hoặc bị thu hồi. Vui lòng quét mã mới trên màn hình tại bàn.');
+  new ForbiddenError('QR không hợp lệ hoặc đã bị thu hồi. Vui lòng quét mã tại bàn.');
 function sign(body: string): string {
   return crypto
     .createHmac('sha256', config.jwtAccessSecret)
@@ -20,6 +20,36 @@ export function createAdmissionTicket(tableId: string, epoch: number, now = Date
   const expiresAt = (Math.floor(now / QR_PERIOD_MS) + 1) * QR_PERIOD_MS;
   const body = Buffer.from(JSON.stringify({ tableId, epoch, expiresAt })).toString('base64url');
   return { token: `qr1.${body}.${sign(body)}`, expiresAt };
+}
+
+export function createStaticAdmissionTicket(tableId: string, epoch: number) {
+  const body = Buffer.from(JSON.stringify({ tableId, epoch })).toString('base64url');
+  return { token: `qrs1.${body}.${sign(`static:${body}`)}` };
+}
+
+export function verifyTableTicket(token: string) {
+  if (!token.startsWith('qrs1.')) return { ...verifyAdmissionTicket(token), fixed: false };
+  if (token.length > 1024) throw invalidQr();
+  const [prefix, body, signature, extra] = token.split('.');
+  if (prefix !== 'qrs1' || !body || !signature || extra !== undefined) throw invalidQr();
+  const expected = Buffer.from(sign(`static:${body}`)),
+    actual = Buffer.from(signature);
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual))
+    throw invalidQr();
+  try {
+    const value = JSON.parse(Buffer.from(body, 'base64url').toString()) as Record<string, unknown>;
+    if (
+      typeof value.tableId !== 'string' ||
+      !/^[a-f\d]{24}$/i.test(value.tableId) ||
+      !Number.isSafeInteger(value.epoch) ||
+      (value.epoch as number) < 0 ||
+      Object.keys(value).length !== 2
+    )
+      throw invalidQr();
+    return { tableId: value.tableId, epoch: value.epoch as number, fixed: true };
+  } catch {
+    throw invalidQr();
+  }
 }
 
 export function verifyAdmissionTicket(
@@ -52,9 +82,13 @@ export function verifyAdmissionTicket(
 }
 
 export async function resolveAdmissionTable(token: string) {
-  const ticket = verifyAdmissionTicket(token);
+  const ticket = verifyTableTicket(token);
   const table = await tableRepository.findById(ticket.tableId);
-  if (!table?.isActive || (table.qrEpoch ?? 0) !== ticket.epoch) throw invalidQr();
+  if (
+    !table?.isActive ||
+    ((ticket.fixed ? table.staticQrEpoch : table.qrEpoch) ?? 0) !== ticket.epoch
+  )
+    throw invalidQr();
   return table;
 }
 
@@ -83,12 +117,22 @@ export async function getDisplayQr(displayToken: string) {
   const table = await tableRepository.findByDisplayTokenHash(sha256(displayToken));
   if (!table) throw invalidQr();
   const now = Date.now();
-  const ticket = createAdmissionTicket(table.id, table.qrEpoch ?? 0, now);
+  const ticket = createStaticAdmissionTicket(table.id, table.staticQrEpoch ?? 0);
   return {
     tableId: table.id,
     tableName: table.name,
     url: `${config.publicAppUrl.replace(/\/$/, '')}/t/${ticket.token}`,
-    expiresAt: ticket.expiresAt,
+    expiresAt: null,
     serverTime: now,
+  };
+}
+
+export async function getStaticTableQr(tableId: string) {
+  const table = await tableRepository.findById(tableId);
+  if (!table?.isActive) throw new NotFoundError('Bàn không tồn tại hoặc đã ngừng hoạt động.');
+  return {
+    tableId: table.id,
+    tableName: table.name,
+    url: `${config.publicAppUrl.replace(/\/$/, '')}/t/${createStaticAdmissionTicket(table.id, table.staticQrEpoch ?? 0).token}`,
   };
 }

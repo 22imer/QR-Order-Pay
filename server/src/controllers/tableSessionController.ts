@@ -31,6 +31,14 @@ import { RECEIPT_COOKIE } from '../middlewares/guest.js';
 import { closeGuestSockets } from '../realtime/socket.js';
 import { recordBusinessEvent } from '../infrastructure/metrics.js';
 import { resolveAdmissionTable } from '../services/tableQrService.js';
+import { MEMBER_COOKIE, logoutMember } from '../services/memberService.js';
+import { config } from '../config/index.js';
+
+async function clearTableMember(req: Request, res: Response) {
+  if (typeof req.cookies?.[MEMBER_COOKIE] !== 'string') return;
+  await logoutMember(req.cookies?.[MEMBER_COOKIE]);
+  res.clearCookie(MEMBER_COOKIE, { domain: config.cookieDomain, path: '/' });
+}
 
 export async function join(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -59,6 +67,7 @@ export async function join(req: Request, res: Response, next: NextFunction): Pro
     }
     setGuestCookie(res, result.guestToken);
     setReceiptCookie(res, result.receiptToken);
+    await clearTableMember(req, res);
     res.json({
       success: true,
       data: joinTableResponseSchema.parse({
@@ -122,6 +131,7 @@ export async function leave(req: Request, res: Response, next: NextFunction): Pr
     if (typeof receipt === 'string')
       await guestSessionRepository.clearReceiptByHash(sha256(receipt));
     clearGuestCookie(res);
+    await clearTableMember(req, res);
     if (req.guest) closeGuestSockets(req.guest.tableSessionId, req.guest.participantId);
     res.json({ success: true, data: { ok: true } });
   } catch (e) {

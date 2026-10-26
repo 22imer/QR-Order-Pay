@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { JukeboxStaffFeed } from '@may-cafe/contracts';
+import { jukeboxSource, type JukeboxStaffFeed } from '@may-cafe/contracts';
 import { api, getAxiosError, getErrorMessage, unwrap } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
@@ -7,6 +7,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { useAuth } from '../auth/useAuth';
 import { JukeboxCatalog } from './JukeboxCatalog';
 import { jukeboxUuid, useJukeboxQuery } from './useJukebox';
+import { YouTubePlayer, type YouTubeControls } from './YouTubePlayer';
 
 export function JukeboxPlayer({ admin = false }: { admin?: boolean }): JSX.Element {
   useDocumentTitle('Jukebox');
@@ -24,6 +25,11 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     live = useRef(false),
     expiry = useRef(0),
     flight = useRef(false);
+  const youtube = useRef<YouTubeControls>(null);
+  function pausePlayback() {
+    audio.current?.pause();
+    youtube.current?.pause();
+  }
   const mounted = useRef(true);
   const [active, setActive] = useState(false),
     [busy, setBusy] = useState(false),
@@ -40,17 +46,16 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
   function halt() {
     live.current = false;
     setActive(false);
-    audio.current?.pause();
+    pausePlayback();
     setPlaying(false);
   }
   async function play() {
-    if (
-      !live.current ||
-      Date.now() >= expiry.current ||
-      document.hidden ||
-      !audio.current?.getAttribute('src')
-    )
+    if (!live.current || Date.now() >= expiry.current || document.hidden || !source) return;
+    if (sourceType?.kind === 'youtube') {
+      youtube.current?.play();
       return;
+    }
+    if (!audio.current?.getAttribute('src')) return;
     try {
       await audio.current.play();
       if (!live.current || Date.now() >= expiry.current) audio.current?.pause();
@@ -63,15 +68,19 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
   }
   const source = data?.current?.audioUrl ?? '',
     generation = data?.playbackVersion ?? 0;
+  const sourceType = jukeboxSource(source);
   useEffect(() => {
     if (audio.current) audio.current.volume = volume;
+    youtube.current?.setVolume(volume);
   }, [volume, generation]);
   useEffect(() => {
     const element = audio.current;
     if (!active || !source) {
-      audio.current?.pause();
+      pausePlayback();
       return;
     }
+    setError('');
+    setPlaying(false);
     void play();
     return () => element?.pause();
     // Source/generation changes start the selected snapshot from the beginning.
@@ -92,7 +101,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     const deadline = window.setInterval(() => {
       if (live.current && Date.now() >= expiry.current) {
         halt();
-        setError('Quyền phát đã hết hạn. Bấm Bật thiết bị phát để kết nối lại.');
+        setError('Quyền phát đã hết hạn. Bấm Bật phát trên máy này để kết nối lại.');
       }
     }, 500);
     const heartbeat = window.setInterval(() => {
@@ -166,7 +175,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     setBusy(true);
     setError('');
     setPending(command);
-    audio.current?.pause();
+    pausePlayback();
     try {
       const result = unwrap<JukeboxStaffFeed>(
         await api.post(`${prefix}/${command.kind}`, command.body),
@@ -198,8 +207,8 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
       <header>
         <h1 className="text-3xl font-semibold">Jukebox</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Mở trang này trên máy nối loa và giữ tab hiển thị. Rời hoặc ẩn trang sẽ dừng âm thanh; bật
-          lại sẽ phát bài hiện tại từ đầu.
+          Máy tính này có thể phát nhạc qua loa của máy hoặc loa ngoài. Bấm Bật phát trên máy này,
+          rồi Bài tiếp theo khi có bình chọn. Giữ trang hiển thị; mỗi lần chỉ một máy phát.
         </p>
       </header>
       {feed.isError && <p role="alert">{getErrorMessage(feed.error)}</p>}
@@ -207,7 +216,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
       <audio
         key={generation}
         ref={audio}
-        src={active && source ? source : undefined}
+        src={active && sourceType?.kind === 'audio' ? source : undefined}
         preload="none"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
@@ -238,7 +247,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
               disabled={busy || !data || feed.isError || !!data.lease.busy}
               onClick={() => void claim()}
             >
-              Bật thiết bị phát
+              Bật phát trên máy này
             </Button>
           ) : (
             <>
@@ -246,7 +255,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
                 disabled={busy || !!pending || !source}
                 onClick={() => {
                   setError('');
-                  if (playing) audio.current?.pause();
+                  if (playing) pausePlayback();
                   else void play();
                 }}
               >
@@ -268,6 +277,27 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
             </>
           )}
         </div>
+        {active && sourceType?.kind === 'youtube' && (
+          <YouTubePlayer
+            key={generation}
+            ref={youtube}
+            videoId={sourceType.videoId}
+            volume={volume}
+            onPlaying={(value) => {
+              if (!live.current || document.hidden || Date.now() >= expiry.current) {
+                youtube.current?.pause();
+                return;
+              }
+              setPlaying(value);
+              if (value) setError('');
+            }}
+            onError={setError}
+            onEnded={() => {
+              if (live.current && !flight.current && currentVersion.current === generation)
+                void control('next');
+            }}
+          />
+        )}
         {pending && (
           <div>
             <p>Chưa xác nhận thao tác. Thử lại trước khi chuyển bài khác.</p>

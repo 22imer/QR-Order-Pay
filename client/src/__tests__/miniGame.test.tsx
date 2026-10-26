@@ -128,6 +128,53 @@ afterEach(() => {
 });
 
 describe('table game UI and shared result', () => {
+  it('lets a host add and remove names without requiring another device and hides management from other players', async () => {
+    mock.round = round();
+    const view = mount();
+    fireEvent.change(await screen.findByLabelText('Tên người chơi thêm'), {
+      target: { value: 'Cường' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Thêm người chơi' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledWith(
+        `/game/${rid}/add-player`,
+        expect.objectContaining({
+          name: 'Cường',
+          expectedVersion: 1,
+          requestId: expect.any(String),
+        }),
+      ),
+    );
+    view.unmount();
+    qc.clear();
+    mock.round = round({
+      players: [
+        ...round().players,
+        {
+          id: 'manual-id',
+          name: 'Cường',
+          isYou: false,
+          isHost: false,
+          eligible: true,
+          managedByHost: true,
+        },
+      ],
+    });
+    const hostView = mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Xóa Cường' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledWith(
+        `/game/${rid}/remove-player`,
+        expect.objectContaining({ playerId: 'manual-id', expectedVersion: 1 }),
+      ),
+    );
+    hostView.unmount();
+    qc.clear();
+    mock.round = round({ isHost: false });
+    mount();
+    await screen.findByRole('heading', { name: 'Những người cùng chơi' });
+    expect(screen.queryByRole('button', { name: 'Thêm người chơi' })).toBeNull();
+  });
   it('requires QR capability and does not read or mutate games outside a table', async () => {
     mock.active = false;
     mount();

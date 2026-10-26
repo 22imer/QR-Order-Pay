@@ -1,0 +1,69 @@
+.cup-photo-label {
+  box-sizing: border-box;
+  display: inline-flex;
+  vertical-align: top;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 60mm;
+  height: 80mm;
+  padding: 3mm;
+  border: 0.2mm dashed #777;
+  color: #000;
+  background: #fff;
+  font-family: Arial, sans-serif;
+  text-align: center;
+  gap: 1mm;
+  font-size: 10pt;
+  line-height: 1.15;
+  break-inside: avoid;
+  overflow: hidden;
+}
+.cup-photo-label img {
+  width: 50mm;
+  height: 50mm;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.cup-photo-label p {
+  margin: 0;
+}
+.cup-label-name {
+  max-height: 6mm;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+  font-size: 9pt;
+}
+.cup-photo-label small {
+  max-width: 54mm;
+  max-height: 4mm;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: 8pt;
+}
+#cup-photo-print-sheet {
+  display: none;
+}
+@media print {
+  body[data-cup-print] > *:not(#cup-photo-print-sheet) {
+    display: none !important;
+  }
+  body[data-cup-print] {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  body[data-cup-print] #cup-photo-print-sheet {
+    display: block !important;
+    width: 100%;
+    font-size: 0;
+    line-height: 0;
+  }
+  .cup-sheet-label .cup-photo-label {
+    break-after: page;
+  }
+  .cup-sheet-label .cup-photo-label:last-child {
+    break-after: auto;
+  }
+}

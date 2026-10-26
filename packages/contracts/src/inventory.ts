@@ -12,6 +12,17 @@ export const inventoryQuantitySchema = z
   .max(1_000_000_000)
   .refine((n) => n === Math.round(n * 1000) / 1000, 'Tối đa 3 chữ số thập phân.');
 const version = z.number().int().nonnegative();
+export const ingredientCostSchema = z
+  .number()
+  .finite()
+  .min(0)
+  .max(10000000)
+  .refine(
+    (n) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6,
+    'Giá vốn tối đa 3 chữ số thập phân.',
+  )
+  .nullable()
+  .optional();
 export const ingredientCreateSchema = z
   .object({
     code: z
@@ -22,6 +33,7 @@ export const ingredientCreateSchema = z
     name: z.string().trim().min(1).max(100),
     unit: z.enum(['g', 'ml', 'unit']),
     lowStockThreshold: inventoryQuantitySchema.default(0),
+    unitCost: ingredientCostSchema,
   })
   .strict();
 export const ingredientUpdateSchema = z
@@ -30,6 +42,7 @@ export const ingredientUpdateSchema = z
     lowStockThreshold: inventoryQuantitySchema,
     isActive: z.boolean(),
     expectedVersion: version,
+    unitCost: ingredientCostSchema,
   })
   .strict();
 export const stockMovementRequestSchema = z
@@ -91,6 +104,7 @@ export type IngredientUpdateInput = z.infer<typeof ingredientUpdateSchema>;
 export type StockMovementInput = z.infer<typeof stockMovementRequestSchema>;
 export type RecipeSaveInput = z.infer<typeof recipeSaveSchema>;
 export interface IngredientDto {
+  unitCost?: number | null;
   id: string;
   code: string;
   name: string;

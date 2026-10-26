@@ -144,6 +144,7 @@ export function GuestLayout(): JSX.Element {
       resetSession();
       qc.removeQueries({ queryKey: ['my-orders'] });
       qc.removeQueries({ queryKey: ['receipt'] });
+      qc.setQueryData(['member'], { member: null });
       qc.setQueryData(['guest-session'], { active: false });
       navigate('/t');
     },
@@ -162,9 +163,9 @@ export function GuestLayout(): JSX.Element {
       )}
     >
       <header className="guest-header sticky top-0 z-30 border-b border-foreground/10 bg-background/95 backdrop-blur print:hidden">
-        <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-3 px-4 lg:h-20 lg:gap-6 lg:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-2 px-4 py-3 sm:gap-3 lg:px-6">
           <CloudMark className="h-6 w-8 shrink-0 text-primary" />
-          <div className="min-w-0 flex-1 leading-tight">
+          <div className="min-w-[9rem] flex-1 leading-tight">
             <p className="g-title text-lg lg:text-xl">Fantastic cafe</p>
             <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
               {activeSession ? (
@@ -195,7 +196,7 @@ export function GuestLayout(): JSX.Element {
           </div>
           <nav
             aria-label="Điều hướng chính"
-            className="guest-header-nav hidden items-center gap-1 lg:flex"
+            className="guest-header-nav order-last hidden w-full min-w-0 basis-full items-center gap-1 overflow-x-auto border-t border-foreground/10 pt-2 lg:flex [&>*]:shrink-0 [&>*]:whitespace-nowrap"
           >
             {[
               { to: '/menu', label: 'Thực đơn' },
@@ -215,7 +216,7 @@ export function GuestLayout(): JSX.Element {
                 to={item.to}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
+                    'shrink-0 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40',
                     isActive
                       ? 'bg-primary text-primary-foreground'
                       : 'text-muted-foreground hover:bg-card hover:text-foreground',

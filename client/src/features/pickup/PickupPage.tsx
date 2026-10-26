@@ -17,6 +17,9 @@ import { useMember } from '../guest/useMember';
 import { useAuth } from '../auth/useAuth';
 import { ProductDetailModal, type Product, type Topping } from '../guest/ProductDetailModal';
 import { MenuPhoto } from '../guest/MenuPhoto';
+import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { FreestyleRecipe } from '../../components/FreestyleRecipe';
+import { CompanionSuggestions } from '../insights/CompanionSuggestions';
 import type { CartItem } from '../../store/cart';
 import {
   api,
@@ -316,16 +319,19 @@ function PickupWorkspace({
                           {i.sizeName ? ` (${i.sizeName})` : ''}
                           <span className="block text-muted-foreground">
                             {i.sugarLevel} đường ·{' '}
-                            {i.iceLevel === 'no-ice'
-                              ? 'Không đá'
-                              : i.iceLevel === 'less-ice'
-                                ? 'Ít đá'
-                                : 'Đá thường'}
+                            {i.iceLevel === 'Theo công thức'
+                              ? i.iceLevel
+                              : i.iceLevel === 'no-ice'
+                                ? 'Không đá'
+                                : i.iceLevel === 'less-ice'
+                                  ? 'Ít đá'
+                                  : 'Đá thường'}
                             {i.toppingNamesSnapshot.length
                               ? ` · ${i.toppingNamesSnapshot.join(', ')}`
                               : ''}
                             {i.note ? ` · ${i.note}` : ''}
                           </span>
+                          <FreestyleRecipe value={i.freestyle} />
                         </li>
                       ))}
                     </ul>
@@ -438,6 +444,7 @@ function PickupForm({
   onCancel: () => void;
 }): JSX.Element {
   const recovered = useRef(readPending(storageKey));
+  const [photoBusy, setPhotoBusy] = useState(false);
   const draftRef = useContext(PickupDraftContext);
   const draft = useRef(
     !staff && draftRef?.current?.identity === storageKey ? draftRef.current : null,
@@ -517,6 +524,8 @@ function PickupForm({
             iceLevel: i.iceLevel,
             toppingIds: i.toppingIds,
             quantity: i.quantity,
+            ...(i.cupPhotoId ? { cupPhotoId: i.cupPhotoId } : {}),
+            ...(i.freestyleToken ? { freestyleToken: i.freestyleToken } : {}),
             note: i.note,
           })),
           ...(voucher.trim() ? { voucherCode: voucher.trim().toUpperCase() } : {}),
@@ -554,7 +563,7 @@ function PickupForm({
       }
     },
   });
-  const locked = uncertain || submit.isPending;
+  const locked = uncertain || submit.isPending || photoBusy;
   const availableProducts = (query.data?.products ?? []).filter(
     (p) => p.isAvailable && p.name.toLocaleLowerCase('vi').includes(search.toLocaleLowerCase('vi')),
   );
@@ -753,14 +762,36 @@ function PickupForm({
                           </div>
                           <p className="text-xs text-muted-foreground">
                             {i.sugarLevel} đường ·{' '}
-                            {i.iceLevel === 'no-ice'
-                              ? 'Không đá'
-                              : i.iceLevel === 'less-ice'
-                                ? 'Ít đá'
-                                : 'Đá thường'}
+                            {i.iceLevel === 'Theo công thức'
+                              ? i.iceLevel
+                              : i.iceLevel === 'no-ice'
+                                ? 'Không đá'
+                                : i.iceLevel === 'less-ice'
+                                  ? 'Ít đá'
+                                  : 'Đá thường'}
                             {i.toppingIds.length ? ` · ${i.toppingIds.length} topping` : ''}
                             {i.note ? ` · ${i.note}` : ''}
                           </p>
+                          <FreestyleRecipe value={i.freestyle} />
+                          <CupPhotoPicker
+                            label={`Ảnh in tem cho ${i.name}`}
+                            photoId={i.cupPhotoId}
+                            endpoint={
+                              staff
+                                ? `/${prefix.startsWith('/admin') ? 'admin' : 'staff'}/cup-photos`
+                                : '/pickup/cup-photos'
+                            }
+                            disabled={locked}
+                            onBusyChange={setPhotoBusy}
+                            onChange={(cupPhotoId) => {
+                              setItems((v) =>
+                                v.map((x) =>
+                                  x.clientId === i.clientId ? { ...x, cupPhotoId } : x,
+                                ),
+                              );
+                              invalidate();
+                            }}
+                          />
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <QtyStepper
                               value={i.quantity}
@@ -797,6 +828,16 @@ function PickupForm({
                 </details>
               </fieldset>
               <div className="pickup-checkout-footer space-y-3">
+                <CompanionSuggestions
+                  context="PICKUP"
+                  items={items}
+                  disabled={locked}
+                  onAdd={(item) => {
+                    if (locked) return false;
+                    setItems((v) => [...v, { ...item, clientId: uuid() }]);
+                    invalidate();
+                  }}
+                />
                 {summary}
                 <Button
                   className="min-h-12 w-full text-base"
@@ -1281,11 +1322,13 @@ function PickupBill({
                   {i.quantity} × {i.name} {i.size}
                   <span className="block text-sm text-muted-foreground">
                     Đường {i.sugarLevel} ·{' '}
-                    {i.iceLevel === 'no-ice'
-                      ? 'Không đá'
-                      : i.iceLevel === 'less-ice'
-                        ? 'Ít đá'
-                        : 'Đá thường'}
+                    {i.iceLevel === 'Theo công thức'
+                      ? i.iceLevel
+                      : i.iceLevel === 'no-ice'
+                        ? 'Không đá'
+                        : i.iceLevel === 'less-ice'
+                          ? 'Ít đá'
+                          : 'Đá thường'}
                     {i.toppings.length ? ` · ${i.toppings.join(', ')}` : ''}
                     {i.note ? ` · ${i.note}` : ''}
                   </span>

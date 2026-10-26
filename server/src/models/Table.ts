@@ -8,6 +8,7 @@ export const tableSchema = new Schema(
     publicTokenHash: { type: String, required: true, unique: true },
     displayTokenHash: { type: String, default: null, select: false },
     qrEpoch: { type: Number, default: 0 },
+    staticQrEpoch: { type: Number, default: 0 },
     admissionCount: { type: Number, default: 0 },
     isActive: { type: Boolean, default: true },
   },

@@ -1,6 +1,24 @@
 import type { Request, Response, NextFunction } from 'express';
-import { getDisplayQr, provisionTableDisplay } from '../services/tableQrService.js';
+import {
+  getDisplayQr,
+  getStaticTableQr,
+  provisionTableDisplay,
+} from '../services/tableQrService.js';
 import { ValidationError } from '../errors/AppError.js';
+import { z } from 'zod';
+
+export async function staticQr(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const id = z
+      .string()
+      .regex(/^[a-f\d]{24}$/i)
+      .parse(req.params['id']);
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, data: await getStaticTableQr(id) });
+  } catch (error) {
+    next(error);
+  }
+}
 
 export async function provision(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {

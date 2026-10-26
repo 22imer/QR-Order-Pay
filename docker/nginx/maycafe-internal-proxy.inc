@@ -1,4 +1,5 @@
 location /api/ {
+  client_max_body_size 4m;
   proxy_pass http://maycafe_internal_api;
   proxy_http_version 1.1;
   proxy_connect_timeout 1s;

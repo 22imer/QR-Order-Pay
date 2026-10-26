@@ -84,7 +84,7 @@ export function StaffTables(): JSX.Element {
       <div>
         <h1 className="font-display text-2xl font-semibold">Bàn & phiên phục vụ</h1>
         <p className="text-sm text-muted-foreground">
-          Khách quét QR động tại bàn. Xác nhận tiền từng đơn trước khi pha chế; đóng phiên khi khách
+          Khách quét QR tĩnh tại bàn. Xác nhận tiền từng đơn trước khi pha chế; đóng phiên khi khách
           rời bàn.
         </p>
         {paidSession ? (

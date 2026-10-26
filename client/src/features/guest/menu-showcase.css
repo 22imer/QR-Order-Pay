@@ -13,8 +13,7 @@
   background: rgb(var(--c-accent));
 }
 .guest-showcase .guest-header {
-  position: absolute;
-  inset: 0 0 auto;
+  position: relative;
   color: #fff;
   border: 0;
   background: transparent;
@@ -22,7 +21,8 @@
 }
 .guest-showcase .guest-header > div {
   max-width: none;
-  height: 96px;
+  height: auto;
+  min-height: 80px;
   padding-inline: clamp(24px, 5vw, 88px);
 }
 .guest-showcase .guest-header :is(.text-primary, .text-foreground, button) {
@@ -528,7 +528,7 @@
 }
 @media (max-width: 1023px) {
   .guest-showcase .guest-header > div {
-    height: 80px;
+    height: auto;
   }
   .menu-experience-inner {
     padding-top: 104px;

@@ -12,6 +12,34 @@ const orderItemSchema = new Schema(
     toppingNamesSnapshot: { type: [String], default: [] },
     note: { type: String, default: '' },
     quantity: { type: Number, required: true, min: 1 },
+    cupPhotoId: { type: Schema.Types.ObjectId, default: undefined },
+    freestyle: {
+      type: new Schema(
+        {
+          name: { type: String, required: true },
+          configVersion: { type: Number, required: true },
+          instructions: { type: String, required: true },
+          caffeine: { type: Boolean, default: null },
+          dairy: { type: Boolean, default: null },
+          components: {
+            type: [
+              new Schema(
+                {
+                  ingredientId: { type: String, required: true },
+                  name: { type: String, required: true },
+                  unit: { type: String, enum: ['g', 'ml', 'unit'], required: true },
+                  quantity: { type: Number, required: true },
+                },
+                { _id: false },
+              ),
+            ],
+            required: true,
+          },
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     unitPrice: { type: Number, required: true, min: 0 },
     lineTotal: { type: Number, required: true, min: 0 },
     nameSnapshot: { type: String, required: true },
@@ -145,10 +173,21 @@ orderSchema.index({
 });
 orderSchema.index({ createdAt: -1, status: 1 });
 orderSchema.index(
+  { status: 1, paymentStatus: 1, createdAt: -1, _id: -1 },
+  { name: 'insights_completed_orders' },
+);
+orderSchema.index(
   { 'gift.giftId': 1 },
   { unique: true, partialFilterExpression: { 'gift.giftId': { $type: 'objectId' } } },
 );
 orderSchema.index({ 'gift.recipientSessionId': 1, status: 1 });
+orderSchema.index(
+  { createdAt: -1, _id: -1 },
+  {
+    name: 'cup_photo_print_queue',
+    partialFilterExpression: { 'items.cupPhotoId': { $exists: true } },
+  },
+);
 orderSchema.pre('validate', function () {
   if (this.fulfillmentType === 'DINE_IN' && (!this.tableSessionId || !this.tableId))
     throw new Error('Dine-in orders require a table and session.');

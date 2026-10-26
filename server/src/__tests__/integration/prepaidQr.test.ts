@@ -18,6 +18,7 @@ import { ReviewModel } from '../../models/Review.js';
 import { PaymentCorrectionModel } from '../../models/PaymentCorrection.js';
 import { paymentAnalytics } from '../../services/paymentAnalyticsService.js';
 import { createAdmissionTicket } from '../../services/tableQrService.js';
+import { registerMember, resolveMember } from '../../services/memberService.js';
 import { hashPassword, randomToken, sha256 } from '../../utils/crypto.js';
 
 let repl: MongoMemoryReplSet;
@@ -708,8 +709,10 @@ describe('dynamic QR and pay-before-preparation', () => {
     const receipt = await request(app).get('/api/v1/receipts/current').set('Cookie', cookie);
     expect(receipt.body.data).toMatchObject({ source: 'BILL_SNAPSHOT', total: 35000 });
     expect(receipt.body.data.orders).toHaveLength(1);
-    expect((await join(ticket)).status).toBe(403);
-    expect((await join()).body.data.tableSessionId).not.toBe(sessionId);
+    const nextVisit = await join(ticket);
+    expect(nextVisit.status).toBe(200);
+    expect(nextVisit.body.data.tableSessionId).not.toBe(sessionId);
+    expect((await qr()).body.data.url).toBe(display.body.data.url);
   });
   it('rejects old static tokens, display keys, expired and modified QR without opening a session', async () => {
     const table = (await TableModel.findById(tableId))!;
@@ -721,6 +724,51 @@ describe('dynamic QR and pay-before-preparation', () => {
     expect(await GuestSessionModel.countDocuments()).toBe(0);
     expect((await request(app).get('/api/v1/table-displays/qr')).status).toBe(422);
     expect((await request(app).post(`/api/v1/staff/tables/${tableId}/display`)).status).toBe(401);
+  });
+  it('reads static QR without rotation and clears saved members on a new visit or leave, preserving explicit login on same-session rejoin', async () => {
+    const member = await registerMember({
+      name: 'Khách',
+      phone: '0901234567',
+      password: 'MemberPass@123',
+    });
+    const saved = `mc_member=${member.token}`;
+    const before = await TableModel.findById(tableId).lean();
+    const firstQr = await request(app).get(`/api/v1/staff/tables/${tableId}/qr`).set(auth());
+    const again = await request(app).get(`/api/v1/staff/tables/${tableId}/qr`).set(auth());
+    expect(firstQr.status).toBe(200);
+    expect(firstQr.body.data).toEqual(again.body.data);
+    expect(await TableModel.findById(tableId).lean()).toEqual(before);
+    expect((await request(app).get(`/api/v1/staff/tables/${tableId}/qr`)).status).toBe(401);
+    const tableToken = new URL(firstQr.body.data.url).pathname.split('/t/')[1]!;
+    const visit = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .set('Cookie', saved)
+      .send({ tableToken });
+    expect(visit.status).toBe(200);
+    expect(await resolveMember(member.token)).toBeNull();
+    const login = await request(app)
+      .post('/api/v1/members/login')
+      .send({ phone: '0901234567', password: 'MemberPass@123' });
+    expect(login.status).toBe(200);
+    const cookies = login.headers['set-cookie'] as unknown as string[];
+    expect(cookies.join(';')).not.toMatch(/Max-Age|Expires=/i);
+    const memberCookie = cookies.map((s) => s.split(';')[0]).join('; ');
+    const guestCookies = cookieOf(visit).split('; ').filter((s) => !s.startsWith('mc_member=')).join('; ');
+    const both = `${guestCookies}; ${memberCookie}`;
+    const rejoin = await request(app)
+      .post('/api/v1/table-sessions/join')
+      .set('Cookie', both)
+      .send({ tableToken });
+    expect(rejoin.body.data.participantId).toBe(visit.body.data.participantId);
+    expect(
+      (await request(app).get('/api/v1/members/me').set('Cookie', memberCookie)).body.data.member,
+    ).not.toBeNull();
+    expect(
+      (await request(app).post('/api/v1/table-sessions/leave').set('Cookie', both)).status,
+    ).toBe(200);
+    expect(
+      (await request(app).get('/api/v1/members/me').set('Cookie', memberCookie)).body.data.member,
+    ).toBeNull();
   });
   it('rotates the dedicated display key and immediately invalidates its QR while retaining admitted guests', async () => {
     const oldDisplay = await qr();

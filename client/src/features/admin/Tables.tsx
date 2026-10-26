@@ -15,7 +15,7 @@ interface Table {
   isActive: boolean;
 }
 export function AdminTables(): JSX.Element {
-  useDocumentTitle('Bàn & QR động');
+  useDocumentTitle('Bàn & QR tĩnh');
   const query = useQuery({
     queryKey: ['admin-tables-full'],
     queryFn: async () => unwrap<{ tables: Table[] }>(await api.get('/admin/tables')),
@@ -30,10 +30,9 @@ export function AdminTables(): JSX.Element {
           <QrCode className="h-7 w-7" />
         </span>
         <div>
-          <h1 className="font-display text-2xl font-semibold">Bàn & QR động</h1>
+          <h1 className="font-display text-2xl font-semibold">Bàn & QR tĩnh</h1>
           <p className="text-sm text-muted-foreground">
-            Cấp liên kết riêng cho màn hình tại bàn. Màn hình tự đổi QR mỗi 60 giây; khách quét mã
-            đang hiển thị để vào bàn.
+            Xem và tải QR cố định để in tại bàn. Khách quét cùng một mã để vào phiên phục vụ hiện tại.
           </p>
         </div>
       </div>

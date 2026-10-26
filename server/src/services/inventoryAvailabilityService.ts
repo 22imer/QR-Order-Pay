@@ -4,6 +4,7 @@ import { RecipeModel, type RecipeData } from '../models/Recipe.js';
 import { ConflictError } from '../errors/AppError.js';
 
 export interface InventoryItem {
+  freestyle?: { components: { ingredientId: { toString(): string }; quantity: number }[] };
   productId: { toString(): string };
   variantId?: { toString(): string } | null;
   toppingIds: Array<{ toString(): string }>;
@@ -21,11 +22,9 @@ export async function inventoryContext(session?: ClientSession | null) {
   const recipes = await RecipeModel.find({ enabled: true })
     .session(session ?? null)
     .lean();
-  const ingredients = recipes.length
-    ? await IngredientModel.find({})
-        .session(session ?? null)
-        .lean()
-    : [];
+  const ingredients = await IngredientModel.find({})
+    .session(session ?? null)
+    .lean();
   return {
     recipes: new Map(recipes.map((r) => [recipeKey(r.targetType, r.targetId), r])),
     ingredients: new Map(ingredients.map((i) => [String(i._id), i])),
@@ -47,7 +46,9 @@ export function inventoryRequirements(
   const totals = new Map<string, number>();
   for (const item of items) {
     const lines = [
-      ...components(context.recipes.get(recipeKey('PRODUCT', item.productId)), item.variantId),
+      ...(item.freestyle
+        ? item.freestyle.components
+        : components(context.recipes.get(recipeKey('PRODUCT', item.productId)), item.variantId)),
       ...item.toppingIds.flatMap((id) => components(context.recipes.get(recipeKey('TOPPING', id)))),
     ];
     for (const line of lines) {

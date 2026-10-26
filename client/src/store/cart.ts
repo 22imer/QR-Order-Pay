@@ -1,7 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { FreestyleView } from '@may-cafe/contracts';
 
 export interface CartItem {
+  freestyleToken?: string;
+  freestyle?: FreestyleView;
+  cupPhotoId?: string;
   clientId: string;
   productId: string;
   variantId: string | null;
@@ -54,7 +58,9 @@ export const useCart = create<CartState>()(
         set({ items: [...get().items, { ...item, clientId }] });
       },
       update(clientId, patch) {
-        set({ items: get().items.map((it) => (it.clientId === clientId ? { ...it, ...patch } : it)) });
+        set({
+          items: get().items.map((it) => (it.clientId === clientId ? { ...it, ...patch } : it)),
+        });
       },
       remove(clientId) {
         set({ items: get().items.filter((it) => it.clientId !== clientId) });
@@ -65,7 +71,11 @@ export const useCart = create<CartState>()(
     }),
     {
       name: 'mc-cart',
-      partialize: (state) => ({ items: state.items, tableSessionId: state.tableSessionId, participantId: state.participantId }),
+      partialize: (state) => ({
+        items: state.items,
+        tableSessionId: state.tableSessionId,
+        participantId: state.participantId,
+      }),
     },
   ),
 );

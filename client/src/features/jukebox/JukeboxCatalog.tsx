@@ -82,7 +82,7 @@ function Catalog({ owner }: { owner: string }): JSX.Element {
               />
             </label>
             <label className="space-y-1 sm:col-span-2">
-              URL audio HTTPS
+              Link YouTube hoặc file nhạc
               <input
                 required
                 type="url"
@@ -92,8 +92,8 @@ function Catalog({ owner }: { owner: string }): JSX.Element {
                 onChange={(e) => setDraft({ ...draft, audioUrl: e.target.value })}
               />
               <span className="text-sm text-muted-foreground">
-                File mp3, ogg, wav, m4a, aac hoặc opus truy cập trực tiếp. Dùng nguồn nhạc quán có
-                quyền phát; liên kết YouTube/Spotify không phải file audio.
+                Dán link chia sẻ YouTube hoặc youtu.be; cũng hỗ trợ file mp3, ogg, wav, m4a, aac,
+                opus qua HTTPS. Video cần cho phép phát nhúng.
               </span>
             </label>
             <label className="flex items-center gap-2">

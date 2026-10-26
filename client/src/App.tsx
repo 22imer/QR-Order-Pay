@@ -46,6 +46,15 @@ const GiftsPage = lazy(() =>
 const GamePage = lazy(() =>
   import('./features/game/GamePage').then((m) => ({ default: m.GamePage })),
 );
+const FreestyleAdmin = lazy(() =>
+  import('./features/freestyle/FreestyleAdmin').then((m) => ({ default: m.FreestyleAdmin })),
+);
+const SmartInsights = lazy(() =>
+  import('./features/insights/SmartInsights').then((m) => ({ default: m.SmartInsights })),
+);
+const CupPrintPage = lazy(() =>
+  import('./features/cupPhotos/CupPrintPage').then((m) => ({ default: m.CupPrintPage })),
+);
 const JukeboxPage = lazy(() =>
   import('./features/jukebox/JukeboxPage').then((m) => ({ default: m.JukeboxPage })),
 );
@@ -175,6 +184,7 @@ export function App(): JSX.Element {
               <Route element={<StaffLayout />}>
                 <Route path="/staff" element={<Navigate to="/staff/kds" replace />} />
                 <Route path="/staff/kds" element={<StaffKDS />} />
+                <Route path="/staff/cup-prints" element={<CupPrintPage />} />
                 <Route path="/staff/jukebox" element={<JukeboxPlayer />} />
                 <Route path="/staff/tables" element={<StaffTables />} />
                 <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
@@ -194,6 +204,9 @@ export function App(): JSX.Element {
               <Route element={<AdminLayout />}>
                 <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
                 <Route path="/admin/dashboard" element={<AdminDashboard />} />
+                <Route path="/admin/freestyle" element={<FreestyleAdmin />} />
+                <Route path="/admin/insights" element={<SmartInsights />} />
+                <Route path="/admin/cup-prints" element={<CupPrintPage admin />} />
                 <Route path="/admin/jukebox" element={<JukeboxPlayer admin />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
                 <Route path="/admin/bills" element={<AdminBills />} />

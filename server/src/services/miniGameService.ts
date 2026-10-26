@@ -10,6 +10,7 @@ import {
   gameCreateSchema,
   gameCommandSchema,
   gameJoinSchema,
+  gameRemovePlayerSchema,
   type GameRound,
   type GameFeed,
 } from '@may-cafe/contracts';
@@ -99,7 +100,10 @@ function view(
     name: p.name,
     isYou: p.participantId === actor.participantId,
     isHost: p.participantId === round.hostParticipantId,
-    eligible: round.status === 'DRAWN' || eligible.has(p.participantId),
+    eligible:
+      round.status === 'DRAWN' ||
+      eligible.has(p.managedByHost ? round.hostParticipantId : p.participantId),
+    managedByHost: p.managedByHost,
   }));
   const isHost = actor.participantId === round.hostParticipantId;
   return {
@@ -224,7 +228,7 @@ export async function createGame(actor: GameActor, raw: unknown): Promise<GameRo
     throw error;
   }
 }
-export type GameAction = 'join' | 'leave' | 'spin' | 'cancel';
+export type GameAction = 'join' | 'leave' | 'spin' | 'cancel' | 'add-player' | 'remove-player';
 export async function actOnGame(
   actor: GameActor,
   rawId: string,
@@ -232,8 +236,9 @@ export async function actOnGame(
   raw: unknown,
 ): Promise<GameRound> {
   const id = gameIdSchema.parse(rawId);
-  const joinInput = kind === 'join' ? gameJoinSchema.parse(raw) : null;
-  const input = joinInput ?? gameCommandSchema.parse(raw);
+  const joinInput = kind === 'join' || kind === 'add-player' ? gameJoinSchema.parse(raw) : null;
+  const removeInput = kind === 'remove-player' ? gameRemovePlayerSchema.parse(raw) : null;
+  const input = joinInput ?? removeInput ?? gameCommandSchema.parse(raw);
   const requestHash = hash({ kind, ...input });
   const actionKey = {
     roundId: id,
@@ -265,12 +270,14 @@ export async function actOnGame(
         throw new ConflictError('GAME_NOT_WAITING', 'Vòng đã quay, bị hủy hoặc hết hạn.');
       const index = current.players.findIndex((p) => p.participantId === actor.participantId);
       const isHost = current.hostParticipantId === actor.participantId;
-      if (kind === 'join') {
+      if (kind === 'join' || kind === 'add-player') {
+        const manual = kind === 'add-player';
+        if (manual && !isHost) throw new ForbiddenError('Chỉ chủ vòng được thêm người chơi.');
         const name = joinInput!.name;
         if (
           current.players.some(
             (p) =>
-              p.participantId !== actor.participantId &&
+              (manual || p.participantId !== actor.participantId) &&
               p.name.toLocaleLowerCase('vi') === name.toLocaleLowerCase('vi'),
           )
         )
@@ -278,16 +285,24 @@ export async function actOnGame(
             'GAME_NAME_TAKEN',
             'Tên này đã có trong vòng. Hãy chọn tên khác.',
           );
-        if (index >= 0) current.players[index]!.name = name;
+        if (!manual && index >= 0) current.players[index]!.name = name;
         else {
           if (current.players.length >= GAME_MAX_PLAYERS)
             throw new ConflictError('GAME_FULL', 'Vòng đã đủ 12 người tham gia.');
           current.players.push({
             publicId: crypto.randomUUID(),
-            participantId: actor.participantId,
+            participantId: manual ? `manual:${crypto.randomUUID()}` : actor.participantId,
+            managedByHost: manual,
             name,
           });
         }
+      } else if (kind === 'remove-player') {
+        if (!isHost) throw new ForbiddenError('Chỉ chủ vòng được xóa tên đã thêm.');
+        const target = current.players.findIndex(
+          (p) => p.publicId === removeInput!.playerId && p.managedByHost,
+        );
+        if (target < 0) throw new NotFoundError('Không tìm thấy tên do chủ vòng thêm.');
+        current.players.splice(target, 1);
       } else if (kind === 'leave') {
         if (isHost) throw new ForbiddenError('Người tạo hãy hủy vòng nếu muốn rời.');
         if (index < 0) throw new ConflictError('GAME_NOT_JOINED', 'Bạn chưa tham gia vòng này.');
@@ -297,7 +312,9 @@ export async function actOnGame(
         if (kind === 'cancel') current.status = 'CANCELLED';
         else {
           const eligible = await eligiblePlayers(actor.tableSessionId, session);
-          const roster = current.players.filter((p) => eligible.has(p.participantId));
+          const roster = current.players.filter((p) =>
+            eligible.has(p.managedByHost ? current.hostParticipantId : p.participantId),
+          );
           if (roster.length < 2)
             throw new ConflictError(
               'GAME_NEEDS_PLAYERS',

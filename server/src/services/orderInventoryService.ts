@@ -13,7 +13,8 @@ export async function reserveOrderInventory(
 ) {
   const targets = new Map<string, { type: 'PRODUCT' | 'TOPPING'; id: string }>();
   for (const item of items) {
-    targets.set(`PRODUCT:${item.productId}`, { type: 'PRODUCT', id: String(item.productId) });
+    if (!item.freestyle)
+      targets.set(`PRODUCT:${item.productId}`, { type: 'PRODUCT', id: String(item.productId) });
     for (const id of item.toppingIds)
       targets.set(`TOPPING:${id}`, { type: 'TOPPING', id: String(id) });
   }

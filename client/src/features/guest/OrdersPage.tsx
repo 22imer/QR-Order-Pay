@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSocket } from '../../lib/socket';
 import { OrderReview } from './OrderReview';
 import { GiftLabel } from '../../components/GiftLabel';
+import { FreestyleRecipe } from '../../components/FreestyleRecipe';
 
 type Order = GuestOrder;
 
@@ -186,7 +187,9 @@ export function OrdersPage(): JSX.Element {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Đường {it.sugarLevel}, {iceLabel(it.iceLevel)}
+                      {it.hasCupPhoto ? ' · Có ảnh in tem' : ''}
                     </p>
+                    <FreestyleRecipe value={it.freestyle} />
                   </li>
                 ))}
               </ul>
@@ -356,6 +359,7 @@ function statusHint(s: Order['status']): string {
 }
 
 function iceLabel(v: string): string {
+  if (v === 'Theo công thức') return v;
   return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
 }
 

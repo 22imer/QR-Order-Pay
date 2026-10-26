@@ -17,7 +17,7 @@ import { auditRepository } from '../repositories/auditRepository.js';
 import { config } from '../config/index.js';
 import { TableSessionModel, type TableSessionDoc } from '../models/TableSession.js';
 import { outboxRepository } from '../repositories/outboxRepository.js';
-import { verifyAdmissionTicket } from './tableQrService.js';
+import { verifyTableTicket } from './tableQrService.js';
 import { finalizeSessionBill } from './paymentService.js';
 import {
   assertWalkInAllowed,
@@ -252,11 +252,12 @@ export async function joinAsGuest(tablePublicToken: string) {
   for (let attempt = 0; ; attempt++) {
     try {
       return await unitOfWork.withTransaction(async (mongoSession) => {
-        const ticket = verifyAdmissionTicket(tablePublicToken);
+        const ticket = verifyTableTicket(tablePublicToken);
         const table = await tableRepository.claimAdmission(
           ticket.tableId,
           ticket.epoch,
           mongoSession,
+          ticket.fixed,
         );
         if (!table) throw new ForbiddenError('QR đã bị thu hồi. Vui lòng quét mã mới tại bàn.');
         let session = await tableSessionRepository.findActiveByTable(table.id, mongoSession);

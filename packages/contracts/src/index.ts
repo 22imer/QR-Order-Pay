@@ -7,3 +7,6 @@ export * from './reservations.js';
 export * from './gifts.js';
 export * from './miniGame.js';
 export * from './jukebox.js';
+export * from './cupPhotos.js';
+export * from './freestyle.js';
+export * from './insights.js';

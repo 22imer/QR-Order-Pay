@@ -1,6 +1,58 @@
 openapi: 3.0.3
 components:
   schemas:
+    FreestyleAsk:
+      type: object
+      additionalProperties: false
+      required: [context, prompt]
+      properties:
+        context: { type: string, enum: [TABLE, PICKUP] }
+        prompt: { type: string, minLength: 1, maxLength: 500 }
+        maxBudget: { type: integer, minimum: 1, maximum: 10000000 }
+        preferences:
+          type: object
+          additionalProperties: false
+          properties:
+            noCaffeine: { type: boolean }
+            noDairy: { type: boolean }
+            lowSugar: { type: boolean }
+    FreestyleValidate:
+      type: object
+      additionalProperties: false
+      required: [context, productId, token]
+      properties:
+        context: { type: string, enum: [TABLE, PICKUP] }
+        productId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+        token: { type: string, minLength: 20, maxLength: 8192 }
+    FreestyleSettings:
+      type: object
+      additionalProperties: false
+      required: [enabled, price, sizeName, sizeMl, bases, flavors]
+      description: 'Nền/vị: id UUID unique,name1..80,components1..8,instructions1..300,caffeine/dairy boolean|null,tags<=8,enabled. Component: ingredientId24hex,unit g/ml/unit,quantity>0<=500 tối đa3số lẻ. Base thêm allowedFlavorIds<=12,maxFlavors1..2; flavor thêm conflictsWith<=11. References tồn tại, xung khắc hai chiều, không trường thừa. Tổng công thức<=sizeMl/250g/5unit. Khi bật cần giá>=1000 và tổ hợp hợp lệ, nguyên liệu active/đúng đơn vị.'
+      properties:
+        enabled: { type: boolean }
+        price: { type: integer, minimum: 0, maximum: 1000000 }
+        sizeName: { type: string, minLength: 1, maxLength: 80 }
+        sizeMl: { type: integer, minimum: 250, maximum: 700 }
+        bases: { type: array, maxItems: 6, items: { type: object } }
+        flavors: { type: array, maxItems: 12, items: { type: object } }
+    CupPhotoMetadata:
+      type: object
+      properties:
+        id: { type: string }
+        width: { type: integer }
+        height: { type: integer }
+        expiresAt: { type: string, format: date-time }
+    CupPrintInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, orderId, itemIndex, copies, paper]
+      properties:
+        requestId: { type: string, format: uuid }
+        orderId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+        itemIndex: { type: integer, minimum: 0, maximum: 9999 }
+        copies: { type: integer, minimum: 1, maximum: 50 }
+        paper: { type: string, enum: [A4, LABEL_60_80] }
     JukeboxDeviceInput:
       type: object
       additionalProperties: false
@@ -32,7 +84,7 @@ components:
         expectedVersion: { type: integer, minimum: 0 }
         title: { type: string, minLength: 1, maxLength: 100 }
         artist: { type: string, minLength: 1, maxLength: 100 }
-        audioUrl: { type: string, format: uri, maxLength: 2048, description: HTTPS trực tiếp mp3/ogg/wav/m4a/aac/opus; không credentials/hash; có thể query }
+        audioUrl: { type: string, format: uri, maxLength: 2048, description: Link video YouTube watch/youtu.be/shorts/live/embed hoặc HTTPS trực tiếp mp3/ogg/wav/m4a/aac/opus; không credentials; có thể query }
         enabled: { type: boolean }
 info:
   title: Fantastic cafe API
@@ -46,6 +98,233 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /staff/tables/{id}/qr:
+    get:
+      summary: Xem QR tĩnh của bàn (STAFF hoặc ADMIN)
+      description: JWT/no-store. Chỉ đọc, không xoay khóa hoặc mở phiên. Token qrs1 giữ nguyên qua đóng/chuyển phiên, kiểm chữ ký và staticQrEpoch.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: 'Envelope data {tableId,tableName,url}' }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Không đủ quyền }
+        '404': { description: Bàn không còn hoạt động }
+  /admin/tables/{id}/qr:
+    get:
+      summary: Xem QR tĩnh của bàn (ADMIN)
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      responses:
+        '200': { description: 'Envelope data {tableId,tableName,url}, no-store, read-only' }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Không đủ quyền }
+        '404': { description: Bàn không còn hoạt động }
+  /game/{id}/add-player:
+    post:
+      summary: Chủ vòng thêm tên chơi trên cùng một thiết bị
+      description: Cookie QR/CSRF/limiter/no-store. Chỉ host khi OPEN/WAITING còn hạn. Tối đa12 vị trí, tên unique chuẩn hóa; UUID/version/hash/journal/audit/outbox atomic, replay không thêm trùng. Tên managedByHost tính hợp lệ theo quyền host.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId, expectedVersion, name]
+              properties:
+                requestId: { type: string, format: uuid }
+                expectedVersion: { type: integer, minimum: 0 }
+                name: { type: string, minLength: 1, maxLength: 24 }
+      responses:
+        '200': { description: GameRound hoặc replay }
+        '403': { description: Không phải host hoặc phiên không OPEN }
+        '409': { description: Version/tên/giới hạn/trạng thái xung đột }
+  /game/{id}/remove-player:
+    post:
+      summary: Chủ vòng xóa tên đã thêm
+      description: Như add-player; chỉ xóa vị trí managedByHost, không xóa người tự tham gia hoặc sửa roster đã quay.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId, expectedVersion, playerId]
+              properties:
+                requestId: { type: string, format: uuid }
+                expectedVersion: { type: integer, minimum: 0 }
+                playerId: { type: string, format: uuid }
+      responses:
+        '200': { description: GameRound hoặc replay }
+        '403': { description: Không phải host hoặc phiên không OPEN }
+        '404': { description: Không phải tên do chủ vòng thêm }
+        '409': { description: Version/trạng thái xung đột }
+  /admin/insights:
+    get:
+      summary: 'Smart Insights: mẫu bán hàng, giờ đông, cặp món và giá vốn dự kiến hiện tại'
+      description: 'JWT ADMIN/no-store/30reads phút IP. Ngày tạo đơn VN, chỉ SERVED+PAID không no-show. Mẫu <=2000đơn mới nhất/kỳ, timeout5s, capped rõ và tắt so sánh/cặp. So sánh kỳ liền trước cùng độ dài chỉ khi đã hết ngày, >=20đơn/kỳ, không capped. Advice theo quy tắc >=20đơn/3ngày, không LLM. Margins chỉ giá/công thức/giá vốn hiện tại, không lợi nhuận lịch sử/ròng, thiếu cost/recipe trả null, 0 là explicitfree, tối đa50cấu hìnhmenu. Không sửa đơn/tiền/kho.'
+      parameters:
+        - { in: query, name: from, required: true, schema: { type: string, format: date } }
+        - { in: query, name: to, required: true, schema: { type: string, format: date }, description: 'Bao gồm ngày cuối, từ1đến93ngày' }
+        - { in: query, name: channel, schema: { type: string, enum: [ALL, DINE_IN, TAKEAWAY, PICKUP], default: ALL } }
+      responses:
+        '200': { description: 'Envelope from/to/channel/generatedAt/sample/summary/comparison/hours/topProducts/pairs/margins/advice; không thông tin khách' }
+        '401': { description: 'Chưa đăng nhập' }
+        '403': { description: 'Không phải ADMIN' }
+        '422': { description: 'Ngày không hợp lệ, kỳ quá93ngày hoặc trường thừa' }
+        '429': { description: 'Quá nhiều lần đọc' }
+  /recommendations/companions:
+    get:
+      summary: 'Khách thường gọi kèm, tối đa3món catalog hiện tại'
+      description: 'Public catalog read/no-store/menu-search limiter120phút IP. 30ngày đã kết thúc VN, TABLE học DINE_IN, PICKUP học TAKEAWAY/PICKUP. Chỉ served/paid/not-no-show. Basket dedup product, loại Freestyle và giỏ>12product. Ngưỡng >=20giỏ, mỗi món>=10,cặp>=5,lift>=1.05,chiềuconfidence>=20%. Scoremax(confidence*lift) từ các anchor, không cộng lặp; loại món đã có. Capped>2000 trả rỗng. Graphcache60s, catalog/category/stock/size/price kiểm fresh. Không fallbackbịa, không tự thêm/giảm giá; UI mở cấu hình và khách xác nhận, quote/place giữ guard cũ. Không trả count/cost/danh tính/orderID.'
+      parameters:
+        - { in: query, name: context, required: true, schema: { type: string, enum: [TABLE, PICKUP] } }
+        - { in: query, name: productIds, required: true, schema: { type: string, maxLength: 249 }, description: '1..10 ID24hex phân cách dấu phẩy; normalize lowercase/dedup' }
+      responses:
+        '200': { description: 'Envelope items [{productId,name,image,unitPrice}] hoặc [] khi thiếu dữ liệu/không khả dụng' }
+        '422': { description: 'Context/IDs/trường thừa không hợp lệ' }
+        '429': { description: 'Quá nhiều lần đọc' }
+  /ai/freestyle:
+    get:
+      summary: 'Trạng thái/giá/size/tên nền-vị Freestyle'
+      description: 'Cookie QR hoặc member, no-store. Mặc định tắt/giá0, không tạo singleton lúc đọc.'
+      responses:
+        '200': { description: 'Envelope enabled/price/sizeName/sizeMl/bases/flavors' }
+        '401': { description: 'Chưa có danh tính khách hợp lệ' }
+    post:
+      summary: 'Gợi ý món ngoài thực đơn từ nền/vị đã duyệt'
+      description: 'TABLE cần QR OPEN, PICKUP cần member; context tường minh khi có cả hai cookie. CSRF/AI limiter. Server kiểm phối hợp/đơn vị/định lượng/tồn/budget/caffeine/dairy. LLM chỉ chọn<=3ID từ candidates; lỗi/hallucination dùng fallback, AI off trả rỗng. Không tạo Product/Recipe. Token HMAC đúng owner/config,hạn30phút; không gửi danh tính/token/ID kho cho model.'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FreestyleAsk' } } } }
+      responses:
+        '200': { description: 'Envelope mode(llm/fallback/off),message,recommendations(name/components/instructions/caffeine/dairy/productId/token/unitPrice/sizeName/sizeMl/reason/expiresAt)' }
+        '401': { description: 'Thiếu member khi PICKUP' }
+        '403': { description: 'Sai context, CSRF hoặc phiên không OPEN' }
+        '422': { description: 'Input không hợp lệ' }
+        '429': { description: 'AI limiter' }
+  /ai/freestyle/validate:
+    post:
+      summary: 'Kiểm đề xuất Freestyle trước thêm giỏ'
+      description: 'Cùng auth/context/CSRF/AI limiter. Kiểm chữ ký/owner/hạn/config/recipe/unit/stock. Order/quote/gift input nhận freestyleToken optional cùng productId ảo,variant null,đường/đá Theo công thức,topping rỗng. Tạo đơn kiểm lại trong transaction,khóa cấu hình,giữ kho tổng và lưu snapshot. KDS dùng snapshot,Order DTO không token/ID kho. Giá server cố định,ưu đãi bình thường.'
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/FreestyleValidate' } } } }
+      responses:
+        '200': { description: 'Envelope unitPrice,sizeName,freestyle(name/instructions/components display units/caffeine/dairy)' }
+        '403': { description: 'Sai owner/phiên/CSRF' }
+        '409': { description: 'Hết hạn/đổi cấu hình/đổi nguyên liệu/không đủ kho' }
+        '422': { description: 'Chữ ký hoặc input không hợp lệ' }
+  /admin/freestyle:
+    get:
+      summary: 'Đọc cấu hình Freestyle và nguyên liệu kho'
+      description: 'JWT ADMIN; no-store, không tự tạo cấu hình.'
+      responses:
+        '200': { description: 'Envelope settings/version/ingredients' }
+        '403': { description: 'Không phải ADMIN' }
+    put:
+      summary: 'Duyệt cấu hình/giá/size/nền/vị Freestyle'
+      description: 'JWT ADMIN. UUID/hash journal,expectedVersion,audit/outbox cùng transaction. Retry đúng body/key không lưu hai lần; không ghi đè bản mới. Đổi cấu hình vô hiệu đề xuất cũ,không sửa snapshot đơn đã đặt. Không seed hoặc tự bật bán.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId, expectedVersion, settings]
+              properties:
+                requestId: { type: string, format: uuid }
+                expectedVersion: { type: integer, minimum: 0 }
+                settings: { $ref: '#/components/schemas/FreestyleSettings' }
+      responses:
+        '200': { description: 'Envelope settings/version hiện tại' }
+        '403': { description: 'Không phải ADMIN' }
+        '409': { description: 'Version cũ hoặc key đã dùng cho nội dung khác' }
+        '422': { description: 'Cấu hình/đơn vị/định lượng/nguyên liệu không hợp lệ' }
+  /cup-photos:
+    post: &cupPhotoUpload
+      summary: Tải ảnh riêng để in tem dán cốc
+      description: "Guest QR OPEN đúng participant (/cup-photos); member cookie (/pickup/cup-photos); JWT STAFF/ADMIN (/staff/cup-photos) hoặc ADMIN (/admin/cup-photos). Guest/member CSRF. Raw JPEG/PNG/WebP tĩnh4MB, min64px/chiều,max16MP; magic+decode thật, chặn ảnh động/SVG/giả. Normalize JPEG1024px/quality85/không metadata, max1MB. UUID/hash replay, quota20ảnh/24giờ/chủ,5upload/phút/table hoặcIP,2decode/API; 429 khi bận. Lưu MongoDB riêng24h, gắn đơn/quà kéo dài30ngày, TTL. Không tạo đơn/thu tiền."
+      parameters: [{ in: header, name: Idempotency-Key, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/png: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+      responses:
+        '200': { description: 'Envelope data CupPhotoMetadata, không bytes/tên file/URL public' }
+        '401': { description: Cần phiên/tài khoản đúng loại }
+        '403': { description: Role/CSRF/không OPEN }
+        '409': { description: Key đổi nội dung/quota/hạn }
+        '413': { description: Quá4MB }
+        '415': { description: MIME không hỗ trợ }
+        '422': { description: Ảnh/dimensions/request ID sai }
+        '429': { description: Giới hạn tốc độ hoặc xử lý bận }
+  /pickup/cup-photos:
+    post: *cupPhotoUpload
+  /staff/cup-photos:
+    post: *cupPhotoUpload
+  /admin/cup-photos:
+    post: *cupPhotoUpload
+  /cup-photos/{id}:
+    get: &ownCupPhoto
+      summary: Đọc ảnh riêng của đúng chủ upload
+      description: "Quyền tương ứng prefix như upload; cookie/JWT, không token trong URL. Không truy cập ảnh của participant/member/counter khác. JPEG chuẩn hóa, no-store/nosniff. Ảnh hết hạn trả404 dù TTL chưa dọn. GuestOrder chỉ hasCupPhoto, không private ID; Gift sender có ID để tạo đơn, receiver chỉ cờ."
+      parameters: [{ in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }]
+      responses:
+        '200': { description: JPEG riêng tư, content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '401': { description: Cần xác thực }
+        '403': { description: Sai role }
+        '404': { description: Không thuộc chủ/đã hết hạn/không có }
+        '422': { description: ID sai }
+  /pickup/cup-photos/{id}:
+    get: *ownCupPhoto
+  /staff/cup-photos/{id}:
+    get: *ownCupPhoto
+  /admin/cup-photos/{id}:
+    get: *ownCupPhoto
+  /staff/cup-prints:
+    get: &cupPrintFeed
+      summary: Danh sách đơn đã thanh toán có ảnh in tem
+      description: "JWT STAFF/ADMIN (admin prefix chỉ ADMIN), no-store. Chỉ PAID và PENDING/CONFIRMED/PREPARING/READY/SERVED, không hủy/hoàn. 20đơn/trang, createdAt/id giảm dần, rows có available theo ảnh còn hạn và attempts số yêu cầu in. Không bytes/asset ID/SĐT/danh tính người gửi."
+      parameters: [{ in: query, name: page, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }]
+      responses:
+        '200': { description: 'Envelope data {items:[id,code,destination,status,createdAt,items:[index,name,size,quantity,available,attempts]],page,total,pages}' }
+        '401': { description: Cần JWT }
+        '403': { description: Sai role }
+        '422': { description: Page sai }
+    post: &cupPrintRequest
+      summary: Ghi nhận yêu cầu in, không xác nhận máy in thực
+      description: "JWT đúng role. Kiểm PAID/order còn hiệu lực/ảnh còn hạn/copies<=quantity. Transaction order guard/audit/journal unique user/request. Replay cùng nội dung một journal, đổi nội dung409, reprint chủ động key mới. current image không đổi sau đặt; ảnh quote/Order input cupPhotoId optional và kiểm chủ/hạn, quote hash bảo vệ thay ảnh. Không thay tổng tiền/Payment/Bill/trạng thái phục vụ; versionOrder có thể tăng. UI mở hộp thoại, trạng thái REQUESTED không phải đã in/đã dán; nativeCtrl+P ngoài nhật ký."
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CupPrintInput' } } } }
+      responses:
+        '200': { description: 'Envelope data {id,state:REQUESTED}' }
+        '401': { description: Cần JWT }
+        '403': { description: Sai role }
+        '404': { description: Đơn/ảnh không đủ điều kiện, gồm replay sau hủy }
+        '409': { description: Key đổi nội dung }
+        '422': { description: Input/số tem không hợp lệ }
+  /admin/cup-prints:
+    get: *cupPrintFeed
+    post: *cupPrintRequest
+  /staff/cup-prints/{id}/{index}/image:
+    get: &cupPrintImage
+      summary: Staff/Admin lấy ảnh đúng dòng đơn đã thu tiền để xem/in
+      description: JWT đúng role, no-store/nosniff, JPEG private; không qua đường ảnh gốc/public ID. Kiểm điều kiện đơn/ảnh như print. Client dùng Blob URL và thu hồi khi đóng/rời.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+        - { in: path, name: index, required: true, schema: { type: integer, minimum: 0, maximum: 9999 } }
+      responses:
+        '200': { description: JPEG riêng tư, content: { image/jpeg: { schema: { type: string, format: binary } } } }
+        '401': { description: Cần JWT }
+        '403': { description: Sai role }
+        '404': { description: Đơn/ảnh/dòng không đủ điều kiện }
+        '422': { description: ID/index sai }
+  /admin/cup-prints/{id}/{index}/image:
+    get: *cupPrintImage
   /jukebox:
     get:
       summary: Nhạc và lựa chọn chung của phiên bàn QR
@@ -175,7 +454,7 @@ paths:
   /game:
     get:
       summary: Vòng chơi hiện tại và 10 vòng gần nhất của phiên QR
-      description: "Cookie mc_guest; no-store. Trả {current,history,serverNow,nextRoundAt,open}. GameRound gồm id,phase,version,players:[{id công khai,name,isYou,isHost,eligible}],isHost,canSpin,winnerId,spinStartsAt,revealsAt,expiresAt,createdAt. Thời gian là epoch milliseconds. Không participantId/token/requestHash/member/financial data. game.changed chỉ refresh:true tới room phiên; refetch/reconnect + polling 3 giây. WAITING hết 10 phút thành EXPIRED khi đọc, DRAWN tính SPINNING/FINISHED từ revealsAt. CHECKOUT chỉ đọc; phiên CLOSED không cấp quyền. Winner được truyền lúc bắt đầu để đồng bộ đích animation, UI mở tên lúc reveal."
+      description: "Cookie mc_guest; no-store. Trả {current,history,serverNow,nextRoundAt,open}. GameRound gồm id,phase,version,players:[{id công khai,name,isYou,isHost,eligible,managedByHost}],isHost,canSpin,winnerId,spinStartsAt,revealsAt,expiresAt,createdAt. Thời gian là epoch milliseconds. Không participantId/token/requestHash/member/financial data. game.changed chỉ refresh:true tới room phiên; refetch/reconnect + polling 3 giây. WAITING hết 10 phút thành EXPIRED khi đọc, DRAWN tính SPINNING/FINISHED từ revealsAt. CHECKOUT chỉ đọc; phiên CLOSED không cấp quyền. Winner được truyền lúc bắt đầu để đồng bộ đích animation, UI mở tên lúc reveal."
       responses:
         '200': { description: success/data envelope chứa GameFeed }
         '401': { description: Cần QR guest capability; member/staff/receipt không thay thế }
@@ -229,7 +508,7 @@ paths:
   /game/{id}/spin:
     post:
       summary: Chủ vòng chốt danh sách và quay kết quả do server chọn
-      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion}; không nhận winner, tiền hoặc roster. Chỉ host ở phiên OPEN/WAITING chưa hết hạn, >=2 guest capability còn hiệu lực. Server lọc revoked/expired, crypto.randomInt chọn một vị trí, lưu DRAWN/winner/start+500ms/reveal+4500ms trong transaction cùng journal/audit/outbox. Snapshot bất biến, retry không bốc lại, đổi payload trên requestId cũ conflict. Game giải trí không đổi bên trả tiền/thanh toán/Order/Payment/Bill."
+      description: "Cookie mc_guest/CSRF/no-store. Strict {requestId UUID,expectedVersion}; không nhận winner, tiền hoặc roster. Chỉ host ở phiên OPEN/WAITING chưa hết hạn, >=2 vị trí hợp lệ (thiết bị hoặc tên do host thêm với quyền host còn hiệu lực). Server lọc revoked/expired, crypto.randomInt chọn một vị trí, lưu DRAWN/winner/start+500ms/reveal+4500ms trong transaction cùng journal/audit/outbox. Snapshot bất biến, retry không bốc lại, đổi payload trên requestId cũ conflict. Game giải trí không đổi bên trả tiền/thanh toán/Order/Payment/Bill."
       parameters:
         - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
       responses:
@@ -1099,6 +1378,7 @@ paths:
                 code: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' }
                 name: { type: string, minLength: 1, maxLength: 100 }
                 unit: { type: string, enum: [g, ml, unit] }
+                unitCost: { type: number, nullable: true, minimum: 0, maximum: 10000000, multipleOf: 0.001, description: 'VND/đơn vị cơ sở; optional/null chưa biết,0 miễn phí. Chỉ ước tính hiện tại, không backfill/đổi chi phí đơn cũ.' }
                 lowStockThreshold:
                   { type: number, minimum: 0, maximum: 1000000000, multipleOf: 0.001, default: 0 }
       responses:
@@ -1109,7 +1389,7 @@ paths:
   /admin/inventory/ingredients/{id}:
     patch:
       summary: ADMIN sửa tên, ngưỡng cảnh báo hoặc ngừng dùng nguyên liệu
-      description: Không đổi mã/đơn vị; không ngừng nguyên liệu đang giữ cho đơn.
+      description: 'Không đổi mã/đơn vị; không ngừng nguyên liệu đang giữ cho đơn. unitCost optional: bỏ qua giữ cũ,null xóa về chưa biết,0 miễn phí; VND/g/ml/unit cho ước tính hiện tại,version/audit,không sửa Order/Payment/Bill/tồn cũ.'
       parameters:
         - {
             in: path,
@@ -1126,6 +1406,7 @@ paths:
               additionalProperties: false
               required: [name, lowStockThreshold, isActive, expectedVersion]
               properties:
+                unitCost: { type: number, nullable: true, minimum: 0, maximum: 10000000, multipleOf: 0.001 }
                 name: { type: string, minLength: 1, maxLength: 100 }
                 lowStockThreshold:
                   { type: number, minimum: 0, maximum: 1000000000, multipleOf: 0.001 }

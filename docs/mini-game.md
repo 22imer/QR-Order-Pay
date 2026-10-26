@@ -6,9 +6,10 @@ Khách đã quét QR mở **Vòng quay** (`/game`) trên Guest 8080. Game giải
 
 1. Nhập tên hiển thị 1–24 ký tự và bấm **Tạo vòng mới**. Người tạo tự tham gia, trở thành chủ vòng. Không lấy tên thành viên/SĐT hay đưa mọi thiết bị vào vòng tự động.
 2. Các thiết bị khác của cùng phiên bàn mở `/game`, nhập tên riêng và bấm **Tham gia vòng**. Mỗi participant QR có một vị trí; nhiều tab dùng cùng cookie vẫn là cùng người chơi. Có thể cập nhật tên hoặc rời khi còn chờ. Không trùng tên sau chuẩn hóa Unicode/hoa-thường/khoảng trắng.
-3. Từ **2 tới 12 người** còn guest capability hợp lệ, chủ vòng bấm **Quay nào!** hoặc chủ động bật lắc trên thiết bị hỗ trợ. Chỉ chủ vòng được quay/hủy; muốn rời, chủ vòng hủy phòng chờ.
-4. Server chụp danh sách, bỏ guest đã bị thu hồi/hết hạn và dùng `crypto.randomInt` chọn đều một vị trí. Lưu kết quả và mốc bắt đầu +500ms, quay 4.500ms. Các thiết bị đọc chung winner/start/reveal qua Socket.IO + API.
-5. Tên được mở ở thời điểm reveal. Reload/reconnect giữa chừng dùng lại kết quả và tiến độ theo giờ server, không quay lại. Hết lượt, chờ thêm **5 giây** rồi bất kỳ guest trong bàn có thể tạo vòng mới. Mọi người tham gia lại từng vòng; không tự mang danh sách cũ qua.
+3. Chủ vòng có ô **Tên người chơi thêm → Thêm người chơi**, thêm từng tên cho cả nhóm trên một máy, có **Xóa <tên>** khi còn chờ. Tên này được ghi rõ Chủ vòng thêm, không giả làm thiết bị hoặc tài khoản. Tối đa 12 vị trí tổng cộng, không trùng tên; chỉ host được thêm/xóa, không xóa người tự tham gia. Retry cùng yêu cầu không thêm trùng; sau quay khóa danh sách.
+4. Từ **2 tới 12 người** (thiết bị hợp lệ hoặc tên do host thêm khi host còn quyền), chủ vòng bấm **Quay nào!** hoặc chủ động bật lắc trên thiết bị hỗ trợ. Chỉ chủ vòng được quay/hủy; muốn rời, chủ vòng hủy phòng chờ.
+5. Server chụp danh sách, bỏ guest đã bị thu hồi/hết hạn; tên thêm tay được tính theo quyền host và dùng `crypto.randomInt` chọn đều một vị trí. Lưu kết quả và mốc bắt đầu +500ms, quay 4.500ms. Các thiết bị đọc chung winner/start/reveal qua Socket.IO + API.
+6. Tên được mở ở thời điểm reveal. Reload/reconnect giữa chừng dùng lại kết quả và tiến độ theo giờ server, không quay lại. Hết lượt, chờ thêm **5 giây** rồi bất kỳ guest trong bàn có thể tạo vòng mới. Mọi người tham gia lại từng vòng; không tự mang danh sách cũ qua.
 
 Phòng chờ có hạn **10 phút**. API/GUI kiểm hạn theo clock server; khi mở vòng mới, phòng chờ quá hạn được đánh EXPIRED để giải phóng unique slot. Không cần scheduler hoặc xóa lịch sử bằng TTL. Trang trả vòng mới nhất và tối đa **10 vòng trước**, tên/kết quả chỉ trong đúng phiên bàn. Giới hạn **6 vòng tạo/phút/bàn** (kể cả hủy), API mutation riêng 40 request/phút/bàn; không dùng chung quota gọi món.
 
@@ -39,6 +40,8 @@ Prefix `/api/v1`, cookie `mc_guest`:
 | GET `/game` | `{current,history,serverNow,nextRoundAt,open}`. Chỉ trong phiên hiện tại |
 | POST `/game` | Strict `{requestId:UUID,name}` → GameRound, tạo phòng chờ hoặc replay |
 | POST `/game/:id/join` | Strict `{requestId,expectedVersion,name}`. Tham gia hoặc cập nhật tên của chính mình |
+| POST `/game/:id/add-player` | Strict `{requestId,expectedVersion,name}`. Host thêm tên, không cần thiết bị thứ hai |
+| POST `/game/:id/remove-player` | Strict `{requestId,expectedVersion,playerId UUID}`. Host xóa tên đã thêm |
 | POST `/game/:id/leave` | Strict `{requestId,expectedVersion}`. Rời nếu không phải chủ vòng |
 | POST `/game/:id/spin` | Strict `{requestId,expectedVersion}`. Chỉ chủ vòng; server tự chọn winner/roster/timestamps |
 | POST `/game/:id/cancel` | Strict `{requestId,expectedVersion}`. Chủ vòng hủy phòng chờ |
@@ -65,3 +68,5 @@ Chuẩn bị hai browser profile/điện thoại độc lập cùng quét QR m�
 14. **Cảm biến/fallback**: trên HTTPS và thiết bị hỗ trợ, chủ vòng bật quyền rồi lắc; chỉ một spin. Từ chối quyền/thiếu cảm biến/LAN HTTP dùng Quay vẫn chạy. Tắt/ẩn/rời/đổi vòng thì không nghe cảm biến hay tự quay.
 
 Bằng chứng Lightpanda là DOM/hành vi và giá trị góc SVG/timestamp; chưa chứng minh bố cục/che khuất, chất lượng chuyển động thực tế, cảm biến hoặc permission prompt trên điện thoại thật.
+
+Cập nhật 26/10/2026: test nhanh một máy quét QR → nhập tên chủ vòng/tạo → thêm 2 tên → xóa/thêm lại → quay → reload cùng kết quả. Kiểm tên trùng/12 người/host-only/pending retry và không sửa danh sách sau quay. Luồng nhiều thiết bị ở trên tiếp tục được hỗ trợ.

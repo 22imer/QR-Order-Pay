@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import QRCode from 'qrcode';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -13,68 +14,86 @@ export function TableDisplaySetup({
   tableName: string;
   admin?: boolean;
 }): JSX.Element {
-  const [url, setUrl] = useState('');
-  const provision = useMutation({
-    mutationFn: async () =>
-      unwrap<{ url: string }>(
-        await api.post(`/${admin ? 'admin' : 'staff'}/tables/${tableId}/display`),
-      ),
-    onSuccess: (data) => setUrl(data.url),
+  const [qr, setQr] = useState<{ url: string; image: string } | null>(null);
+  const [message, setMessage] = useState('');
+  const load = useMutation({
+    mutationFn: async () => {
+      const data = unwrap<{ url: string }>(
+        await api.get(`/${admin ? 'admin' : 'staff'}/tables/${tableId}/qr`),
+      );
+      return { url: data.url, image: await QRCode.toDataURL(data.url, { width: 600, margin: 3 }) };
+    },
+    onSuccess: (data) => {
+      setQr(data);
+      setMessage('');
+    },
   });
   return (
     <>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={provision.isPending}
-        onClick={() => {
-          if (
-            window.confirm(
-              `Cấp khóa màn hình cho ${tableName}? Liên kết màn hình đã cấp trước đó sẽ hết hiệu lực.`,
-            )
-          )
-            provision.mutate();
-        }}
-      >
-        {provision.isPending ? 'Đang cấp…' : 'Cấu hình màn hình QR'}
+      <Button size="sm" variant="outline" disabled={load.isPending} onClick={() => load.mutate()}>
+        {load.isPending ? 'Đang lấy QR…' : 'Xem QR tĩnh'}
       </Button>
-      {provision.isError ? (
+      {load.isError && (
         <p role="alert" className="text-sm text-danger">
-          {getErrorMessage(provision.error)}
+          {getErrorMessage(load.error)}
         </p>
-      ) : null}
+      )}
       <Modal
-        open={!!url}
+        open={!!qr}
         onOpenChange={(open) => {
-          if (!open) setUrl('');
+          if (!open) setQr(null);
         }}
-        title={`Màn hình QR · ${tableName}`}
+        title={`QR tĩnh · ${tableName}`}
       >
-        <div className="space-y-4">
-          <p>
-            Mở liên kết này trên thiết bị đặt tại bàn. Màn hình sẽ tự đổi QR mỗi 60 giây, kể cả khi
-            chưa có khách.
-          </p>
-          <p className="text-sm text-danger">
-            Đây là khóa riêng của màn hình. Không gửi liên kết này cho khách và không in nó thành
-            QR. Khách chỉ quét mã xuất hiện trên màn hình.
-          </p>
-          <input
-            aria-label="Liên kết cấu hình màn hình"
-            readOnly
-            value={url}
-            className="w-full rounded border p-2 text-sm"
-            onFocus={(event) => event.target.select()}
-          />
-          <a
-            className="inline-block rounded bg-primary px-4 py-2 text-primary-foreground"
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Mở màn hình QR
-          </a>
-        </div>
+        {qr && (
+          <div className="space-y-4">
+            <p>
+              In mã này đặt tại bàn hoặc gửi link cho nhóm khách. QR giữ nguyên qua các phiên, không
+              đổi mỗi phút.
+            </p>
+            <img
+              src={qr.image}
+              alt={`QR vào ${tableName}`}
+              className="mx-auto w-full max-w-80 rounded-xl"
+            />
+            <input
+              aria-label="Link vào bàn"
+              readOnly
+              value={qr.url}
+              className="w-full rounded border p-2 text-sm"
+              onFocus={(e) => e.target.select()}
+            />
+            <div className="flex flex-wrap gap-2">
+              <a
+                className="rounded-xl bg-primary px-4 py-2 text-primary-foreground"
+                href={qr.image}
+                download={`QR-${tableName}.png`}
+              >
+                Tải ảnh QR
+              </a>
+              <a
+                className="rounded-xl border px-4 py-2"
+                href={qr.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Mở link vào bàn
+              </a>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(qr.url)
+                    .then(() => setMessage('Đã sao chép link.'))
+                    .catch(() => setMessage('Chọn ô link và sao chép thủ công.'));
+                }}
+              >
+                Sao chép link
+              </Button>
+            </div>
+            {message && <p role="status">{message}</p>}
+          </div>
+        )}
       </Modal>
     </>
   );

@@ -16,6 +16,9 @@ import { useToast } from '../../components/ui/useToast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { MenuPhoto } from './MenuPhoto';
+import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { FreestyleRecipe } from '../../components/FreestyleRecipe';
+import { CompanionSuggestions } from '../insights/CompanionSuggestions';
 
 export function CartPage(): JSX.Element {
   useDocumentTitle('Giỏ hàng');
@@ -29,6 +32,7 @@ export function CartPage(): JSX.Element {
   const tableName = useGuestContext()?.tableName ?? null;
   const submission = useRef<{ payload: string; key: string } | null>(null);
   const [quote, setQuote] = useState<OrderQuoteResponse | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
   const memberQuery = useMember();
   const member = memberQuery.data?.member;
   const [voucherCode, setVoucherCode] = useState('');
@@ -57,6 +61,8 @@ export function CartPage(): JSX.Element {
         toppingIds: it.toppingIds,
         note: it.note,
         quantity: it.quantity,
+        ...(it.cupPhotoId ? { cupPhotoId: it.cupPhotoId } : {}),
+        ...(it.freestyleToken ? { freestyleToken: it.freestyleToken } : {}),
       })),
     }),
     [items, voucherCode, redeemPoints],
@@ -164,7 +170,7 @@ export function CartPage(): JSX.Element {
   }
 
   const priceChanged = quote !== null && (quote.subtotal ?? quote.total) !== subtotal;
-  const busy = placeMutation.isPending || preview.isPending;
+  const busy = placeMutation.isPending || preview.isPending || photoBusy;
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6 pt-2">
@@ -201,6 +207,14 @@ export function CartPage(): JSX.Element {
                     {it.note ? (
                       <p className="text-sm italic text-muted-foreground">“{it.note}”</p>
                     ) : null}
+                    <FreestyleRecipe value={it.freestyle} />
+                    <CupPhotoPicker
+                      label={`Ảnh in tem cho ${it.name}`}
+                      photoId={it.cupPhotoId}
+                      disabled={busy}
+                      onBusyChange={setPhotoBusy}
+                      onChange={(cupPhotoId) => update(it.clientId, { cupPhotoId })}
+                    />
                     <div className="mt-2 flex items-center justify-between">
                       <QtyStepper
                         value={it.quantity}
@@ -222,6 +236,26 @@ export function CartPage(): JSX.Element {
           </fieldset>
 
           <div className="slip-rule" />
+          {sessionQuery.data?.active && sessionQuery.data.status === 'OPEN' && (
+            <CompanionSuggestions
+              key={`${sessionQuery.data.tableSessionId}:${sessionQuery.data.participantId}`}
+              context="TABLE"
+              items={items}
+              disabled={busy}
+              onAdd={(item) => {
+                const s = queryClient.getQueryData<CurrentTableSessionResponse>(['guest-session']),
+                  c = useCart.getState();
+                if (
+                  !s?.active ||
+                  s.status !== 'OPEN' ||
+                  c.tableSessionId !== s.tableSessionId ||
+                  c.participantId !== s.participantId
+                )
+                  return false;
+                c.add(item);
+              }}
+            />
+          )}
           <fieldset disabled={busy} className="space-y-3 py-4">
             <legend className="pt-4 font-semibold">Ưu đãi</legend>
             <label className="block text-sm">
@@ -347,5 +381,6 @@ export function CartPage(): JSX.Element {
 }
 
 function labelIce(v: string): string {
+  if (v === 'Theo công thức') return 'đá theo công thức';
   return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
 }

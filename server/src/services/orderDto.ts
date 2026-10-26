@@ -5,6 +5,7 @@ import {
   type StaffOrder,
 } from '@may-cafe/contracts';
 import type { OrderDoc } from '../models/Order.js';
+import { freestyleView } from './freestyleService.js';
 
 type OrderSource = Pick<
   OrderDoc,
@@ -69,6 +70,8 @@ function baseOrder(order: OrderSource) {
       toppingNamesSnapshot: [...item.toppingNamesSnapshot],
       note: item.note ?? '',
       quantity: item.quantity,
+      ...(item.freestyle ? { freestyle: freestyleView(item.freestyle) } : {}),
+      ...(item.cupPhotoId ? { hasCupPhoto: true } : {}),
       unitPrice: item.unitPrice,
       lineTotal: item.lineTotal,
       nameSnapshot: item.nameSnapshot,

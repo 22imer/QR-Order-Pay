@@ -10,6 +10,8 @@ export const giftItemInputSchema = z
     toppingIds: z.array(objectId).max(20),
     note: z.string().trim().max(280).default(''),
     quantity: z.number().int().min(1).max(10),
+    cupPhotoId: objectId.optional(),
+    freestyleToken: z.string().min(20).max(8192).optional(),
   })
   .strict();
 export const giftCreateSchema = z
@@ -42,6 +44,7 @@ export interface GiftView {
       name: string;
       variantName: string;
       toppingNames: string[];
+      hasCupPhoto?: boolean;
     }
   >;
   expiresAt: string;

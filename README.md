@@ -8,9 +8,13 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
-- **Jukebox (#3)**: Admin quản lý URL audio HTTPS; khách QR vote chung theo phiên bàn (5 lượt), hàng đợi theo vote, quầy giữ một thiết bị phát có pause/volume/next và tự chuyển khi hết bài. [Hướng dẫn và 14 ca thử](docs/jukebox.md).
+- **Smart Insights (#12)**: Admin xem giờ đông, món bán nhiều, cặp món và lãi gộp nguyên liệu dự kiến khi nhập đủ giá vốn; giỏ tại bàn/mang đi gợi ý món thường gọi kèm khi đủ mẫu, khách xác nhận mới thêm. [Hướng dẫn và 12 ca thử](docs/smart-insights.md).
+- **AI Barista Freestyle (#8)**: phối nền/vị đã duyệt thành món ngoài thực đơn, một giá/size do Admin đặt, kiểm tồn và lưu công thức vào đơn/KDS; dùng tại bàn, member mang đi và quà. Cần Admin cấu hình rồi bật bán. [Hướng dẫn và 12 ca thử](docs/freestyle.md).
+- **Ảnh in tem dán cốc (#9)**: tải JPEG/PNG/WebP riêng cho từng dòng món ở giỏ tại bàn, mang đi hoặc quà; xem trước ảnh đã chuẩn hóa, Staff/Admin in tem60×80mm trên A4/giấy tem sau thanh toán. [Hướng dẫn và 14 ca thử](docs/cup-photos.md).
 
-- **Mini-game “Ai trả tiền?” (#2)**: `/game` trong phiên QR, từng thiết bị tự tham gia bằng tên; vòng quay chung do server chốt kết quả, retry không bốc lại. Có nút Quay/lắc trên thiết bị hỗ trợ; game không sửa đơn hay tự thu/chuyển tiền. [Hướng dẫn và 14 ca thử](docs/mini-game.md).
+- **Jukebox (#3)**: Admin thêm link YouTube hoặc audio HTTPS; khách QR vote chung theo phiên bàn (5 lượt), hàng đợi theo vote, quầy giữ một thiết bị phát có pause/volume/next và tự chuyển khi hết bài. [Hướng dẫn và 14 ca thử](docs/jukebox.md).
+
+- **Mini-game “Ai trả tiền?” (#2)**: `/game` trong phiên QR, chủ vòng tự thêm tên để chơi cả nhóm trên một máy hoặc các thiết bị tự tham gia; vòng quay chung do server chốt kết quả, retry không bốc lại. Có nút Quay/lắc trên thiết bị hỗ trợ; game không sửa đơn hay tự thu/chuyển tiền. [Hướng dẫn và 14 ca thử](docs/mini-game.md).
 
 - **Tặng quà cho bàn khác (#1)**: `/gifts`, chọn Ẩn danh hoặc Hiện bàn gửi (tên/mã bàn); lời mời Nhận/Từ chối trong 5 phút, nhận rồi người gửi xác nhận giá/đặt/trả tiền. KDS giao đúng bàn nhận, đơn và hóa đơn thuộc người gửi; giỏ quà riêng, retry an toàn và thông báo realtime. [Quy tắc và kịch bản test](docs/gifts.md).
 
@@ -20,7 +24,7 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 - Kho nguyên liệu, nhập/xuất/kiểm kê và công thức theo món/size/topping; giữ kho khi đặt, xuất khi pha chế, trả giữ khi hủy và tự báo hết trên menu/AI. Quản lý ở **Admin → Kho & công thức**. Xem [hướng dẫn kho](docs/inventory.md).
   Dữ liệu mẫu và kiểm thử: [32 nguyên liệu và công thức theo menu](docs/inventory-demo-data.md), [12 kịch bản test kho](docs/inventory-test-scenarios.md). Bộ nạp cộng thêm qua API: `node scripts/setup-inventory-demo.mjs --apply` (cần `INVENTORY_ADMIN_PASSWORD`), không dùng seed/reset tổng.
 
-- Màn hình tại bàn hiển thị QR tự đổi mỗi 60 giây; khách quét mã còn hạn để vào phiên bằng Wi-Fi hoặc 4G.
+- QR tĩnh có thể tải ảnh/in tại bàn, dùng lại qua các phiên; vào phiên mới/rời bàn tự đăng xuất thành viên đã lưu.
 - Thực đơn đa danh mục, tùy chỉnh size/đường/đá/topping, ghi chú.
 - Quản trị xóa mềm/khôi phục món; xóa danh mục trống hoặc chuyển toàn bộ món sang danh mục khác rồi xóa. Ẩn danh mục áp dụng cả menu, tìm kiếm, AI và kiểm tra giỏ cũ. Xem [quản lý vòng đời catalog](docs/catalog-lifecycle.md).
 - Thực đơn khách dạng ảnh nền toàn màn hình và thẻ món ngang: chọn thẻ đổi ảnh, tên, mô tả và giá; bấm **Chọn món** để tùy chỉnh và thêm giỏ.
@@ -75,11 +79,11 @@ Server đọc cấu hình dev từ `server/.env`, không từ `.env` ở repo ro
 - `staff.a@maycafe.vn` (STAFF)
 - `staff.b@maycafe.vn` (STAFF)
 
-Khi seed, mỗi bàn in ra liên kết `/display#…`. Mở liên kết riêng này trên thiết bị tại bàn; khách chỉ quét QR hiển thị bên trong. Với dữ liệu đang sử dụng, cấp liên kết ở trang Staff **Bàn & phiên**, không chạy lại seed. Xem [hướng dẫn QR động và thanh toán trước](docs/qr-prepayment.md).
+Staff **Bàn & phiên** hoặc Admin **Bàn & QR tĩnh** → **Xem QR tĩnh** → tải PNG để in hoặc mở/sao chép link vào bàn. Không cần seed lại hoặc màn hình đổi mã. Xem [hướng dẫn QR tĩnh và thanh toán trước](docs/qr-prepayment.md).
 
 ## Luồng khách: quét QR → đặt món
 
-1. Khách quét QR còn hạn trên màn hình tại bàn → `POST /api/v1/table-sessions/join`.
+1. Khách quét QR cố định tại bàn → `POST /api/v1/table-sessions/join`.
 2. Nếu bàn **chưa có phiên**, server tự mở phiên mới (`source: 'GUEST'`, có audit log) và trả `created: true`, kèm `guestSessionId` / `participantId` để đặt món. Thao tác này **idempotent** và an toàn khi nhiều người quét cùng lúc: hai request đồng thời chỉ tạo đúng một phiên, cả hai nhận cùng `tableSessionId`.
 3. Nếu bàn **đang có phiên**, khách được đưa vào đúng phiên đó (`created: false`) — không tạo phiên trùng.
 4. Khách gửi đơn ở trạng thái `AWAITING_PAYMENT / UNPAID`. Nhân viên kiểm tra đã nhận đủ tiền từng đơn thì đơn chuyển `PENDING / PAID` và xuất hiện trên KDS.
@@ -159,5 +163,5 @@ Xem chi tiết tại `docs/architecture.md`, `docs/api/openapi.yaml`, `docs/ai-d
 
 - P4A menu search là pipeline xác định, không gọi LLM. AI Barista dùng native OpenAI-compatible Chat Completions; smoke Zen thật ngày 06/10/2026 đã đạt ba case trước chuyên hoá và một case kết hợp sau chuyên hoá. Một case mới timeout 15 giây và fallback an toàn; chưa benchmark chất lượng/chi phí hoặc skill-vs-baseline. HTTP 401 ngày 22/09/2026 là bằng chứng lịch sử. Xem [docs/ai-evaluation.md](docs/ai-evaluation.md).
 - Thanh toán chỉ hỗ trợ "xác nhận tại quầy" trong P0.
-- QR động cần màn hình tại bàn có mạng. Chưa kiểm thử quét camera trên điện thoại hoặc truy cập 4G thực tế; 4G cần portal khách có public URL. QR không xác minh khách còn tại quán, nhân viên cần đóng phiên khi khách rời bàn.
+- QR tĩnh có thể in tại bàn; link giữ nguyên qua các phiên. Chưa kiểm thử quét camera trên điện thoại hoặc truy cập 4G thực tế; 4G cần portal khách có public URL. QR không xác minh khách còn tại quán, nhân viên cần đóng phiên khi khách rời bàn.
 - Menu đạt cao nhất 90 RPS theo ngưỡng đã chốt trên Docker Desktop local; 600–700 RPS không đạt. Đây không phải cam kết năng lực cloud.

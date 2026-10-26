@@ -15,8 +15,12 @@ import { Link } from 'react-router-dom';
 import { WalletCards } from 'lucide-react';
 import { GiftLabel } from '../../components/GiftLabel';
 import type { GiftDelivery } from '@may-cafe/contracts';
+import type { FreestyleView } from '@may-cafe/contracts';
+import { FreestyleRecipe } from '../../components/FreestyleRecipe';
 
 interface OrderItem {
+  freestyle?: FreestyleView;
+  hasCupPhoto?: boolean;
   productId: string;
   variantId: string | null;
   sizeName: string | null;
@@ -363,6 +367,11 @@ function OrderCard({
             {order.gift ? `Bàn trả tiền: ${order.tableName}` : order.tableName}
           </p>
           <GiftLabel gift={order.gift} />
+          {order.items.some((i) => i.hasCupPhoto) && (
+            <Link to="/staff/cup-prints" className="text-sm font-semibold underline">
+              Có ảnh · Mở in tem
+            </Link>
+          )}
           {order.scheduledAt ? (
             <p className="text-xs">
               Hẹn{' '}
@@ -398,6 +407,7 @@ function OrderCard({
             {it.toppingNamesSnapshot?.length ? (
               <span className="text-xs">Topping: {it.toppingNamesSnapshot.join(', ')}</span>
             ) : null}
+            <FreestyleRecipe value={it.freestyle} />
           </li>
         ))}
       </ul>
@@ -465,5 +475,6 @@ function statusLabel(s: Order['status']): string {
 }
 
 function labelIce(v: string): string {
+  if (v === 'Theo công thức') return v;
   return v === 'no-ice' ? 'không đá' : v === 'less-ice' ? 'ít đá' : 'đá thường';
 }

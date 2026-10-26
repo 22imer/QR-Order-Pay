@@ -8,6 +8,41 @@ const label = z
   .min(1)
   .max(100)
   .refine((s) => !/[\p{Cc}\p{Cf}]/u.test(s));
+
+export function jukeboxSource(
+  value: string,
+): { kind: 'youtube'; videoId: string } | { kind: 'audio' } | null {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
+    const host = url.hostname.toLowerCase();
+    const youtube = [
+      'youtube.com',
+      'www.youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtube-nocookie.com',
+      'www.youtube-nocookie.com',
+    ];
+    if (host === 'youtu.be' || youtube.includes(host)) {
+      const parts = url.pathname.split('/').filter(Boolean);
+      const id =
+        host === 'youtu.be' && parts.length === 1
+          ? parts[0]
+          : url.pathname === '/watch'
+            ? url.searchParams.get('v')
+            : parts.length === 2 && ['shorts', 'embed', 'live'].includes(parts[0]!)
+              ? parts[1]
+              : null;
+      return id && /^[\w-]{11}$/.test(id) ? { kind: 'youtube', videoId: id } : null;
+    }
+    return !url.hash && /\.(mp3|ogg|wav|m4a|aac|opus)$/i.test(url.pathname)
+      ? { kind: 'audio' }
+      : null;
+  } catch {
+    return null;
+  }
+}
 export const jukeboxTrackSchema = z
   .object({
     requestId: z.string().uuid(),
@@ -19,16 +54,10 @@ export const jukeboxTrackSchema = z
       .trim()
       .max(2048)
       .url()
-      .refine((s) => {
-        const u = new URL(s);
-        return (
-          u.protocol === 'https:' &&
-          !u.username &&
-          !u.password &&
-          !u.hash &&
-          /\.(mp3|ogg|wav|m4a|aac|opus)$/i.test(u.pathname)
-        );
-      }, 'Dùng URL HTTPS trực tiếp tới file mp3, ogg, wav, m4a, aac hoặc opus.'),
+      .refine(
+        (s) => jukeboxSource(s) !== null,
+        'Dán link video YouTube (youtube.com hoặc youtu.be), hoặc link HTTPS trực tiếp tới file nhạc.',
+      ),
     enabled: z.boolean(),
   })
   .strict();

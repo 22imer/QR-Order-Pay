@@ -32,7 +32,6 @@ function cookie(res: Response, value: string) {
     secure: config.cookieSecure,
     domain: config.cookieDomain,
     path: '/',
-    maxAge: members.MEMBER_TTL_MS,
   });
 }
 export const register = handler(async (req, res) => {

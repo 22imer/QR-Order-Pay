@@ -174,6 +174,12 @@ export function AdminInventory(): JSX.Element {
               <p className="text-xs text-muted-foreground">
                 Ngưỡng cảnh báo: {number(i.lowStockThreshold)} {unitLabel(i.unit)}
               </p>
+              <p className="text-xs text-muted-foreground">
+                Giá vốn:{' '}
+                {i.unitCost === null || i.unitCost === undefined
+                  ? 'Chưa nhập'
+                  : `${number(i.unitCost)} đ/${unitLabel(i.unit)}`}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={!i.isActive} onClick={() => setMoving(i)}>
                   Nhập / xuất / kiểm kê
@@ -303,6 +309,11 @@ function IngredientForm({
   const [unit, setUnit] = useState('g');
   const [threshold, setThreshold] = useState(String(ingredient?.lowStockThreshold ?? 0));
   const [active, setActive] = useState(ingredient?.isActive ?? true);
+  const [unitCost, setUnitCost] = useState(
+    ingredient?.unitCost === null || ingredient?.unitCost === undefined
+      ? ''
+      : String(ingredient.unitCost),
+  );
   const save = useMutation({
     mutationFn: async () =>
       ingredient
@@ -313,6 +324,7 @@ function IngredientForm({
               lowStockThreshold: Number(threshold),
               isActive: active,
               expectedVersion: ingredient.version,
+              unitCost: unitCost.trim() === '' ? null : Number(unitCost),
             }),
           )
         : api.post(
@@ -322,6 +334,7 @@ function IngredientForm({
               name,
               unit,
               lowStockThreshold: Number(threshold),
+              unitCost: unitCost.trim() === '' ? null : Number(unitCost),
             }),
           ),
     onSuccess: () => {
@@ -395,6 +408,22 @@ function IngredientForm({
             Đang dùng
           </label>
         )}
+        <Field label={`Giá vốn (đ/${ingredient?.unit ?? unit})`}>
+          <Input
+            aria-label="Giá vốn nguyên liệu"
+            type="number"
+            min="0"
+            max="10000000"
+            step="0.001"
+            value={unitCost}
+            onChange={(e) => setUnitCost(e.target.value)}
+            placeholder="Để trống nếu chưa biết"
+          />
+        </Field>
+        <p className="text-xs text-muted-foreground">
+          Giá vốn dự kiến cho một g/ml/đơn vị cơ sở, không phải giá cả bao/gói. Để trống là chưa
+          biết; 0 là miễn phí. Chỉ dùng cho ước tính hiện tại, không sửa chi phí đơn cũ.
+        </p>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" disabled={save.isPending} onClick={onClose}>
             Hủy

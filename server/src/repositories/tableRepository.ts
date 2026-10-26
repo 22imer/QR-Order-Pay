@@ -11,7 +11,12 @@ export interface ITableRepository {
   findByPublicTokenHash(hash: string): Promise<TableDoc | null>;
   findByDisplayTokenHash(hash: string): Promise<TableDoc | null>;
   provisionDisplay(id: string, hash: string, session: ClientSession): Promise<TableDoc | null>;
-  claimAdmission(id: string, epoch: number, session: ClientSession): Promise<TableDoc | null>;
+  claimAdmission(
+    id: string,
+    epoch: number,
+    session: ClientSession,
+    fixed?: boolean,
+  ): Promise<TableDoc | null>;
   invalidateQr(id: string, session: ClientSession): Promise<void>;
   create(data: {
     code: string;
@@ -44,16 +49,17 @@ export const tableRepository: ITableRepository = {
   async provisionDisplay(id, hash, session) {
     return TableModel.findByIdAndUpdate(
       id,
-      { $set: { displayTokenHash: hash }, $inc: { qrEpoch: 1 } },
+      { $set: { displayTokenHash: hash }, $inc: { qrEpoch: 1, staticQrEpoch: 1 } },
       { new: true, session },
     );
   },
-  async claimAdmission(id, epoch, session) {
+  async claimAdmission(id, epoch, session, fixed = false) {
+    const field = fixed ? 'staticQrEpoch' : 'qrEpoch';
     return TableModel.findOneAndUpdate(
       {
         _id: id,
         isActive: true,
-        $or: [{ qrEpoch: epoch }, ...(epoch === 0 ? [{ qrEpoch: { $exists: false } }] : [])],
+        $or: [{ [field]: epoch }, ...(epoch === 0 ? [{ [field]: { $exists: false } }] : [])],
       },
       { $inc: { admissionCount: 1 } },
       { new: true, session },
@@ -66,15 +72,27 @@ export const tableRepository: ITableRepository = {
     return TableModel.create(data);
   },
   async update(id, update) {
-    return unitOfWork.withTransaction(async session => {
-      const table = await TableModel.findByIdAndUpdate(id, { $inc: { admissionCount: 1 } }, { new: true, session });
+    return unitOfWork.withTransaction(async (session) => {
+      const table = await TableModel.findByIdAndUpdate(
+        id,
+        { $inc: { admissionCount: 1 } },
+        { new: true, session },
+      );
       if (!table) return null;
       if (update.isActive === false || update.capacity !== undefined) {
-        const held = await ReservationModel.exists({ tableId: id,
-          $or: [{ status: 'CONFIRMED', arrivalDeadline: { $gt: new Date() } }, { status: 'CHECKED_IN' }],
+        const held = await ReservationModel.exists({
+          tableId: id,
+          $or: [
+            { status: 'CONFIRMED', arrivalDeadline: { $gt: new Date() } },
+            { status: 'CHECKED_IN' },
+          ],
           ...(update.isActive === false ? {} : { partySize: { $gt: update.capacity! } }),
         }).session(session);
-        if (held) throw new ConflictError('TABLE_HAS_RESERVATIONS', 'Bàn còn lịch đặt. Hãy xử lý lịch trước khi ngừng bàn hoặc giảm số chỗ.');
+        if (held)
+          throw new ConflictError(
+            'TABLE_HAS_RESERVATIONS',
+            'Bàn còn lịch đặt. Hãy xử lý lịch trước khi ngừng bàn hoặc giảm số chỗ.',
+          );
       }
       return TableModel.findByIdAndUpdate(id, update, { new: true, session });
     });

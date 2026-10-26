@@ -9,6 +9,8 @@ const item = new Schema(
     toppingIds: { type: [String], default: [] },
     note: { type: String, default: '' },
     quantity: { type: Number, required: true },
+    cupPhotoId: { type: String, default: undefined },
+    freestyleToken: { type: String, default: undefined },
     name: { type: String, required: true },
     variantName: { type: String, default: '' },
     toppingNames: { type: [String], default: [] },

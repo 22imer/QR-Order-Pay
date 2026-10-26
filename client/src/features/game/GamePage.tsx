@@ -12,7 +12,7 @@ import { useShakeToSpin } from './gameMotion';
 
 type Pending = {
   url: string;
-  payload: { requestId: string; expectedVersion?: number; name?: string };
+  payload: { requestId: string; expectedVersion?: number; name?: string; playerId?: string };
 };
 function uuid() {
   const h = generateIdempotencyKey();
@@ -22,7 +22,9 @@ function loadPending(key: string): Pending | null {
   try {
     const p = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Pending | null;
     return p &&
-      /^\/game(?:\/[a-f\d]{24}\/(?:join|leave|spin|cancel))?$/.test(p.url) &&
+      /^\/game(?:\/[a-f\d]{24}\/(?:join|leave|spin|cancel|add-player|remove-player))?$/.test(
+        p.url,
+      ) &&
       typeof p.payload?.requestId === 'string'
       ? p
       : null;
@@ -100,6 +102,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
   });
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
+  const [extraName, setExtraName] = useState('');
   const inFlight = useRef(false);
   const feed = useQuery({
     queryKey: ['game', owner],
@@ -139,6 +142,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
       sessionStorage.removeItem(storageKey);
       setPending(null);
       refresh();
+      return true;
     } catch (err) {
       const status = getAxiosError(err)?.response?.status;
       if (status && status < 500) {
@@ -147,6 +151,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
       }
       setError(getErrorMessage(err));
       refresh();
+      return false;
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -247,7 +252,8 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
         <Card className="space-y-4 p-5 sm:p-6">
           <h2 className="text-xl font-semibold">Những người cùng chơi</h2>
           <p className="text-sm text-muted-foreground">
-            Mỗi thiết bị tự tham gia bằng tên riêng. Từ 2 đến 12 người; người tạo bắt đầu quay.
+            Chủ vòng có thể thêm tên để cả nhóm chơi trên một máy. Từ 2 đến 12 người; bạn bè cũng có
+            thể tự tham gia bằng QR.
           </p>
           <label className="block font-semibold">
             Tên trong vòng chơi
@@ -279,11 +285,62 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
                   </strong>
                   {p.isYou ? ' · Bạn' : ''}
                   {p.isHost ? ' · Người tạo' : ''}
+                  {p.managedByHost ? ' · Chủ vòng thêm' : ''}
                 </span>
                 {!p.eligible && <span className="text-xs">Đã rời phiên</span>}
+                {p.managedByHost && round.isHost && waiting && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={locked || !open}
+                    onClick={() =>
+                      void submit({
+                        url: `/game/${round.id}/remove-player`,
+                        payload: {
+                          requestId: uuid(),
+                          expectedVersion: round.version,
+                          playerId: p.id,
+                        },
+                      })
+                    }
+                  >
+                    Xóa {p.name}
+                  </Button>
+                )}
               </li>
             ))}
           </ol>
+          {waiting && round?.isHost && (
+            <form
+              className="space-y-2 rounded-xl border p-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (locked || !open || !extraName.trim() || round.players.length >= 12) return;
+                void submit({
+                  url: `/game/${round.id}/add-player`,
+                  payload: { requestId: uuid(), expectedVersion: round.version, name: extraName },
+                }).then((ok) => { if (ok) setExtraName(''); });
+              }}
+            >
+              <label className="block font-semibold">
+                Tên người chơi thêm
+                <input
+                  className="mt-2 block w-full rounded-xl border bg-background p-3 font-normal"
+                  maxLength={24}
+                  value={extraName}
+                  disabled={locked || !open}
+                  onChange={(e) => setExtraName(e.target.value)}
+                  placeholder="Nhập tên bạn trong nhóm"
+                />
+              </label>
+              <Button
+                type="submit"
+                disabled={locked || !open || !extraName.trim() || round.players.length >= 12}
+              >
+                Thêm người chơi
+              </Button>
+            </form>
+          )}
           {waiting && (
             <div className="flex flex-wrap gap-2">
               <Button

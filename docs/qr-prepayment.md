@@ -1,43 +1,36 @@
-# QR động và thanh toán trước từng đơn
+# QR tĩnh và thanh toán trước
 
-## Cách dùng
+Cập nhật 26/10/2026 theo yêu cầu người dùng, thay thế luồng QR đổi mỗi 60 giây.
 
-1. Đăng nhập Staff, mở **Bàn & phiên** (`/staff/tables`). Admin cũng có thể cấu hình tại trang quản lý bàn.
-2. Bấm **Cấu hình màn hình QR** của bàn, cấp liên kết, rồi mở liên kết đó trên tablet/màn hình của chính bàn. Giữ trang này mở và có mạng.
-3. Khách quét **QR hiển thị trên màn hình** bằng Wi-Fi hoặc 4G. Mã đổi theo chu kỳ 60 giây; bộ đếm cho biết thời gian còn lại. Lần mở màn hình đầu tiên có thể còn ít hơn 60 giây vì chu kỳ tính theo phút của server.
-   Khi dùng trên cùng máy, bấm **Mở link vào bàn** bên dưới QR để mở trang gọi món ở tab mới; **Sao chép link** lấy đúng link khách còn hạn. Link hiển thị cũng tự đổi cùng QR và được ẩn khi hết hạn/mất mạng.
-4. Khách gửi đơn. Đơn mang trạng thái **Chờ thanh toán**, chưa xuất hiện trên KDS.
-5. Nhân viên mở mục **Chờ thanh toán**, bấm **Kiểm tra & nhận tiền** để giữ quyền thu cho bàn, chọn phương thức và nhập số tiền thực nhận. Thu một phần thì ghi nhận khoản thu, đơn vẫn chờ; thu đủ thì **Đã nhận đủ tiền — chuyển KDS**. Xem [xử lý thiếu tiền, thu nhầm và điều chỉnh](payment-safeguards.md).
-6. KDS xử lý đơn đã trả tiền như trước. Khách tiếp tục gọi thêm mà không cần quét lại; mỗi đơn mới phải thanh toán riêng.
-   Đơn **đã phục vụ và đã thanh toán** hiện nút **Đánh giá đơn** trên trang **Đơn của bạn**, không cần chờ đóng phiên. Mỗi đơn đánh giá một lần; gọi thêm đơn mới thì đánh giá riêng đơn đó khi đủ điều kiện. Đánh giá đã gửi vẫn hiển thị sau khi tải lại trang và trên hóa đơn cuối phiên.
-7. Khi khách rời bàn, phục vụ/hủy hết đơn, xử lý các yêu cầu hủy rồi bấm **Đóng phiên không còn nợ**. Server chốt hóa đơn toàn bàn, thu hồi phiên khách và QR còn hạn của lượt cũ. Hóa đơn có thể in ngay; khách còn quyền xem hóa đơn và đánh giá.
+## Dùng QR tại bàn
 
-Liên kết `/display#…` là khóa cấu hình riêng của thiết bị tại bàn, **không đưa cho khách và không in thành QR**. Chỉ QR bên trong trang mới dành cho khách. Cấp lại liên kết sẽ vô hiệu liên kết màn hình cũ và các QR cũ ngay; khách đã vào phiên vẫn giữ quyền gọi món đến khi đóng phiên.
+1. Staff mở **Bàn & phiên** hoặc Admin mở **Bàn & QR tĩnh**, chọn **Xem QR tĩnh**.
+2. Bấm **Tải ảnh QR** để in đặt tại bàn, hoặc **Mở link vào bàn / Sao chép link** để thử trên cùng máy. Xem/tải QR không xoay khóa, không mở phiên và không ghi dữ liệu bàn.
+3. Khách quét mã cố định để vào phiên hiện tại. Nếu bàn trống và không vướng lịch đặt, server tự mở phiên theo cấu hình hiện có.
+4. Nhiều thiết bị cùng quét một QR sẽ tham gia cùng phiên, mỗi thiết bị có participant riêng. Quét lại trong cùng phiên giữ quyền xem đơn của thiết bị đó.
+5. Đóng phiên thu hồi quyền khách cũ nhưng QR in vẫn giữ nguyên; lần quét sau mở phiên mới. Các chốt đặt bàn #10 vẫn áp dụng, không tự mở bàn có lịch giữ chỗ trong 60 phút tới.
 
-## Quy tắc phía server
+QR mới là token HMAC `qrs1` gắn tableId và staticQrEpoch, không có thời hạn theo đồng hồ. Thế hệ QR tĩnh riêng với qrEpoch cũ: đóng/chuyển phiên không đổi QR in. Endpoint cấp lại khóa màn hình cũ vẫn là thao tác xoay rõ ràng, sẽ thu hồi QR tĩnh cũ của bàn. Bàn ngừng hoạt động từ chối vào. Không backfill/reset hoặc tự xoay khóa các bàn hiện có. Vé động còn hạn được hỗ trợ để tương thích, nhưng mã được cấp mới luôn cố định. Token ngẫu nhiên legacy chỉ lưu hash không tự khôi phục; lấy QR mới từ Staff/Admin.
 
-- QR là vé HMAC có thời hạn, gắn với bàn và `qrEpoch`; server kiểm tra chữ ký, hạn và thế hệ vé. Token QR tĩnh trước đây không còn được nhận để vào bàn.
-- Khóa màn hình được lưu dưới dạng hash, gửi bằng header `X-Table-Display-Token`, không xuất hiện trong URL yêu cầu API. API QR trả `Cache-Control: no-store`; màn hình ẩn QR hết hạn khi mất mạng.
-- Cấp quyền vào bàn, đóng phiên và vô hiệu QR dùng transaction để tránh cấp nhầm quyền sang lượt khách tiếp theo.
-- Đơn mới: `AWAITING_PAYMENT / UNPAID` → nhân viên xác nhận đủ tiền → `PENDING / PAID` → `CONFIRMED` → `PREPARING` → `READY` → `SERVED`.
-- KDS chỉ trả đơn `PAID`; API chuyển công đoạn cũng chặn đơn chưa thanh toán. Giá và số tiền được kiểm tra trên server.
-- Xác nhận khoản thu có idempotency key: gửi lại cùng yêu cầu không tạo khoản thu thứ hai. Khoản thu làm tăng phiên bản phiên nhưng không đóng phiên hoặc ngắt socket khách.
-- Mỗi thiết bị có tối đa 3 đơn đang chờ thanh toán trong một phiên, cùng các rate limit hiện có. Hủy đơn chưa trả tiền giải phóng giới hạn.
-- Đóng phiên chỉ được thực hiện khi mọi đơn đã phục vụ hoặc hủy, không còn nợ và không còn yêu cầu hủy chờ xử lý. Hóa đơn snapshot được tạo trong cùng transaction.
-- Đánh giá không đóng phiên, thu hồi quyền gọi món hoặc sửa hóa đơn. API kiểm tra đơn thuộc đúng thiết bị/phiên và trạng thái `SERVED / PAID`; unique index theo đơn ngăn đánh giá trùng, kể cả gửi đồng thời. Trang hóa đơn sau đóng phiên chỉ cho gửi những đánh giá còn thiếu.
-- Đơn đã thu tiền và chưa pha chế chỉ được hủy kèm xác nhận đã hoàn đủ tiền. Giao diện KDS ghi nhận hoàn **tiền mặt** thực tế; API hỗ trợ phương thức khác. Đây là ghi nhận hoàn thủ công, không tự chuyển tiền qua ngân hàng. Đối soát ca tính cả tiền đã thu và tiền đã hoàn.
-- Đường thanh toán gộp cuối phiên được giữ để xử lý dữ liệu cũ đã phục vụ nhưng chưa trả tiền; đơn mới dùng luồng thu từng đơn.
+`GET /api/v1/staff/tables/:id/qr` (STAFF/ADMIN) và `GET /api/v1/admin/tables/:id/qr` (ADMIN) trả `{tableId,tableName,url}`, no-store, không trả khóa màn hình. Trang `/display#…` cũ tiếp tục hiển thị cùng QR cố định, có tải PNG; API display trả `expiresAt:null`.
 
-## Triển khai
+## Thành viên
 
-- Build lại contracts, API, workers và client cùng phiên bản. Không cần reset/seed lại dữ liệu đang sử dụng.
-- Sau nâng cấp, cấp liên kết màn hình cho từng bàn; QR tĩnh đã in không còn dùng để vào bàn.
-- Các API instance phải dùng cùng `JWT_ACCESS_SECRET` và đồng hồ đồng bộ. Chu kỳ QR cố định 60 giây.
-- `PUBLIC_APP_URL` phải là địa chỉ portal khách mà điện thoại truy cập được. Dùng 4G cần domain/public URL và HTTPS phù hợp; `localhost` hoặc IP LAN không truy cập được từ 4G. Cấu hình các origin và reverse proxy tương ứng.
-- Staff/Admin tiếp tục dùng portal nội bộ. Tablet hiển thị QR dùng portal khách nên không cần đăng nhập tài khoản Staff trên thiết bị đó.
-- Seed demo mới in liên kết cấu hình màn hình, không in vé QR cho khách. Seed chỉ dùng khi chủ động muốn reset dữ liệu demo.
-- Playwright dùng `E2E_DISPLAY_TOKEN` để xin vé mới cho từng test. Load test dùng khóa riêng của database benchmark (`BENCHMARK_DISPLAY_TOKEN` khi seed, `TABLE_DISPLAY_TOKEN` khi chạy k6).
+Vào phiên bàn mới hoặc rời bàn thu hồi đăng nhập thành viên trên trình duyệt đó, xóa cookie. Quét lại cùng phiên không tự đăng xuất nếu khách vừa chủ động đăng nhập. Cookie thành viên mới là cookie phiên trình duyệt, không còn Max-Age 14 ngày; hạn tối đa phía DB vẫn giữ 14 ngày. Không sửa tài khoản/điểm/đơn cũ hoặc thu hồi toàn bộ phiên của người khác.
 
-## Phạm vi bảo vệ
+## Thanh toán giữ nguyên
 
-QR động giảm thời gian ảnh chụp/link cũ được dùng để tham gia bàn. Thanh toán trước ngăn đơn rác chưa trả tiền vào quầy pha chế. Hệ thống không xác minh khách còn ở trong quán: người đã vào phiên vẫn có thể gửi đơn chờ thanh toán hoặc yêu cầu phục vụ từ xa cho đến khi nhân viên đóng phiên. Ảnh QR còn hạn cũng có thể bị chia sẻ. Vì vậy thao tác đóng phiên khi khách rời bàn vẫn cần được thực hiện, và nhân viên chỉ xác nhận khoản thu thực tế.
+`AWAITING_PAYMENT / UNPAID` → Staff nhận tiền từng phần/đủ → `PENDING / PAID` mới vào KDS → `CONFIRMED / PREPARING / READY / SERVED`. Đơn giữ nguyên liệu khi đặt, trừ khi pha, trả giữ khi hủy hợp lệ. Đã thu phải hoàn thực tế trước pha mới hủy, không tự chuyển tiền ngân hàng.
+
+Đóng phiên yêu cầu hết nợ, mọi đơn phục vụ/hủy và hết yêu cầu hủy chờ. Bill snapshot bất biến toàn bàn; Staff in, khách chỉ xem đơn của thiết bị và đánh giá. Quote/idempotency, quyền thu tiền và các guard cũ giữ nguyên; xem [payment-safeguards.md](payment-safeguards.md).
+
+## Tự test
+
+1. Xem QR hai lần: cùng link/ảnh, không tạo phiên. Tải PNG để in.
+2. Chờ hơn một phút, tải lại QR: mã không đổi. Hai thiết bị quét cùng bàn: cùng phiên, khác participant.
+3. Đóng phiên rỗng hoặc đã xử lý hết đơn, quét lại QR đã in: phiên mới, cookie khách cũ không đặt được.
+4. Đăng nhập thành viên rồi rời bàn/vào phiên mới: yêu cầu đăng nhập lại. Đăng nhập trong phiên rồi tải lại/quét lại cùng phiên: vẫn đăng nhập.
+5. Bàn ngừng dùng/QR sửa chữ ký: không vào được. Bàn sắp có lịch #10: không tự mở trái lịch.
+6. Thu thiếu/đủ, KDS, gọi thêm và đóng/in hóa đơn như luồng cũ.
+
+PUBLIC_APP_URL phải truy cập được từ thiết bị quét; localhost chỉ dùng trên chính máy tính. QR in dùng lại được nên cần đóng phiên khi nhóm rời quán; link cố định không xác minh hiện diện. Camera/điện thoại và bản in thực cần kiểm thiết bị thật.

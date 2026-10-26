@@ -11,6 +11,8 @@ const schema = new Schema(
     lowStockThreshold: { type: Number, min: 0, default: 0 },
     isActive: { type: Boolean, default: true },
     version: { type: Number, default: 0 },
+    // VND per g/ml/unit; absent means unknown, zero is explicitly free.
+    unitCost: { type: Number, min: 0, max: 10000000, default: undefined },
   },
   { timestamps: true },
 );

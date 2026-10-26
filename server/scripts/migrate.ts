@@ -31,6 +31,8 @@ import '../src/models/Reservation.js';
 import '../src/models/Gift.js';
 import '../src/models/MiniGame.js';
 import '../src/models/Jukebox.js';
+import '../src/models/CupPhoto.js';
+import '../src/models/Freestyle.js';
 import { migratePickupIndexes } from '../src/infrastructure/pickupIndexes.js';
 
 interface Migration {
@@ -40,6 +42,36 @@ interface Migration {
   up: () => Promise<void>;
 }
 const migrations: Migration[] = [
+  {
+    id: '20261023-003-smart-insights-index',
+    description: 'Index completed paid orders for bounded insights samples',
+    checksumSource: 'v1:order-insights-status-payment-created-id',
+    up: async () => {
+      await mongoose.models['Order']!.collection.createIndex(
+        { status: 1, paymentStatus: 1, createdAt: -1, _id: -1 },
+        { name: 'insights_completed_orders' },
+      );
+    },
+  },
+  {
+    id: '20261023-002-freestyle-indexes',
+    description: 'Create approved freestyle settings and idempotent admin save indexes',
+    checksumSource: 'v1:freestyleSettings-singleton,freestyleSave-user-request-unique',
+    up: async () => {
+      await mongoose.models['FreestyleSettings']!.createIndexes();
+      await mongoose.models['FreestyleSave']!.createIndexes();
+    },
+  },
+  {
+    id: '20261023-001-cup-photo-indexes',
+    description: 'Create private cup photo TTL, owner replay/quota and print attempt indexes',
+    checksumSource:
+      'v1:cupPhoto-owner-request-unique-owner-date-expiresTTL,cupPhotoOwner-expiresTTL,cupPrintAttempt-user-request-unique-order-line,order-photo-queue-partial',
+    up: async () => {
+      for (const name of ['CupPhoto', 'CupPhotoOwner', 'CupPrintAttempt', 'Order'])
+        await mongoose.models[name]!.createIndexes();
+    },
+  },
   {
     id: '20261022-003-jukebox-indexes',
     description: 'Create jukebox catalog, singleton, table ballot and replay indexes',

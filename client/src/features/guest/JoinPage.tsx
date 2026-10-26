@@ -43,6 +43,7 @@ export function JoinPage(): JSX.Element {
       qc.removeQueries({ queryKey: ['my-orders'] });
       qc.removeQueries({ queryKey: ['receipt'] });
       qc.removeQueries({ queryKey: ['guest-session'] });
+      await qc.invalidateQueries({ queryKey: ['member'] });
       toast({
         title: joined.created ? 'Đã mở phiên mới cho bàn' : 'Đã vào bàn',
         description: 'Bạn có thể bắt đầu chọn món.',
@@ -83,7 +84,7 @@ export function JoinPage(): JSX.Element {
           <CloudMark className="mb-10 h-24 w-36 text-primary-foreground/70" />
           <p className="g-display max-w-md text-5xl lg:text-6xl">Gọi món tại bàn bằng QR</p>
           <p className="mt-6 max-w-sm text-base leading-relaxed text-primary-foreground/70">
-            Mở camera và quét mã QR đang hiển thị trên màn hình tại bàn. Mã tự đổi mỗi 60 giây.
+            Mở camera và quét mã QR cố định tại bàn để chọn món.
           </p>
         </div>
         <p className="hidden border-t border-primary-foreground/20 pt-6 text-sm text-primary-foreground/70 md:block">
@@ -97,7 +98,7 @@ export function JoinPage(): JSX.Element {
           </span>
           <h1 className="g-display text-[2.5rem]">Quét QR hoặc nhập mã bàn</h1>
           <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-            Mở camera và quét mã QR đang hiển thị trên màn hình tại bàn. Mã tự đổi mỗi 60 giây.
+            Mở camera và quét mã QR cố định tại bàn để chọn món.
           </p>
           <form
             className="mt-8 space-y-5"
@@ -130,14 +131,19 @@ export function JoinPage(): JSX.Element {
           >
             Đặt mang đi / đặt trước
           </Link>
-          <Link to="/reservations" className="mt-3 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted">Đặt bàn</Link>
+          <Link
+            to="/reservations"
+            className="mt-3 block rounded-xl border border-foreground/15 px-4 py-3 text-center text-sm font-semibold hover:bg-muted"
+          >
+            Đặt bàn
+          </Link>
           <details className="mt-6 border-t border-foreground/10 pt-5 text-sm text-muted-foreground">
             <summary className="cursor-pointer rounded font-semibold text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40">
               Mở link vào bàn
             </summary>
             <p className="mt-3 leading-relaxed">
-              Trên màn hình QR tại bàn, bấm “Sao chép link”, rồi dán vào ô Mã QR. Link tự đổi cùng
-              QR.
+              Trên màn hình QR tại bàn, bấm “Sao chép link”, rồi dán vào ô Mã QR. Link giữ nguyên
+              như mã QR đã in tại bàn.
             </p>
           </details>
         </div>

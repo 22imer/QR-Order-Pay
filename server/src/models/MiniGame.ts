@@ -5,6 +5,7 @@ const playerSchema = new Schema(
     publicId: { type: String, required: true },
     participantId: { type: String, required: true },
     name: { type: String, required: true },
+    managedByHost: { type: Boolean, default: false },
   },
   { _id: false },
 );

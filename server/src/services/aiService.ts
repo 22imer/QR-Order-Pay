@@ -259,7 +259,7 @@ function matchesPreferences(p: ProductDoc, input: RecommendInput): boolean {
   return (variant?.price ?? p.basePrice) <= (input.maxBudget ?? Infinity);
 }
 
-function normalizePreferences(input: RecommendInput): RecommendInput {
+export function normalizePreferences(input: RecommendInput): RecommendInput {
   const prompt = input.prompt.toLowerCase();
   const budget = /(?:dưới|tối đa|ngân sách)\s*(\d+(?:[.,]\d+)?)\s*(k|nghìn|ngàn|đ|vnd)?/.exec(
     prompt,

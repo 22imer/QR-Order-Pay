@@ -108,6 +108,59 @@ afterAll(async () => {
 });
 
 describe('table mini game: explicit opt-in and immutable server draw', () => {
+  it('lets the host manage names and spin on one device with replay, duplicate, ownership and immutable roster guards', async () => {
+    const first = await create();
+    const body = { requestId: randomUUID(), expectedVersion: first.version, name: 'Bình' };
+    const added = await actOnGame(a, first.id, 'add-player', body);
+    expect(added.canSpin).toBe(true);
+    expect(added.players[1]).toMatchObject({
+      name: 'Bình',
+      managedByHost: true,
+      eligible: true,
+      isYou: false,
+      isHost: false,
+    });
+    expect((await actOnGame(a, first.id, 'add-player', body)).players).toHaveLength(2);
+    await expect(
+      actOnGame(b, first.id, 'add-player', {
+        ...body,
+        requestId: randomUUID(),
+        expectedVersion: added.version,
+        name: 'Cường',
+      }),
+    ).rejects.toThrow();
+    await expect(
+      actOnGame(a, first.id, 'add-player', {
+        ...body,
+        requestId: randomUUID(),
+        expectedVersion: added.version,
+        name: ' bình ',
+      }),
+    ).rejects.toMatchObject({ code: 'GAME_NAME_TAKEN' });
+    const removed = await actOnGame(a, first.id, 'remove-player', {
+      requestId: randomUUID(),
+      expectedVersion: added.version,
+      playerId: added.players[1]!.id,
+    });
+    expect(removed.canSpin).toBe(false);
+    const again = await actOnGame(a, first.id, 'add-player', {
+      ...body,
+      requestId: randomUUID(),
+      expectedVersion: removed.version,
+    });
+    const spun = await act(first.id, 'spin');
+    expect(spun.players).toHaveLength(2);
+    expect(spun.players.map((p) => p.id)).toContain(spun.winnerId);
+    await expect(
+      actOnGame(a, first.id, 'remove-player', {
+        requestId: randomUUID(),
+        expectedVersion: spun.version,
+        playerId: again.players[1]!.id,
+      }),
+    ).rejects.toMatchObject({ code: 'GAME_NOT_WAITING' });
+    expect(await OrderModel.countDocuments()).toBe(0);
+    expect(await PaymentModel.countDocuments()).toBe(0);
+  });
   it('requires QR capability, no-stores responses, validates body and blocks cross-origin/internal access', async () => {
     expect((await request(app).get('/api/v1/game')).status).toBe(401);
     expect(

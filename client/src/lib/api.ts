@@ -51,6 +51,11 @@ export function generateIdempotencyKey(): string {
   return Array.from(arr, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+export function generateRequestId(): string {
+  const h = generateIdempotencyKey();
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20)}`;
+}
+
 export function vnd(n: number): string {
   return new Intl.NumberFormat('vi-VN').format(n) + '₫';
 }

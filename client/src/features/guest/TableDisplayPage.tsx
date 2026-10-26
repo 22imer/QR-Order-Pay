@@ -35,7 +35,8 @@ export function TableDisplayPage(): JSX.Element {
           headers: { 'X-Table-Display-Token': token },
         });
         const data = dynamicQrResponseSchema.parse(unwrap(response));
-        const deadline = started + data.expiresAt - data.serverTime;
+        const deadline =
+          data.expiresAt === null ? Infinity : started + data.expiresAt - data.serverTime;
         const image = await QRCode.toDataURL(data.url, {
           width: 480,
           margin: 3,
@@ -50,7 +51,8 @@ export function TableDisplayPage(): JSX.Element {
         setError('');
         setQr({ image, tableName: data.tableName, deadline, url: data.url });
         setSeconds(Math.ceil(remaining / 1000));
-        refreshTimer = window.setTimeout(() => void refresh(), remaining);
+        if (Number.isFinite(remaining))
+          refreshTimer = window.setTimeout(() => void refresh(), remaining);
       } catch (cause) {
         if (stopped) return;
         setError(getErrorMessage(cause));
@@ -97,7 +99,11 @@ export function TableDisplayPage(): JSX.Element {
               className="mx-auto w-full max-w-96 rounded-2xl"
             />
             <p className="text-lg">Quét để gọi món · Wi-Fi hoặc 4G</p>
-            <p role="status">Mã đổi sau {seconds} giây</p>
+            <p role="status">
+              {Number.isFinite(seconds)
+                ? `Mã đổi sau ${seconds} giây`
+                : 'QR cố định · Có thể tải ảnh để in tại bàn'}
+            </p>
             <div className="space-y-2">
               <div className="flex flex-wrap justify-center gap-2">
                 <a
@@ -111,6 +117,13 @@ export function TableDisplayPage(): JSX.Element {
                 <Button variant="outline" onClick={() => void copyLink()}>
                   Sao chép link
                 </Button>
+                <a
+                  href={qr.image}
+                  download={`QR-${qr.tableName}.png`}
+                  className="inline-flex items-center rounded-full border px-4 py-2 text-sm font-semibold"
+                >
+                  Tải ảnh QR
+                </a>
               </div>
               <input
                 ref={linkInput}
@@ -121,7 +134,7 @@ export function TableDisplayPage(): JSX.Element {
                 className="w-full rounded-xl border border-foreground/15 bg-card px-3 py-2 text-sm"
               />
               <p className="text-sm text-muted-foreground">
-                Link đổi cùng QR. Mở link để vào bàn trên máy này.
+                Mở link để vào bàn trên máy này. QR cố định giữ nguyên qua các phiên.
               </p>
               {copyMessage ? (
                 <p role="status" className="text-sm">

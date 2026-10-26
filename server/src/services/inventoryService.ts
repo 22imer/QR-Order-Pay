@@ -37,6 +37,7 @@ export function ingredientDto(i: IngredientDoc): IngredientDto {
     isLowStock: i.onHand - i.reserved <= i.lowStockThreshold,
     isActive: i.isActive,
     version: i.version,
+    unitCost: i.unitCost ?? null,
   };
 }
 export async function inventoryChanged(id: string, version: number, session: ClientSession) {
@@ -154,6 +155,7 @@ export async function updateIngredient(id: string, input: IngredientUpdateInput,
           name: input.name,
           isActive: input.isActive,
           lowStockThreshold: stockUnits(input.lowStockThreshold),
+          ...(input.unitCost !== undefined ? { unitCost: input.unitCost } : {}),
         },
         $inc: { version: 1 },
       },
@@ -164,7 +166,16 @@ export async function updateIngredient(id: string, input: IngredientUpdateInput,
         'CONFLICT',
         'Nguyên liệu đã thay đổi hoặc đang giữ cho đơn chưa pha chế. Hãy tải lại.',
       );
-    await log(actorId, 'inventory.ingredientUpdated', id, { isActive: input.isActive }, session);
+    await log(
+      actorId,
+      'inventory.ingredientUpdated',
+      id,
+      {
+        isActive: input.isActive,
+        ...(input.unitCost !== undefined ? { unitCost: input.unitCost } : {}),
+      },
+      session,
+    );
     await inventoryChanged(id, ingredient.version, session);
     return ingredientDto(ingredient);
   });

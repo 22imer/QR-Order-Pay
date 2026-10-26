@@ -139,7 +139,7 @@ export const dynamicQrResponseSchema = z.object({
   tableId: z.string(),
   tableName: z.string(),
   url: z.string().url(),
-  expiresAt: z.number().int(),
+  expiresAt: z.number().int().nullable(),
   serverTime: z.number().int(),
 });
 export type DynamicQrResponse = z.infer<typeof dynamicQrResponseSchema>;
@@ -295,6 +295,18 @@ export const orderSchema = z.object({
 const orderDtoItemSchema = orderItemSchema.extend({
   note: z.string(),
   toppingNamesSnapshot: z.array(z.string()),
+  hasCupPhoto: z.boolean().optional(),
+  freestyle: z
+    .object({
+      name: z.string(),
+      instructions: z.string(),
+      caffeine: z.boolean().nullable(),
+      dairy: z.boolean().nullable(),
+      components: z.array(
+        z.object({ name: z.string(), unit: z.enum(['g', 'ml', 'unit']), quantity: z.number() }),
+      ),
+    })
+    .optional(),
   variantNameSnapshot: z.string(),
 });
 const orderDtoBaseSchema = z.object({
@@ -385,6 +397,11 @@ export const placeOrderRequestSchema = z.object({
         toppingIds: z.array(z.string()),
         note: z.string().max(280).optional(),
         quantity: z.number().int().positive().max(50),
+        freestyleToken: z.string().min(20).max(8192).optional(),
+        cupPhotoId: z
+          .string()
+          .regex(/^[a-f\d]{24}$/i)
+          .optional(),
       }),
     )
     .min(1),

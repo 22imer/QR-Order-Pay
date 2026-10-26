@@ -16,6 +16,7 @@ import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { MenuPhoto } from '../guest/MenuPhoto';
 import type { ReactNode } from 'react';
+import { FreestylePanel } from '../freestyle/FreestylePanel';
 import {
   ProductDetailModal,
   type Product as MenuProduct,
@@ -63,6 +64,7 @@ const PRESETS = [
 ];
 
 interface Props {
+  freestyleContext?: 'TABLE' | 'PICKUP';
   open: boolean;
   onOpenChange: (open: boolean) => void;
   products: MenuProduct[];
@@ -77,7 +79,9 @@ export function AISheet({
   products,
   toppings = [],
   onAdd,
+  freestyleContext,
 }: Props): JSX.Element {
+  const [freestyle, setFreestyle] = useState(false);
   useDocumentTitle('AI Barista');
   const guest = useGuestContext();
   const needsTable = !onAdd && !guest?.tableName;
@@ -143,142 +147,178 @@ export function AISheet({
         className="g-sheet ai-sheet"
       >
         <div className="space-y-4">
-          {needsTable ? (
-            <p className="text-sm text-muted-foreground">
-              <Link to="/t" className="underline">
-                Quét QR để dùng tại bàn
-              </Link>
-            </p>
-          ) : null}
-          <div className="ai-preferences">
-            <label className="block text-xs font-semibold">
-              Ngân sách / món (đ)
-              <Input
-                type="number"
-                min="1000"
-                step="1000"
-                value={budget}
-                onChange={(e) => setBudget(e.target.value)}
-                placeholder="Ví dụ: 50000"
-                className="mt-2 h-11 rounded-xl font-normal"
-              />
-            </label>
-            <div className="ai-preference-toggles">
-              <ToggleCheck checked={noCaffeine} onChange={setNoCaffeine}>
-                Không caffeine
-              </ToggleCheck>
-              <ToggleCheck checked={noDairy} onChange={setNoDairy}>
-                Không sữa
-              </ToggleCheck>
-            </div>
-          </div>
-          <label className="block text-xs font-semibold">
-            Khẩu vị
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              maxLength={500}
-              aria-label="Mô tả khẩu vị"
-              className="ai-prompt mt-2 w-full rounded-2xl border border-foreground/15 p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
-              placeholder="Bạn thích vị gì?"
-            />
-          </label>
-          <div className="ai-presets">
-            {PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => setPrompt(p.prompt)}
-                aria-pressed={prompt === p.prompt}
-                className="ai-preset"
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          <Button
-            size="lg"
-            className="w-full"
-            onClick={() => void ask()}
-            disabled={busy || prompt.trim().length === 0 || needsTable}
-          >
-            {busy ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="h-4 w-4 animate-spin motion-reduce:animate-none"
-              />
-            ) : (
-              <Send aria-hidden="true" className="h-4 w-4" />
-            )}
-            {busy ? 'AI đang phản hồi...' : 'Hỏi AI'}
-          </Button>
-
-          {response ? (
-            <div
-              ref={resultsRef}
-              className="space-y-3 border-t border-foreground/10 pt-4"
-              aria-live="polite"
+          <div role="tablist" aria-label="Kiểu gợi ý" className="flex gap-2">
+            <Button
+              role="tab"
+              aria-selected={!freestyle}
+              variant={freestyle ? 'outline' : 'primary'}
+              onClick={() => setFreestyle(false)}
             >
-              <div className="ai-result-heading">
-                <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
-                <p className="flex-1 text-sm">{response.message}</p>
-                <Badge tone={response.mode === 'llm' ? 'success' : 'warning'}>
-                  {response.mode === 'llm' ? 'AI' : 'Gợi ý theo menu'}
-                </Badge>
-              </div>
-              <ul className="space-y-2">
-                {response.recommendations
-                  .filter((rec) =>
-                    products.some(
-                      (product) => product._id === rec.productId && product.isAvailable,
-                    ),
-                  )
-                  .map((rec) => (
-                    <li key={`${rec.productId}-${rec.variantId ?? ''}`}>
-                      <button
-                        type="button"
-                        className="ai-recommendation"
-                        onClick={() => addRec(rec)}
-                      >
-                        <MenuPhoto source={rec.image} className="h-16 w-16 shrink-0 rounded-xl" />
-                        <span className="min-w-0 flex-1">
-                          <span className="g-title block">{rec.name}</span>
-                          <span className="block text-sm text-muted-foreground">{rec.reason}</span>
-                          <span className="mt-1 block text-xs text-muted-foreground">
-                            {[
-                              rec.evidence.variant ? `Size ${rec.evidence.variant}` : null,
-                              rec.evidence.caffeine === false
-                                ? 'Không caffeine'
-                                : rec.evidence.caffeine === true
-                                  ? 'Có caffeine'
-                                  : 'Chưa rõ caffeine',
-                              rec.evidence.dairy === false
-                                ? 'Không sữa'
-                                : rec.evidence.dairy === true
-                                  ? 'Có sữa'
-                                  : 'Chưa rõ sữa',
-                            ]
-                              .filter(Boolean)
-                              .join(', ')}
-                          </span>
-                          <span className="mt-2 block text-sm font-semibold tabular-nums text-primary">
-                            {vnd(rec.unitPrice)}
-                          </span>
-                        </span>
-                        <ArrowUpRight
-                          aria-hidden="true"
-                          className="mt-0.5 h-4 w-4 shrink-0 text-primary"
-                        />
-                      </button>
-                    </li>
-                  ))}
-              </ul>
-              {response.followUpQuestion ? (
-                <p className="text-sm text-muted-foreground">{response.followUpQuestion}</p>
+              Từ thực đơn
+            </Button>
+            <Button
+              role="tab"
+              aria-selected={freestyle}
+              variant={freestyle ? 'primary' : 'outline'}
+              onClick={() => setFreestyle(true)}
+            >
+              Freestyle
+            </Button>
+          </div>
+          {freestyle ? (
+            <FreestylePanel
+              context={freestyleContext ?? (onAdd ? 'PICKUP' : 'TABLE')}
+              onAdd={onAdd}
+              onAdded={() => {
+                toast({ title: 'Đã thêm công thức vào giỏ', tone: 'success' });
+                onOpenChange(false);
+              }}
+            />
+          ) : (
+            <>
+              {needsTable ? (
+                <p className="text-sm text-muted-foreground">
+                  <Link to="/t" className="underline">
+                    Quét QR để dùng tại bàn
+                  </Link>
+                </p>
               ) : null}
-            </div>
-          ) : null}
+              <div className="ai-preferences">
+                <label className="block text-xs font-semibold">
+                  Ngân sách / món (đ)
+                  <Input
+                    type="number"
+                    min="1000"
+                    step="1000"
+                    value={budget}
+                    onChange={(e) => setBudget(e.target.value)}
+                    placeholder="Ví dụ: 50000"
+                    className="mt-2 h-11 rounded-xl font-normal"
+                  />
+                </label>
+                <div className="ai-preference-toggles">
+                  <ToggleCheck checked={noCaffeine} onChange={setNoCaffeine}>
+                    Không caffeine
+                  </ToggleCheck>
+                  <ToggleCheck checked={noDairy} onChange={setNoDairy}>
+                    Không sữa
+                  </ToggleCheck>
+                </div>
+              </div>
+              <label className="block text-xs font-semibold">
+                Khẩu vị
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={3}
+                  maxLength={500}
+                  aria-label="Mô tả khẩu vị"
+                  className="ai-prompt mt-2 w-full rounded-2xl border border-foreground/15 p-3 text-sm font-normal focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  placeholder="Bạn thích vị gì?"
+                />
+              </label>
+              <div className="ai-presets">
+                {PRESETS.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    onClick={() => setPrompt(p.prompt)}
+                    aria-pressed={prompt === p.prompt}
+                    className="ai-preset"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <Button
+                size="lg"
+                className="w-full"
+                onClick={() => void ask()}
+                disabled={busy || prompt.trim().length === 0 || needsTable}
+              >
+                {busy ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="h-4 w-4 animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Send aria-hidden="true" className="h-4 w-4" />
+                )}
+                {busy ? 'AI đang phản hồi...' : 'Hỏi AI'}
+              </Button>
+
+              {response ? (
+                <div
+                  ref={resultsRef}
+                  className="space-y-3 border-t border-foreground/10 pt-4"
+                  aria-live="polite"
+                >
+                  <div className="ai-result-heading">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+                    <p className="flex-1 text-sm">{response.message}</p>
+                    <Badge tone={response.mode === 'llm' ? 'success' : 'warning'}>
+                      {response.mode === 'llm' ? 'AI' : 'Gợi ý theo menu'}
+                    </Badge>
+                  </div>
+                  <ul className="space-y-2">
+                    {response.recommendations
+                      .filter((rec) =>
+                        products.some(
+                          (product) => product._id === rec.productId && product.isAvailable,
+                        ),
+                      )
+                      .map((rec) => (
+                        <li key={`${rec.productId}-${rec.variantId ?? ''}`}>
+                          <button
+                            type="button"
+                            className="ai-recommendation"
+                            onClick={() => addRec(rec)}
+                          >
+                            <MenuPhoto
+                              source={rec.image}
+                              className="h-16 w-16 shrink-0 rounded-xl"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="g-title block">{rec.name}</span>
+                              <span className="block text-sm text-muted-foreground">
+                                {rec.reason}
+                              </span>
+                              <span className="mt-1 block text-xs text-muted-foreground">
+                                {[
+                                  rec.evidence.variant ? `Size ${rec.evidence.variant}` : null,
+                                  rec.evidence.caffeine === false
+                                    ? 'Không caffeine'
+                                    : rec.evidence.caffeine === true
+                                      ? 'Có caffeine'
+                                      : 'Chưa rõ caffeine',
+                                  rec.evidence.dairy === false
+                                    ? 'Không sữa'
+                                    : rec.evidence.dairy === true
+                                      ? 'Có sữa'
+                                      : 'Chưa rõ sữa',
+                                ]
+                                  .filter(Boolean)
+                                  .join(', ')}
+                              </span>
+                              <span className="mt-2 block text-sm font-semibold tabular-nums text-primary">
+                                {vnd(rec.unitPrice)}
+                              </span>
+                            </span>
+                            <ArrowUpRight
+                              aria-hidden="true"
+                              className="mt-0.5 h-4 w-4 shrink-0 text-primary"
+                            />
+                          </button>
+                        </li>
+                      ))}
+                  </ul>
+                  {response.followUpQuestion ? (
+                    <p className="text-sm text-muted-foreground">{response.followUpQuestion}</p>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
         </div>
       </Modal>
       <ProductDetailModal

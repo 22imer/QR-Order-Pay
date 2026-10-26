@@ -233,8 +233,8 @@ export function MemberPage(): JSX.Element {
           </p>
           <p>Đăng nhập trước khi đặt để tích điểm. Đơn cũ không được cộng lại.</p>
           <p>
-            Ghi nhớ đăng nhập 14 ngày, dùng chung tại bàn và mang đi. Rời bàn không đăng xuất thành
-            viên.
+            Đăng nhập khi muốn dùng quyền lợi thành viên. Vào phiên bàn mới hoặc rời bàn sẽ đăng
+            xuất; không ghi nhớ tài khoản cho lần vào bàn sau.
           </p>
           <p>SĐT là tên đăng nhập, chưa xác minh qua SMS.</p>
         </div>

@@ -250,9 +250,9 @@ function AdminQuickLinks(): JSX.Element {
           <QrCode className="h-6 w-6" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-2xl font-semibold">Bàn & QR động</span>
+          <span className="block font-display text-2xl font-semibold">Bàn & QR tĩnh</span>
           <span className="mt-2 block text-xs leading-relaxed text-primary-foreground/70">
-            Cấp liên kết riêng cho màn hình tại bàn. Màn hình tự đổi QR mỗi 60 giây.
+            Xem và tải QR cố định để in tại bàn hoặc chia sẻ link vào bàn.
           </span>
         </span>
         <ArrowUpRight className="h-4 w-4 shrink-0" />

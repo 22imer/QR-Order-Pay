@@ -127,6 +127,28 @@ afterAll(async () => {
   await repl.stop();
 });
 describe('jukebox table ballots and exclusive counter player', () => {
+  it('accepts shared YouTube URLs, keeps them private and selects them through the existing leased queue', async () => {
+    for (const audioUrl of [
+      'https://youtu.be/M7lc1UVf-VE?si=share',
+      'https://www.youtube.com/watch?v=M7lc1UVf-VE&list=ignored',
+      'https://www.youtube.com/shorts/M7lc1UVf-VE',
+    ]) {
+      const saved = await saveJukeboxTrack(user, null, track({ audioUrl }));
+      expect((await JukeboxTrackModel.findById(saved.id))?.audioUrl).toBe(audioUrl);
+      await choose(a, saved.id);
+    }
+    expect(JSON.stringify(await jukeboxFeed(a))).not.toContain('youtu');
+    await leaseJukebox(user, 'claim', { deviceId: device });
+    const selected = await command('next');
+    expect(selected.current?.audioUrl).toContain('youtube.com/shorts/');
+    for (const audioUrl of [
+      'https://youtube.com.evil.test/watch?v=M7lc1UVf-VE',
+      'https://youtu.be/invalid',
+      'javascript:alert(1)',
+      'https://open.spotify.com/track/123',
+    ])
+      await expect(saveJukeboxTrack(user, null, track({ audioUrl }))).rejects.toThrow();
+  });
   it('requires QR, guest CSRF, role separation, internal portal isolation and no-store', async () => {
     expect((await request(app).get('/api/v1/jukebox')).status).toBe(401);
     expect((await request(app).get('/api/v1/jukebox').set('Cookie', 'mc_member=only')).status).toBe(
