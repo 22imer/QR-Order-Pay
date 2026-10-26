@@ -18,6 +18,7 @@ export const gameCreateSchema = z
 export const gameCommandSchema = z
   .object({ requestId: z.string().uuid(), expectedVersion: z.number().int().nonnegative() })
   .strict();
+export const gameContinueSchema = gameCommandSchema.extend({ removeWinner: z.boolean() }).strict();
 export const gameJoinSchema = gameCommandSchema.extend({ name: gameNameSchema }).strict();
 export const gameRemovePlayerSchema = gameCommandSchema
   .extend({ playerId: z.string().uuid() })

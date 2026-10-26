@@ -12,7 +12,13 @@ import { useShakeToSpin } from './gameMotion';
 
 type Pending = {
   url: string;
-  payload: { requestId: string; expectedVersion?: number; name?: string; playerId?: string };
+  payload: {
+    requestId: string;
+    expectedVersion?: number;
+    name?: string;
+    playerId?: string;
+    removeWinner?: boolean;
+  };
 };
 function uuid() {
   const h = generateIdempotencyKey();
@@ -22,7 +28,7 @@ function loadPending(key: string): Pending | null {
   try {
     const p = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Pending | null;
     return p &&
-      /^\/game(?:\/[a-f\d]{24}\/(?:join|leave|spin|cancel|add-player|remove-player))?$/.test(
+      /^\/game(?:\/[a-f\d]{24}\/(?:join|leave|spin|cancel|add-player|remove-player|continue))?$/.test(
         p.url,
       ) &&
       typeof p.payload?.requestId === 'string'
@@ -103,6 +109,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');
   const [extraName, setExtraName] = useState('');
+  const [removeWinner, setRemoveWinner] = useState(false);
   const inFlight = useRef(false);
   const feed = useQuery({
     queryKey: ['game', owner],
@@ -124,6 +131,11 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
     now = localNow + (feed.data?.offset ?? 0),
     round = feed.data?.current ?? null;
   const spinning = !!round?.revealsAt && now < round.revealsAt && round.phase === 'SPINNING';
+  useEffect(() => {
+    setRemoveWinner(
+      pending?.url === `/game/${round?.id}/continue` ? !!pending.payload.removeWinner : false,
+    );
+  }, [round?.id, pending?.url, pending?.payload.removeWinner]);
   useEffect(() => setAnimate(spinning && !reduced), [spinning, reduced]);
   const locked = busy || !!pending,
     open = !!feed.data?.open;
@@ -157,7 +169,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
       setBusy(false);
     }
   }
-  function act(kind: 'join' | 'leave' | 'spin' | 'cancel') {
+  function act(kind: 'join' | 'leave' | 'spin' | 'cancel' | 'continue') {
     if (!round) return;
     shake.stop();
     void submit({
@@ -166,6 +178,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
         requestId: uuid(),
         expectedVersion: round.version,
         ...(kind === 'join' ? { name } : {}),
+        ...(kind === 'continue' ? { removeWinner } : {}),
       },
     });
   }
@@ -226,6 +239,49 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
                 {winner.name}
                 {winner.isYou ? ' · Bạn' : ''}
               </p>
+            </div>
+          )}
+          {winner && round?.isHost && (
+            <div className="space-y-3 rounded-2xl border border-primary/30 p-4">
+              <p className="font-semibold">Quay tiếp với danh sách hiện tại</p>
+              <label className="flex items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={removeWinner}
+                  disabled={locked || !open}
+                  onChange={(event) => setRemoveWinner(event.target.checked)}
+                />
+                <span>Xóa {winner.name} khỏi lượt tiếp theo</span>
+              </label>
+              <p className="text-sm text-muted-foreground">
+                Không chọn xóa thì mọi người tiếp tục tham gia, kể cả người vừa trúng. Kết quả các
+                lượt trước vẫn được giữ.
+              </p>
+              {removeWinner && winner.isHost && (
+                <p className="text-sm text-muted-foreground">
+                  Bạn vẫn là chủ trì dù không còn tên trong vòng quay.
+                </p>
+              )}
+              {round.players.length - (removeWinner ? 1 : 0) < 2 && (
+                <p className="text-sm text-muted-foreground">
+                  Còn ít hơn 2 người. Chuẩn bị lượt tiếp theo rồi thêm tên trước khi quay.
+                </p>
+              )}
+              <Button
+                className="w-full"
+                disabled={!mayCreate || feed.isError}
+                onClick={() => act('continue')}
+              >
+                {round.players.length - (removeWinner ? 1 : 0) < 2
+                  ? 'Chuẩn bị lượt tiếp theo'
+                  : 'Quay tiếp'}
+              </Button>
+              {(feed.data?.nextRoundAt ?? 0) > now && (
+                <p className="text-xs">
+                  Có thể quay tiếp sau {Math.ceil((feed.data!.nextRoundAt - now) / 1000)} giây.
+                </p>
+              )}
             </div>
           )}
           {round?.isHost && waiting && (
@@ -319,7 +375,9 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
                 void submit({
                   url: `/game/${round.id}/add-player`,
                   payload: { requestId: uuid(), expectedVersion: round.version, name: extraName },
-                }).then((ok) => { if (ok) setExtraName(''); });
+                }).then((ok) => {
+                  if (ok) setExtraName('');
+                });
               }}
             >
               <label className="block font-semibold">
@@ -365,6 +423,7 @@ function GameRoom({ owner, tableName }: { owner: string; tableName: string }): J
           )}
           {!waiting && (
             <Button
+              variant={finished ? 'outline' : 'primary'}
               className="w-full"
               disabled={!mayCreate || !name.trim() || feed.isError}
               onClick={() => void submit({ url: '/game', payload: { requestId: uuid(), name } })}

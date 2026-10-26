@@ -699,6 +699,36 @@ paths:
         '404': { description: Vòng không thuộc phiên }
         '409': { description: Version/state/key thay đổi hoặc thiếu người hợp lệ }
         '422': { description: Input không hợp lệ }
+  /game/{id}/continue:
+    post:
+      summary: Chủ trì quay tiếp và tùy chọn loại người vừa trúng
+      description: >-
+        Cookie QR/CSRF/no-store và phiên OPEN. Chỉ chủ trì của vòng mới nhất đã reveal và qua cooldown 5 giây.
+        Tạo một vòng riêng, giữ nguyên kết quả/snapshot cũ và mang danh sách còn hợp lệ sang; removeWinner=true chỉ loại winner của vòng nguồn.
+        Có ít nhất 2 người thì server chốt DRAWN/start/reveal mới ngay, ít hơn thì tạo WAITING để thêm người trước khi quay.
+        Chủ trì giữ quyền kể cả khi bị loại khỏi danh sách. Unique host/session/requestId và hash bao gồm vòng nguồn/expectedVersion/removeWinner,
+        retry hoặc tranh cùng key không tạo/quay trùng. Khóa phiên, version/latest guard, audit/outbox cùng transaction; giới hạn 6 vòng/phút như tạo mới.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[a-fA-F0-9]{24}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [requestId, expectedVersion, removeWinner]
+              properties:
+                requestId: { type: string, format: uuid }
+                expectedVersion: { type: integer, minimum: 0 }
+                removeWinner: { type: boolean }
+      responses:
+        '200': { description: GameRound mới DRAWN hoặc WAITING, hoặc replay đúng vòng đã tạo }
+        '401': { description: Cần QR }
+        '403': { description: Không phải chủ trì/OPEN hoặc CSRF }
+        '404': { description: Vòng không thuộc phiên }
+        '409': { description: Version/latest/state/key/cooldown/rate conflict }
+        '422': { description: Input không hợp lệ }
   /game/{id}/cancel:
     post:
       summary: Chủ vòng hủy phòng chờ

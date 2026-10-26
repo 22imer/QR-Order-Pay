@@ -1,6 +1,15 @@
 # Bộ nhớ dự án — Fantastic cafe
 
-Cập nhật: 26/10/2026.
+Cập nhật: 27/10/2026.
+
+## Vòng quay nhiều lượt, tùy chọn giữ hoặc xóa người trúng — 27/10/2026
+
+- User muốn quay lại nhiều lần và chọn giữ/xóa người trúng sau mỗi lượt. Đã thêm checkbox **Xóa <tên> khỏi lượt tiếp theo**, mặc định bỏ chọn, chỉ chủ trì thấy sau reveal. Qua cooldown 5 giây bấm **Quay tiếp**: cùng danh sách còn hiệu lực, không nhập tên lại; tick thì chỉ loại winner vừa rồi. Mỗi lượt tạo bản DRAWN mới/RNG server mới, kết quả/snapshot cũ không đổi, lịch sử vẫn đọc được. Checkbox reset mỗi kết quả, nhưng giữ đúng lựa chọn/payload nếu request pending/reload/retry.
+- Khi còn dưới 2 người, nút **Chuẩn bị lượt tiếp theo** tạo WAITING với những người còn lại để thêm tên rồi Quay nào. Chủ trì vẫn điều khiển dù chính mình bị loại; không tự thêm lại host. Tạo vòng mới riêng vẫn mở lobby chỉ có tên chủ như cũ. Khách khác cùng bàn theo dõi chung kết quả; quyền thêm tên/quay/lắc/QR giữ nguyên.
+- POST `/game/:id/continue` strict `{requestId,expectedVersion,removeWinner}` + QR/CSRF/limiter/no-store; kiểm owner/session OPEN/latest nguồn/version/reveal/cooldown/rate. Khóa TableSession tuần tự hóa các continuation/create/close; clone roster lọc guest revoked/expired, tên tay theo quyền host. Unique create index có sẵn và hash source/kind/body làm journal kết quả; retry/cùng key trả đúng vòng mới, đổi option/key cũ conflict, hai key tranh chỉ một tạo được. Audit game.continued có source/option + outbox session refresh trong cùng transaction. Refactor guard tạo vòng dùng chung, giữ 6 vòng/phút và cooldown hiện tại. Không đổi model/index/migration hoặc dữ liệu tiền.
+- **655 tests PASS =106 unit +339 integration +210 client**. `.cache/game-repeat-{unit,integration-all,client-all}.log`. Mới7integration giữ/xóa/repeat/replay/race/immutability/host bị loại/lobby thiếu người/eligible/ownership/closed/latest/cooldown/strictCSRF/rollback/no-finance,4client defaultkeep/remove/reset/pendingreloadexactretry/hostreveal/closed/min2. Focused27integration+19client PASS. Typecheck/lint+boundaries/build/Docker server-web/OpenAPI continue path/diff-check PASS.
+- Lightpanda hai browser/DB tạm PASS đúng timing thật: host thêm2tên/3người → spin → giữ và quay tiếp → loại winner và quay tiếp → reload giữa lượt3 giữ exactresult/noPOST → loại còn1 mở WAITING → thêm tên/quay → tổng4record/3continuation, observer đồng bộ,0Order/Payment/JSexception/5xx. `.cache/game-repeat-lightpanda.log`. **DOM/trạng thái/timestamp, chưa nghiệm thu bố cục/chuyển động trực quan/cảm biến điện thoại thật**; không dùng Chrome/Chromium.
+- Đã deploy local **PWA v38**, commonNode4API/3worker/migrate +web healthy, migrate skip; giữ8080/8081/8082/tunnel tắt. Local Lightpanda read-only gates/portal/QR/Jukebox/latte/reservation/pickup/workforce/logout PASS,0businesswrite;35collection hash/count không đổi. `.cache/game-repeat-{deploy,local-smoke,business-before,business-after}.*`. Backup `.cache/maycafe-before-game-repeat-20261027.archive.gz`, SHA256 `76f39c16b2a3d0fd650c222897e9ec63dfc5342b682668b7b481e16436e42e09`. Không seed/reset/live game fixture/secretchange. Browser/relay tạm dọn. Chưa commit/push phần này sau HEAD `55102d0` đã push trước đó.
 
 ## Checkpoint Git: latte art và các cải tiến Staff — 26/10/2026
 

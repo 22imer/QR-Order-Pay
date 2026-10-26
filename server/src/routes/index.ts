@@ -317,6 +317,7 @@ apiRouter.post('/admin/jukebox/tracks', jukebox.saveTrack);
 apiRouter.put('/admin/jukebox/tracks/:id', jukebox.saveTrack);
 apiRouter.get('/game', loadGuest, requireGuest, miniGame.feed);
 apiRouter.post('/game', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.create);
+apiRouter.post('/game/:id/continue', loadGuest, requireGuest, guestCsrfGuard, gameLimiter, miniGame.continueRound);
 for (const kind of ['join', 'leave', 'spin', 'cancel', 'add-player', 'remove-player'] as const)
   apiRouter.post(
     `/game/:id/${kind}`,

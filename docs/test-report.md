@@ -1,4 +1,11 @@
-# Test report — cập nhật 23/10/2026
+# Test report — cập nhật 27/10/2026
+
+## Vòng quay tiếp và giữ/xóa người trúng — 27/10/2026
+
+- **655 tests PASS =106unit +339integration +210client**, `.cache/game-repeat-{unit,integration-all,client-all}.log`. Mới7integration và4client kiểm lượt mới giữ roster/loại đúng winner, source bất biến, RNG/replay/cạnh tranh, host bị loại vẫn có quyền, lobby khi <2, capability hết hạn, source latest/version/OPEN/cooldown, strict CSRF/ownership/privacy, rollback/audit/outbox/no money; UI mặc định giữ, reset mỗi kết quả, pending reload đúng removeWinner/key/version và phân quyền. Typecheck/lint/boundaries/build/Docker/OpenAPI PASS.
+- Lightpanda2browser/Mongo tạm PASS 4 lượt theo mốc thời gian thật:3tên → quay → giữ/continue → xóa winner/continue → reload lượt3 cùng kết quả/không POST thêm → xóa còn1/lobby → thêm tên/quay. Observer cùng bảng kết quả, source lịch sử không sửa, đúng3request continue,0Order/Payment/JSexception/5xx. `.cache/game-repeat-lightpanda.log`. **Chỉ DOM/trạng thái/timestamp; chưa nghiệm thu hiệu ứng chuyển động/bố cục hay cảm biến trên điện thoại thật.**
+- Local PWA38/stack healthy/migrate skip, Lightpanda read-only regression 3portal/QR/Jukebox/latte/reservation/pickup/workforce/logout PASS.35collection nghiệp vụ hash/count không đổi, không tạo game/đơn/thanh toán thử trên quán. `.cache/game-repeat-{deploy,local-smoke}.log`.
+- Test tay: Ctrl+F5 → Vòng quay → tạo/thêm ít nhất2tên → Quay nào → sau kết quả chọn/bỏ chọn **Xóa <tên> khỏi lượt tiếp theo** → chờ cooldown5giây → **Quay tiếp**. Kiểm danh sách kế tiếp đúng lựa chọn và lịch sử cũ giữ nguyên. Nếu còn1người dùng **Chuẩn bị lượt tiếp theo**, thêm tên rồi quay; thử cả trường hợp người trúng bị xóa là chủ trì.
 
 ## Thông báo điều hướng, mang đi sau thu tiền và chọn bài Jukebox — 26/10/2026
 

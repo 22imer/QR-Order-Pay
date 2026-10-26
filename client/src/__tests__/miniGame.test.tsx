@@ -128,6 +128,141 @@ afterEach(() => {
 });
 
 describe('table game UI and shared result', () => {
+  it('keeps the names by default and starts another draw without creating an empty lobby', async () => {
+    mock.round = round({
+      phase: 'FINISHED',
+      canSpin: false,
+      winnerId: 'public-b',
+      spinStartsAt: Date.now() - 11000,
+      revealsAt: Date.now() - 6000,
+    });
+    mock.post.mockImplementation(async (_url: string, payload: { removeWinner: boolean }) => {
+      mock.round = round({
+        id: '507f1f77bcf86cd799439013',
+        phase: 'SPINNING',
+        canSpin: false,
+        winnerId: 'public-a',
+        spinStartsAt: Date.now() + 500,
+        revealsAt: Date.now() + 5000,
+      });
+      expect(payload.removeWinner).toBe(false);
+      return response(mock.round);
+    });
+    mount();
+    const remove = await screen.findByRole('checkbox', { name: 'Xóa Bình khỏi lượt tiếp theo' });
+    expect((remove as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Quay tiếp' }));
+    await waitFor(() =>
+      expect(mock.post).toHaveBeenCalledWith(
+        `/game/${rid}/continue`,
+        expect.objectContaining({ expectedVersion: 1, removeWinner: false }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Quay tiếp' })).toBeNull());
+    expect(mock.post).toHaveBeenCalledOnce();
+    expect(mock.round.players).toHaveLength(2);
+  });
+  it('can exclude a winner, resets the option for each new result and prepares a lobby if one name remains', async () => {
+    const players = [
+      ...round().players,
+      { id: 'public-c', name: 'Chi', isYou: false, isHost: false, eligible: true },
+    ];
+    mock.round = round({
+      players,
+      phase: 'FINISHED',
+      canSpin: false,
+      winnerId: 'public-b',
+      revealsAt: Date.now() - 6000,
+      spinStartsAt: Date.now() - 11000,
+    });
+    mock.post.mockImplementation(async (_url: string, payload: { removeWinner: boolean }) => {
+      const roster = mock.round!.players.filter(
+        (p) => !payload.removeWinner || p.id !== mock.round!.winnerId,
+      );
+      mock.round = round({
+        id: '507f1f77bcf86cd799439013',
+        players: roster,
+        phase: 'FINISHED',
+        canSpin: false,
+        winnerId: 'public-c',
+        revealsAt: Date.now() - 6000,
+        spinStartsAt: Date.now() - 11000,
+      });
+      return response(mock.round);
+    });
+    mount();
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Xóa Bình khỏi lượt tiếp theo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Quay tiếp' }));
+    const nextChoice = await screen.findByRole('checkbox', { name: 'Xóa Chi khỏi lượt tiếp theo' });
+    await waitFor(() => expect((nextChoice as HTMLInputElement).checked).toBe(false));
+    expect(mock.round.players.map((p) => p.name)).toEqual(['An', 'Chi']);
+    fireEvent.click(nextChoice);
+    expect(screen.getByRole('button', { name: 'Chuẩn bị lượt tiếp theo' })).toBeTruthy();
+    mock.post.mockImplementation(async () => {
+      mock.round = round({
+        id: '507f1f77bcf86cd799439014',
+        players: [players[0]!],
+        canSpin: false,
+      });
+      return response(mock.round);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Chuẩn bị lượt tiếp theo' }));
+    await screen.findByLabelText('Tên người chơi thêm');
+    expect(screen.getByRole('button', { name: 'Quay nào!' }).hasAttribute('disabled')).toBe(true);
+    expect(mock.post.mock.calls[0]![1]).toMatchObject({ removeWinner: true });
+    expect(mock.post.mock.calls[1]![1]).toMatchObject({ removeWinner: true });
+  });
+  it('restores an uncertain repeat with its winner-removal choice and retries the same request after reload', async () => {
+    mock.round = round({
+      phase: 'FINISHED',
+      canSpin: false,
+      winnerId: 'public-b',
+      revealsAt: Date.now() - 6000,
+      spinStartsAt: Date.now() - 11000,
+    });
+    mock.post.mockRejectedValue({
+      isAxiosError: true,
+      message: 'offline',
+      response: { status: 504 },
+    });
+    const first = mount();
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Xóa Bình khỏi lượt tiếp theo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chuẩn bị lượt tiếp theo' }));
+    await screen.findByRole('button', { name: 'Thử lại yêu cầu' });
+    const original = mock.post.mock.calls[0]!;
+    expect(screen.getByRole('checkbox').hasAttribute('disabled')).toBe(true);
+    first.unmount();
+    qc.clear();
+    mount();
+    const choice = await screen.findByRole('checkbox', { name: 'Xóa Bình khỏi lượt tiếp theo' });
+    await waitFor(() => expect((choice as HTMLInputElement).checked).toBe(true));
+    mock.post.mockResolvedValue(response(mock.round));
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại yêu cầu' }));
+    await waitFor(() => expect(mock.post.mock.calls[1]).toEqual(original));
+  });
+  it('shows repeat choices only to the host after reveal and disables them when the table closes', async () => {
+    mock.round = round({
+      phase: 'FINISHED',
+      canSpin: false,
+      isHost: false,
+      winnerId: 'public-b',
+      revealsAt: Date.now() - 6000,
+      spinStartsAt: Date.now() - 11000,
+    });
+    mount();
+    await screen.findByText('Đã có kết quả!');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    mock.round = { ...mock.round, isHost: true, phase: 'SPINNING', revealsAt: Date.now() + 30000 };
+    act(() => mock.events.get('game.changed')?.());
+    await screen.findByText('Cả bàn cùng chờ kết quả…');
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    mock.open = false;
+    mock.round = { ...mock.round, phase: 'FINISHED', revealsAt: Date.now() - 6000 };
+    act(() => mock.events.get('game.changed')?.());
+    await screen.findByRole('checkbox');
+    expect(screen.getByRole('button', { name: 'Quay tiếp' }).hasAttribute('disabled')).toBe(true);
+    expect(mock.post).not.toHaveBeenCalled();
+  });
   it('lets a host add and remove names without requiring another device and hides management from other players', async () => {
     mock.round = round();
     const view = mount();

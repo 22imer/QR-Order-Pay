@@ -9,6 +9,7 @@ import {
   GAME_COOLDOWN_MS,
   gameCreateSchema,
   gameCommandSchema,
+  gameContinueSchema,
   gameJoinSchema,
   gameRemovePlayerSchema,
   type GameRound,
@@ -50,6 +51,7 @@ async function changed(
   action: string,
   actor: GameActor | null,
   session: ClientSession,
+  metadata: Record<string, unknown> = {},
 ) {
   await auditRepository.log(
     {
@@ -58,7 +60,7 @@ async function changed(
       action: `game.${action}`,
       entityType: 'MiniGameRound',
       entityId: round.id,
-      metadata: { playerCount: round.players.length },
+      metadata: { playerCount: round.players.length, ...metadata },
     },
     session,
   );
@@ -151,6 +153,38 @@ export async function gameFeed(actor: GameActor): Promise<GameFeed> {
     open: tableSession.status === 'OPEN',
   };
 }
+async function prepareNewRound(actor: GameActor, session: ClientSession, now: number) {
+  const waiting = await MiniGameRoundModel.findOne({
+    tableSessionId: actor.tableSessionId,
+    status: 'WAITING',
+  }).session(session);
+  if (waiting && waiting.expiresAt.getTime() > now)
+    throw new ConflictError('GAME_ACTIVE', 'Bàn đang có vòng chờ tham gia.');
+  if (waiting) {
+    waiting.status = 'EXPIRED';
+    waiting.version++;
+    await waiting.save({ session });
+    await changed(waiting, 'expired', null, session);
+  }
+  const drawn = await MiniGameRoundModel.findOne({
+    tableSessionId: actor.tableSessionId,
+    status: 'DRAWN',
+  })
+    .sort({ createdAt: -1, _id: -1 })
+    .session(session);
+  if (drawn?.revealsAt && drawn.revealsAt.getTime() + GAME_COOLDOWN_MS > now)
+    throw new ConflictError(
+      'GAME_COOLDOWN',
+      'Chờ vòng quay kết thúc và nghỉ 5 giây trước vòng mới.',
+    );
+  if (
+    (await MiniGameRoundModel.countDocuments({
+      tableSessionId: actor.tableSessionId,
+      createdAt: { $gt: new Date(now - 60000) },
+    }).session(session)) >= 6
+  )
+    throw new ConflictError('GAME_LIMIT', 'Tối đa 6 vòng mới mỗi phút cho một bàn.');
+}
 export async function createGame(actor: GameActor, raw: unknown): Promise<GameRound> {
   const input = gameCreateSchema.parse(raw),
     requestHash = hash(input);
@@ -171,36 +205,7 @@ export async function createGame(actor: GameActor, raw: unknown): Promise<GameRo
     const round = await unitOfWork.withTransaction(async (session) => {
       await lockSession(actor, session);
       const now = Date.now();
-      const waiting = await MiniGameRoundModel.findOne({
-        tableSessionId: actor.tableSessionId,
-        status: 'WAITING',
-      }).session(session);
-      if (waiting && waiting.expiresAt.getTime() > now)
-        throw new ConflictError('GAME_ACTIVE', 'Bàn đang có vòng chờ tham gia.');
-      if (waiting) {
-        waiting.status = 'EXPIRED';
-        waiting.version++;
-        await waiting.save({ session });
-        await changed(waiting, 'expired', null, session);
-      }
-      const drawn = await MiniGameRoundModel.findOne({
-        tableSessionId: actor.tableSessionId,
-        status: 'DRAWN',
-      })
-        .sort({ createdAt: -1, _id: -1 })
-        .session(session);
-      if (drawn?.revealsAt && drawn.revealsAt.getTime() + GAME_COOLDOWN_MS > now)
-        throw new ConflictError(
-          'GAME_COOLDOWN',
-          'Chờ vòng quay kết thúc và nghỉ 5 giây trước vòng mới.',
-        );
-      if (
-        (await MiniGameRoundModel.countDocuments({
-          tableSessionId: actor.tableSessionId,
-          createdAt: { $gt: new Date(now - 60000) },
-        }).session(session)) >= 6
-      )
-        throw new ConflictError('GAME_LIMIT', 'Tối đa 6 vòng mới mỗi phút cho một bàn.');
+      await prepareNewRound(actor, session, now);
       const [created] = await MiniGameRoundModel.create(
         [
           {
@@ -228,6 +233,90 @@ export async function createGame(actor: GameActor, raw: unknown): Promise<GameRo
     throw error;
   }
 }
+export async function continueGame(
+  actor: GameActor,
+  rawId: string,
+  raw: unknown,
+): Promise<GameRound> {
+  const id = gameIdSchema.parse(rawId),
+    input = gameContinueSchema.parse(raw);
+  const requestHash = hash({ kind: 'continue', roundId: id, ...input });
+  const owner = {
+    tableSessionId: actor.tableSessionId,
+    hostParticipantId: actor.participantId,
+    requestId: input.requestId,
+  };
+  const replay = async () => {
+    const round = await MiniGameRoundModel.findOne(owner);
+    if (round && round.requestHash !== requestHash)
+      throw new ConflictError('IDEMPOTENCY_CONFLICT', 'Yêu cầu đã dùng cho vòng khác.');
+    return round ? oneView(round, actor) : null;
+  };
+  const prior = await replay();
+  if (prior) return prior;
+  try {
+    const created = await unitOfWork.withTransaction(async (session) => {
+      await lockSession(actor, session);
+      const source = await MiniGameRoundModel.findOne({
+        _id: id,
+        tableSessionId: actor.tableSessionId,
+      }).session(session);
+      if (!source) throw new NotFoundError('Vòng chơi không thuộc phiên bàn này.');
+      if (source.hostParticipantId !== actor.participantId)
+        throw new ForbiddenError('Chỉ chủ trì được quay tiếp và chọn giữ hoặc xóa người trúng.');
+      if (source.version !== input.expectedVersion)
+        throw new ConflictError('GAME_CHANGED', 'Vòng vừa thay đổi. Vui lòng tải lại.');
+      const now = Date.now();
+      if (source.status !== 'DRAWN' || !source.revealsAt || source.revealsAt.getTime() > now)
+        throw new ConflictError('GAME_NOT_FINISHED', 'Chờ vòng quay kết thúc trước khi quay tiếp.');
+      const latest = await MiniGameRoundModel.findOne({ tableSessionId: actor.tableSessionId })
+        .sort({ createdAt: -1, _id: -1 })
+        .session(session);
+      if (latest?.id !== source.id)
+        throw new ConflictError('GAME_CHANGED', 'Đã có lượt mới. Hãy tải lại vòng hiện tại.');
+      await prepareNewRound(actor, session, now);
+      const eligible = await eligiblePlayers(actor.tableSessionId, session);
+      const roster = source.players
+        .filter(
+          (player) =>
+            (!input.removeWinner || player.publicId !== source.winnerId) &&
+            eligible.has(player.managedByHost ? source.hostParticipantId : player.participantId),
+        )
+        .map((player) => player.toObject());
+      const spinStartsAt = new Date(now + GAME_START_DELAY_MS);
+      const [next] = await MiniGameRoundModel.create(
+        [
+          {
+            ...owner,
+            requestHash,
+            players: roster,
+            expiresAt: new Date(now + GAME_LOBBY_MS),
+            ...(roster.length >= 2
+              ? {
+                  status: 'DRAWN',
+                  winnerId: roster[crypto.randomInt(roster.length)]!.publicId,
+                  spinStartsAt,
+                  revealsAt: new Date(spinStartsAt.getTime() + GAME_SPIN_MS),
+                }
+              : { status: 'WAITING' }),
+          },
+        ],
+        { session },
+      );
+      await changed(next!, 'continued', actor, session, {
+        previousRoundId: source.id,
+        removeWinner: input.removeWinner,
+      });
+      return next!;
+    });
+    return oneView(created, actor);
+  } catch (error) {
+    const raced = await replay();
+    if (raced) return raced;
+    throw error;
+  }
+}
+
 export type GameAction = 'join' | 'leave' | 'spin' | 'cancel' | 'add-player' | 'remove-player';
 export async function actOnGame(
   actor: GameActor,

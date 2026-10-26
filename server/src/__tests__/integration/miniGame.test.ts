@@ -16,6 +16,7 @@ import { OutboxEventModel } from '../../models/OutboxEvent.js';
 import { AuditLogModel } from '../../models/AuditLog.js';
 import {
   createGame,
+  continueGame,
   actOnGame,
   gameFeed,
   type GameActor,
@@ -62,6 +63,19 @@ async function ready() {
   await act(round.id, 'join', b);
   return round.id;
 }
+async function finishDraw(id: string) {
+  const revealsAt = new Date(Date.now() - GAME_COOLDOWN_MS - 10);
+  await MiniGameRoundModel.updateOne(
+    { _id: id },
+    { revealsAt, spinStartsAt: new Date(revealsAt.getTime() - GAME_SPIN_MS) },
+  );
+  return MiniGameRoundModel.findById(id).orFail();
+}
+const continuation = (version: number, removeWinner = false) => ({
+  requestId: randomUUID(),
+  expectedVersion: version,
+  removeWinner,
+});
 const session = (actor = a) => TableSessionModel.findById(actor.tableSessionId).orFail();
 beforeAll(async () => {
   repl = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -108,6 +122,175 @@ afterAll(async () => {
 });
 
 describe('table mini game: explicit opt-in and immutable server draw', () => {
+  it('repeats a finished draw with the same names, keeps old results immutable and safely replays concurrent retries', async () => {
+    const id = await ready();
+    await act(id, 'join', c, 'Chi');
+    await act(id, 'spin');
+    const source = await finishDraw(id),
+      snapshot = source.toObject(),
+      body = continuation(source.version);
+    const events = await OutboxEventModel.countDocuments();
+    const [one, two] = await Promise.all([continueGame(a, id, body), continueGame(a, id, body)]);
+    expect(one.id).not.toBe(id);
+    expect(two.id).toBe(one.id);
+    expect(one.phase).toBe('SPINNING');
+    expect(one.players.map((p) => p.id)).toEqual(source.players.map((p) => p.publicId));
+    expect(one.players.map((p) => p.name)).toEqual(['An', 'Bình', 'Chi']);
+    expect(await MiniGameRoundModel.countDocuments()).toBe(2);
+    expect(await MiniGameRoundModel.findById(id).lean()).toEqual(snapshot);
+    expect(await OutboxEventModel.countDocuments()).toBe(events + 1);
+    const feed = await gameFeed(a);
+    expect(feed.current?.id).toBe(one.id);
+    expect(feed.history[0]?.winnerId).toBe(source.winnerId);
+    await expect(continueGame(a, id, { ...body, removeWinner: true })).rejects.toMatchObject({
+      code: 'IDEMPOTENCY_CONFLICT',
+    });
+    const nextSource = await finishDraw(one.id);
+    const third = await continueGame(a, one.id, continuation(nextSource.version));
+    expect(third.players).toHaveLength(3);
+    expect(await MiniGameRoundModel.countDocuments()).toBe(3);
+    for (const model of [OrderModel, PaymentModel, BillModel])
+      expect(await model.countDocuments()).toBe(0);
+  });
+  it('removes only the winner from the next roster and never selects that person again', async () => {
+    const id = await ready();
+    await act(id, 'join', c, 'Chi');
+    await act(id, 'spin');
+    const source = await finishDraw(id),
+      snapshot = source.toObject();
+    const next = await continueGame(a, id, continuation(source.version, true));
+    expect(next.players).toHaveLength(2);
+    expect(next.phase).toBe('SPINNING');
+    expect(next.players.some((p) => p.id === source.winnerId)).toBe(false);
+    expect(next.winnerId).not.toBe(source.winnerId);
+    expect(await MiniGameRoundModel.findById(id).lean()).toEqual(snapshot);
+  });
+  it('keeps the host in control when excluded and opens a lobby when fewer than two names remain', async () => {
+    const created = await create();
+    await actOnGame(a, created.id, 'add-player', {
+      requestId: randomUUID(),
+      expectedVersion: 0,
+      name: 'Bình',
+    });
+    await act(created.id, 'spin');
+    const source = await finishDraw(created.id);
+    await MiniGameRoundModel.updateOne(
+      { _id: source.id },
+      { winnerId: source.players[0]!.publicId },
+    );
+    const next = await continueGame(a, source.id, continuation(source.version, true));
+    expect(next.phase).toBe('WAITING');
+    expect(next.players).toHaveLength(1);
+    expect(next.players[0]?.name).toBe('Bình');
+    expect(next.isHost).toBe(true);
+    expect(next.canSpin).toBe(false);
+    expect(next.players.some((p) => p.isYou)).toBe(false);
+    expect(next.winnerId).toBeNull();
+    const updated = await actOnGame(a, next.id, 'add-player', {
+      requestId: randomUUID(),
+      expectedVersion: next.version,
+      name: 'Chi',
+    });
+    expect(updated.canSpin).toBe(true);
+    expect((await act(next.id, 'spin')).phase).toBe('SPINNING');
+  });
+  it('checks host, scope, completion, cooldown, version and table state before starting another draw', async () => {
+    const id = await ready();
+    const waiting = await MiniGameRoundModel.findById(id).orFail();
+    await expect(continueGame(a, id, continuation(waiting.version))).rejects.toMatchObject({
+      code: 'GAME_NOT_FINISHED',
+    });
+    await act(id, 'spin');
+    let source = await MiniGameRoundModel.findById(id).orFail();
+    await expect(continueGame(a, id, continuation(source.version))).rejects.toMatchObject({
+      code: 'GAME_NOT_FINISHED',
+    });
+    await MiniGameRoundModel.updateOne({ _id: id }, { revealsAt: new Date(Date.now() - 1) });
+    await expect(continueGame(a, id, continuation(source.version))).rejects.toMatchObject({
+      code: 'GAME_COOLDOWN',
+    });
+    source = await finishDraw(id);
+    await expect(continueGame(b, id, continuation(source.version))).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(continueGame(other, id, continuation(source.version))).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(continueGame(a, id, continuation(source.version + 1))).rejects.toMatchObject({
+      code: 'GAME_CHANGED',
+    });
+    await TableSessionModel.updateOne({ _id: a.tableSessionId }, { status: 'CHECKOUT' });
+    await expect(continueGame(a, id, continuation(source.version))).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(await MiniGameRoundModel.countDocuments()).toBe(1);
+  });
+  it('serializes competing next draws and refuses continuing an older result after a newer round exists', async () => {
+    const id = await ready();
+    await act(id, 'spin');
+    const source = await finishDraw(id);
+    const results = await Promise.allSettled([
+      continueGame(a, id, continuation(source.version)),
+      continueGame(a, id, continuation(source.version, true)),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(1);
+    expect(await MiniGameRoundModel.countDocuments()).toBe(2);
+    await expect(continueGame(a, id, continuation(source.version))).rejects.toMatchObject({
+      code: 'GAME_CHANGED',
+    });
+  });
+  it('omits revoked guests on continuation and atomically rolls back if the event cannot be saved', async () => {
+    const id = await ready();
+    await act(id, 'join', c, 'Chi');
+    await act(id, 'spin');
+    const source = await finishDraw(id);
+    await GuestSessionModel.updateOne(
+      { participantId: c.participantId },
+      { revokedAt: new Date() },
+    );
+    const before = await session();
+    const events = await OutboxEventModel.countDocuments();
+    vi.spyOn(outboxRepository, 'createRealtimeEvents').mockRejectedValueOnce(
+      new Error('repeat outbox failed'),
+    );
+    const body = continuation(source.version);
+    await expect(continueGame(a, id, body)).rejects.toThrow('repeat outbox failed');
+    expect(await MiniGameRoundModel.countDocuments()).toBe(1);
+    expect((await session()).version).toBe(before.version);
+    expect(await OutboxEventModel.countDocuments()).toBe(events);
+    const next = await continueGame(a, id, body);
+    expect(next.players).toHaveLength(2);
+    expect(next.players.some((p) => p.name === 'Chi')).toBe(false);
+  });
+  it('exposes a strict CSRF-protected continuation endpoint without revealing private identities', async () => {
+    const id = await ready();
+    await act(id, 'spin');
+    const source = await finishDraw(id),
+      body = continuation(source.version);
+    const path = `/api/v1/game/${id}/continue`;
+    expect((await request(app).post(path).send(body)).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .set('Cookie', cookie)
+          .set('Origin', 'https://evil.example')
+          .send(body)
+      ).status,
+    ).toBe(403);
+    for (const invalid of [
+      { ...body, removeWinner: undefined },
+      { ...body, removeWinner: 'true' },
+      { ...body, playerId: randomUUID() },
+    ])
+      expect((await request(app).post(path).set('Cookie', cookie).send(invalid)).status).toBe(422);
+    const result = await request(app).post(path).set('Cookie', cookie).send(body);
+    expect(result.status).toBe(200);
+    expect(result.body.data.id).not.toBe(id);
+    for (const value of ['participantId', 'private-host', 'requestHash', 'hostParticipantId'])
+      expect(JSON.stringify(result.body.data)).not.toContain(value);
+  });
   it('lets the host manage names and spin on one device with replay, duplicate, ownership and immutable roster guards', async () => {
     const first = await create();
     const body = { requestId: randomUUID(), expectedVersion: first.version, name: 'Bình' };

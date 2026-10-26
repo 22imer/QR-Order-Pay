@@ -15,5 +15,6 @@ const handle =
   };
 export const feed = handle((actor) => game.gameFeed(actor));
 export const create = handle((actor, req) => game.createGame(actor, req.body));
+export const continueRound = handle((actor, req) => game.continueGame(actor, String(req.params['id']), req.body));
 export const action = (kind: game.GameAction) =>
   handle((actor, req) => game.actOnGame(actor, String(req.params['id']), kind, req.body));
