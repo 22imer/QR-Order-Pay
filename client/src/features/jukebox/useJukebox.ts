@@ -6,12 +6,13 @@ export function jukeboxUuid() {
   const h = generateIdempotencyKey();
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20)}`;
 }
-export function useJukeboxQuery<T>(key: string, url: string) {
+export function useJukeboxQuery<T>(key: string, url: string, background = false) {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: ['jukebox', key],
     queryFn: async () => unwrap<T>(await api.get(url)),
     refetchInterval: 5000,
+    refetchIntervalInBackground: background,
   });
   const refresh = () => {
     void qc.invalidateQueries({ queryKey: ['jukebox'] });

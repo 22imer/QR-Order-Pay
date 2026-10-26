@@ -25,6 +25,7 @@ import { MenuPhoto } from '../guest/MenuPhoto';
 import type { CartItem } from '../../store/cart';
 import { useGifts } from './useGifts';
 import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { useCupPhotoBusy } from '../cupPhotos/useCupPhotoBusy';
 import { AISheet } from '../ai/AISheet';
 
 type Pending = { url: string; payload: unknown; key: string };
@@ -101,7 +102,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
   });
   const [selected, setSelected] = useState<GiftTable | null>(null);
   const [items, setItems] = useState<Array<Omit<CartItem, 'clientId'>>>([]);
-  const [photoBusy, setPhotoBusy] = useState(false);
+  const { photoBusy, setPhotoBusy } = useCupPhotoBusy();
   const [aiOpen, setAiOpen] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
   const [message, setMessage] = useState('');
@@ -230,7 +231,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
       {open && (
         <Card className="space-y-4 p-4 sm:p-6">
           <h2 className="text-xl font-semibold">Gửi quà</h2>
-          <fieldset disabled={locked} className="space-y-4">
+          <fieldset disabled={busy || !!pending || checking} className="space-y-4">
             <legend className="mb-2 font-semibold">1. Chọn bàn nhận</legend>
             {tables.isError && <p role="alert">{getErrorMessage(tables.error)}</p>}
             <div
@@ -315,10 +316,10 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                       Bỏ
                     </Button>
                     <CupPhotoPicker
-                      label={`Ảnh in tem quà ${i.name}`}
+                      label={`Ảnh quà ${i.name}`}
                       photoId={i.cupPhotoId}
-                      disabled={locked}
-                      onBusyChange={setPhotoBusy}
+                      disabled={busy || !!pending || checking}
+                      onBusyChange={(value) => setPhotoBusy(String(index), value)}
                       onChange={(cupPhotoId) =>
                         setItems((v) => v.map((x, n) => (n === index ? { ...x, cupPhotoId } : x)))
                       }
@@ -416,7 +417,7 @@ function GiftWorkspace({ owner, open }: { owner: string; open: boolean }): JSX.E
                 {g.items.map((i, n) => (
                   <li key={n}>
                     {i.quantity} × {i.name} {i.variantName}
-                    {i.hasCupPhoto ? ' · Có ảnh in tem' : ''}
+                    {i.hasCupPhoto ? ' · Có ảnh tùy chỉnh' : ''}
                     <span className="block text-xs text-muted-foreground">
                       {[i.sugarLevel, i.iceLevel, ...i.toppingNames, i.note]
                         .filter(Boolean)

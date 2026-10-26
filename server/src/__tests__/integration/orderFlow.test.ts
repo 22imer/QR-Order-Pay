@@ -537,7 +537,7 @@ describe('order flow integration', () => {
       .set('Idempotency-Key', key)
       .send(quotedPayload);
     expect(res.status).toBe(201);
-    return res.body.data.order as { _id: string; total: number };
+    return res.body.data.order as { _id: string; code: string; total: number };
   }
   async function withQuote(cookie: string, payload: object) {
     const quoted = await request(app)
@@ -1320,6 +1320,110 @@ describe('order flow integration', () => {
       .get('/api/v1/staff/orders?status=SERVED')
       .set('Authorization', `Bearer ${staffAccess}`);
     expect(servedFeed.body.data.items).toEqual([]);
+  }, 60_000);
+
+  it('publishes guest cancellation before payment and keeps it visible to staff after the visit closes', async () => {
+    const { cookie, sessionId, payload } = await startVisit();
+    const order = await place(cookie, payload);
+    const staff = connectSocket(socketUrl, {
+      autoConnect: false,
+      transports: ['websocket'],
+      auth: { role: 'STAFF', accessToken: staffAccess },
+      reconnection: false,
+    });
+    clients.push(staff);
+    const connected = event(staff, 'connect');
+    staff.connect();
+    await connected;
+    const changed = event<{ orderId: string; orderCode: string; status: string }>(
+      staff,
+      'order.statusChanged',
+    );
+    const cancelled = await request(app)
+      .post(`/api/v1/orders/${order._id}/cancel`)
+      .set('Cookie', cookie);
+    expect(cancelled.status).toBe(200);
+    expect(await changed).toMatchObject({
+      orderId: order._id,
+      orderCode: order.code,
+      status: 'CANCELLED',
+    });
+    // The cancellation feed must survive a closed visit and must not require PAID.
+    await TableSessionModel.updateOne({ _id: sessionId }, { $set: { status: 'CLOSED' } });
+    const feed = await request(app)
+      .get('/api/v1/staff/orders?status=CANCELLED')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(feed.status).toBe(200);
+    expect(feed.body.data.items).toHaveLength(1);
+    expect(feed.body.data.items[0]).toMatchObject({
+      _id: order._id,
+      code: order.code,
+      tableName: 'Bàn 01',
+      status: 'CANCELLED',
+      paymentStatus: 'UNPAID',
+      cancelReason: 'Khách hủy',
+    });
+    expectNoInternalOrderFields(feed.body.data.items[0]);
+    expect(
+      (await request(app).get('/api/v1/staff/orders').set('Authorization', `Bearer ${staffAccess}`))
+        .body.data.items,
+    ).toEqual([]);
+    expect((await request(app).get('/api/v1/staff/orders?status=CANCELLED')).status).toBe(401);
+    expect(await PaymentModel.countDocuments()).toBe(0);
+  }, 60_000);
+
+  it('bounds the cancellation feed by cancellation time and 50 rows including refunds and completed pickups', async () => {
+    const { cookie, payload } = await startVisit();
+    const order = await place(cookie, payload);
+    const { _id: _sourceId, ...source } = (await OrderModel.findById(order._id).lean())!;
+    const now = Date.now();
+    const copies = Array.from({ length: 52 }, (_, index) => ({
+      ...source,
+      code: `CANCEL${index}`,
+      idempotencyKey: `cancel-${index}`,
+      status: 'CANCELLED',
+      paymentStatus: index === 0 ? 'REFUNDED' : 'UNPAID',
+      cancelReason: index === 0 ? 'Đã hoàn tiền' : 'Khách hủy',
+      statusHistory: [
+        {
+          from: 'AWAITING_PAYMENT',
+          to: 'CANCELLED',
+          at: new Date(now - index * 1000),
+          reason: 'Khách hủy',
+        },
+      ],
+      updatedAt: new Date(now - index * 1000),
+      ...(index === 1
+        ? {
+            fulfillmentType: 'TAKEAWAY',
+            tableId: null,
+            tableSessionId: null,
+            pickup: { outcome: 'NO_SHOW', name: 'Lan', phone: '0901234567' },
+          }
+        : {}),
+    }));
+    await OrderModel.insertMany(copies);
+    await OrderModel.create({
+      ...source,
+      code: 'OLD-CANCEL',
+      idempotencyKey: 'old-cancel',
+      status: 'CANCELLED',
+      statusHistory: [
+        { from: 'AWAITING_PAYMENT', to: 'CANCELLED', at: new Date(now - 25 * 3600_000) },
+      ],
+    });
+    const feed = await request(app)
+      .get('/api/v1/staff/orders?status=CANCELLED')
+      .set('Authorization', `Bearer ${staffAccess}`);
+    expect(feed.status).toBe(200);
+    expect(feed.body.data.items).toHaveLength(50);
+    const codes = feed.body.data.items.map((item: { code: string }) => item.code);
+    expect(codes).toEqual(Array.from({ length: 50 }, (_, index) => `CANCEL${index}`));
+    expect(feed.body.data.items[0].paymentStatus).toBe('REFUNDED');
+    expect(feed.body.data.items[1]).toMatchObject({
+      fulfillmentType: 'TAKEAWAY',
+      tableName: 'Mang đi',
+    });
   }, 60_000);
 
   it('never exposes internal order fields to guests or staff', async () => {

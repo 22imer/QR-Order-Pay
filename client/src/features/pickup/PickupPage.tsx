@@ -18,6 +18,7 @@ import { useAuth } from '../auth/useAuth';
 import { ProductDetailModal, type Product, type Topping } from '../guest/ProductDetailModal';
 import { MenuPhoto } from '../guest/MenuPhoto';
 import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { useCupPhotoBusy } from '../cupPhotos/useCupPhotoBusy';
 import { FreestyleRecipe } from '../../components/FreestyleRecipe';
 import { CompanionSuggestions } from '../insights/CompanionSuggestions';
 import type { CartItem } from '../../store/cart';
@@ -32,6 +33,8 @@ import {
 } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { useToast } from '../../components/ui/useToast';
 import { Input } from '../../components/ui/Input';
 import { Modal } from '../../components/ui/Modal';
 import { ErrorState } from '../../components/ui/EmptyState';
@@ -190,6 +193,7 @@ function PickupWorkspace({
   };
   useSocketEvent('order.created', refresh);
   useSocketEvent('order.statusChanged', refresh);
+  useSocketEvent('payment.confirmed', refresh);
   useSocketEvent('connect', refresh);
   const query = useQuery({
     queryKey: ['pickups', prefix, identity, history, page],
@@ -298,13 +302,42 @@ function PickupWorkspace({
               ) : null}
               <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                 {query.data.items.map((o) => (
-                  <Card key={o._id} className="min-w-0 space-y-3 p-4">
+                  <Card
+                    key={o._id}
+                    role="article"
+                    aria-label={`Đơn ${o.code}`}
+                    className={`min-w-0 space-y-3 p-4 ${staff && o.pickup.outcome === 'ACTIVE' ? (o.paymentStatus === 'PAID' ? 'border-success/40 bg-success/5' : o.paymentStatus === 'UNPAID' ? 'border-warning/40' : '') : ''}`}
+                  >
                     <div className="flex flex-wrap justify-between gap-2">
                       <strong>{o.code}</strong>
                       <span className="text-sm font-semibold text-primary">
                         {o.pickup.outcome === 'NO_SHOW' ? 'Khách không đến' : labels[o.status]}
                       </span>
                     </div>
+                    {staff ? (
+                      <Badge
+                        tone={
+                          o.paymentStatus === 'PAID'
+                            ? 'success'
+                            : o.paymentStatus === 'REFUNDED'
+                              ? 'neutral'
+                              : 'warning'
+                        }
+                      >
+                        {o.paymentStatus === 'PAID'
+                          ? 'Đã nhận đủ tiền'
+                          : o.paymentStatus === 'REFUNDED'
+                            ? 'Đã hoàn tiền'
+                            : (o.paidAmount ?? 0) > 0
+                              ? 'Đã nhận một phần · Còn thiếu'
+                              : 'Chưa nhận tiền'}
+                      </Badge>
+                    ) : null}
+                    {staff && o.paymentStatus === 'PAID' && o.status === 'PENDING' ? (
+                      <p className="text-sm font-medium text-success">
+                        Bước tiếp theo: xác nhận đơn rồi chuyển pha chế.
+                      </p>
+                    ) : null}
                     <p className="text-sm">
                       <Clock3 className="mr-1 inline h-4 w-4" />
                       {o.scheduledAt ? `Hẹn ${time(o.scheduledAt)}` : 'Mang đi ngay'}
@@ -359,7 +392,17 @@ function PickupWorkspace({
                           o.paymentStatus === 'UNPAID' &&
                           !o.paidAmount)) ? (
                         <Button size="sm" variant="outline" onClick={() => setSelected(o)}>
-                          {staff ? 'Xử lý đơn' : 'Hủy đơn'}
+                          {staff
+                            ? o.paymentStatus === 'PAID'
+                              ? o.status === 'PENDING'
+                                ? 'Xác nhận đơn'
+                                : o.status === 'CONFIRMED'
+                                  ? 'Bắt đầu pha'
+                                  : o.status === 'READY'
+                                    ? 'Giao cho khách'
+                                    : 'Cập nhật đơn'
+                              : 'Xử lý đơn'
+                            : 'Hủy đơn'}
                         </Button>
                       ) : null}
                       {o.billId ? (
@@ -444,7 +487,7 @@ function PickupForm({
   onCancel: () => void;
 }): JSX.Element {
   const recovered = useRef(readPending(storageKey));
-  const [photoBusy, setPhotoBusy] = useState(false);
+  const { photoBusy, setPhotoBusy } = useCupPhotoBusy();
   const draftRef = useContext(PickupDraftContext);
   const draft = useRef(
     !staff && draftRef?.current?.identity === storageKey ? draftRef.current : null,
@@ -506,6 +549,7 @@ function PickupForm({
   };
   const submit = useMutation({
     mutationFn: async () => {
+      if (photoBusy) throw new Error('Chọn hoặc bỏ ảnh đang xử lý trước khi đặt món.');
       if (!attempt.current) {
         if (!items.length || !name.trim() || !phone.trim() || (type === 'PICKUP' && !when))
           throw new Error('Vui lòng chọn món và điền đủ tên, SĐT, giờ nhận.');
@@ -744,7 +788,11 @@ function PickupForm({
           uncertain={uncertain}
           checkout={
             <div className="space-y-5">
-              <fieldset disabled={locked} onChange={invalidate} className="min-w-0 space-y-5">
+              <fieldset
+                disabled={uncertain || submit.isPending}
+                onChange={invalidate}
+                className="min-w-0 space-y-5"
+              >
                 <section className="pickup-checkout-section">
                   <h3>Món đã chọn</h3>
                   <ul className="divide-y divide-foreground/10">
@@ -774,15 +822,15 @@ function PickupForm({
                           </p>
                           <FreestyleRecipe value={i.freestyle} />
                           <CupPhotoPicker
-                            label={`Ảnh in tem cho ${i.name}`}
+                            label={`Ảnh cho ${i.name}`}
                             photoId={i.cupPhotoId}
                             endpoint={
                               staff
                                 ? `/${prefix.startsWith('/admin') ? 'admin' : 'staff'}/cup-photos`
                                 : '/pickup/cup-photos'
                             }
-                            disabled={locked}
-                            onBusyChange={setPhotoBusy}
+                            disabled={uncertain || submit.isPending}
+                            onBusyChange={(value) => setPhotoBusy(i.clientId, value)}
                             onChange={(cupPhotoId) => {
                               setItems((v) =>
                                 v.map((x) =>
@@ -842,7 +890,7 @@ function PickupForm({
                 <Button
                   className="min-h-12 w-full text-base"
                   onClick={() => submit.mutate()}
-                  disabled={submit.isPending || !items.length}
+                  disabled={submit.isPending || photoBusy || !items.length}
                 >
                   {submit.isPending
                     ? 'Đang gửi…'
@@ -869,7 +917,11 @@ function PickupForm({
           </p>
         </div>
       ) : null}
-      <fieldset disabled={locked} className="min-w-0 space-y-5" onChange={invalidate}>
+      <fieldset
+        disabled={uncertain || submit.isPending}
+        className="min-w-0 space-y-5"
+        onChange={invalidate}
+      >
         {receiving}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-foreground/10 pt-5">
           <div>
@@ -989,7 +1041,7 @@ function PickupForm({
             {items.map((i) => (
               <li
                 key={i.clientId}
-                className="flex items-center gap-3 rounded-2xl border border-foreground/10 bg-muted/30 p-3 text-base"
+                className="flex flex-wrap items-center gap-3 rounded-2xl border border-foreground/10 bg-muted/30 p-3 text-base"
               >
                 <MenuPhoto source={i.image} className="h-16 w-16 shrink-0 rounded-xl" />
                 <span className="min-w-0 flex-1 break-words font-medium">
@@ -1006,6 +1058,23 @@ function PickupForm({
                 >
                   Xóa
                 </Button>
+                <div className="w-full basis-full">
+                  <CupPhotoPicker
+                    label={`Ảnh cho ${i.name}`}
+                    photoId={i.cupPhotoId}
+                    endpoint={`/${prefix.startsWith('/admin') ? 'admin' : 'staff'}/cup-photos`}
+                    disabled={uncertain || submit.isPending}
+                    onBusyChange={(value) => setPhotoBusy(i.clientId, value)}
+                    onChange={(cupPhotoId) => {
+                      setItems((values) =>
+                        values.map((value) =>
+                          value.clientId === i.clientId ? { ...value, cupPhotoId } : value,
+                        ),
+                      );
+                      invalidate();
+                    }}
+                  />
+                </div>
               </li>
             ))}
           </ul>
@@ -1021,7 +1090,7 @@ function PickupForm({
         <Button
           className="min-h-12 w-full text-base sm:w-auto"
           onClick={() => submit.mutate()}
-          disabled={submit.isPending || !items.length}
+          disabled={submit.isPending || photoBusy || !items.length}
         >
           {submit.isPending
             ? 'Đang gửi…'
@@ -1060,6 +1129,7 @@ function PickupActions({
   onClose: () => void;
   onDone: () => void;
 }): JSX.Element {
+  const { toast } = useToast();
   const [method, setMethod] = useState<PaymentMethod>('CASH'),
     [amount, setAmount] = useState(String(order.balanceDue ?? order.total)),
     [reason, setReason] = useState(''),
@@ -1113,7 +1183,21 @@ function PickupActions({
         ? api.patch(a.path, a.body)
         : api.post(a.path, a.body, { headers: { 'Idempotency-Key': a.key } });
     },
-    onSuccess: onDone,
+    onSuccess: () => {
+      const kind = attempt.current?.path.split('/').pop();
+      toast({
+        title:
+          kind === 'payments'
+            ? `Đã ghi nhận thu tiền · ${order.code}`
+            : `Đã cập nhật đơn ${order.code}`,
+        description:
+          kind === 'payments'
+            ? 'Trạng thái thu tiền và bước xử lý tiếp theo được cập nhật trong danh sách.'
+            : undefined,
+        tone: 'success',
+      });
+      onDone();
+    },
     onError: (e) => {
       setError(getErrorMessage(e));
       const status = getAxiosError(e)?.response?.status;

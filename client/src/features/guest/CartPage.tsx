@@ -17,6 +17,7 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { MenuPhoto } from './MenuPhoto';
 import { CupPhotoPicker } from '../cupPhotos/CupPhotoPicker';
+import { useCupPhotoBusy } from '../cupPhotos/useCupPhotoBusy';
 import { FreestyleRecipe } from '../../components/FreestyleRecipe';
 import { CompanionSuggestions } from '../insights/CompanionSuggestions';
 
@@ -32,7 +33,7 @@ export function CartPage(): JSX.Element {
   const tableName = useGuestContext()?.tableName ?? null;
   const submission = useRef<{ payload: string; key: string } | null>(null);
   const [quote, setQuote] = useState<OrderQuoteResponse | null>(null);
-  const [photoBusy, setPhotoBusy] = useState(false);
+  const { photoBusy, setPhotoBusy } = useCupPhotoBusy();
   const memberQuery = useMember();
   const member = memberQuery.data?.member;
   const [voucherCode, setVoucherCode] = useState('');
@@ -184,7 +185,7 @@ export function CartPage(): JSX.Element {
           </div>
           <div className="slip-rule mt-4" />
 
-          <fieldset disabled={busy} className="min-w-0">
+          <fieldset disabled={placeMutation.isPending || preview.isPending} className="min-w-0">
             <ul className="space-y-5 py-5">
               {groupedItems.map((it) => (
                 <li key={it.clientId} className="flex gap-3">
@@ -209,10 +210,10 @@ export function CartPage(): JSX.Element {
                     ) : null}
                     <FreestyleRecipe value={it.freestyle} />
                     <CupPhotoPicker
-                      label={`Ảnh in tem cho ${it.name}`}
+                      label={`Ảnh cho ${it.name}`}
                       photoId={it.cupPhotoId}
-                      disabled={busy}
-                      onBusyChange={setPhotoBusy}
+                      disabled={placeMutation.isPending || preview.isPending}
+                      onBusyChange={(value) => setPhotoBusy(it.clientId, value)}
                       onChange={(cupPhotoId) => update(it.clientId, { cupPhotoId })}
                     />
                     <div className="mt-2 flex items-center justify-between">

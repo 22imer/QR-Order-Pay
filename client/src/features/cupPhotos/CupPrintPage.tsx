@@ -8,9 +8,10 @@ import { useSocketEvent } from '../../lib/socket';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import './cup-print.css';
+import { LatteArtExport } from './LatteArtExport';
 type Selection = { order: CupPrintOrder; item: CupPrintOrder['items'][number] };
 export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Element {
-  useDocumentTitle('In tem ảnh');
+  useDocumentTitle('Ảnh cốc & latte art');
   const prefix = `/${admin ? 'admin' : 'staff'}/cup-prints`,
     qc = useQueryClient();
   const [page, setPage] = useState(1),
@@ -33,10 +34,10 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="text-3xl font-semibold">In tem ảnh</h1>
+        <h1 className="text-3xl font-semibold">Ảnh cốc & latte art</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Đơn đã thanh toán · mỗi dòng món dùng một ảnh. Kiểm tra mã đơn và số cốc trước khi dán
-          tem.
+          Đơn đã thanh toán · xuất thiết kế latte art cho máy in đồ uống hoặc in tem ảnh. Kiểm tra
+          mã đơn, dòng món và số cốc.
         </p>
       </header>
       {feed.isLoading && <p role="status">Đang tải đơn có ảnh…</p>}
@@ -62,12 +63,14 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
                   </h3>
                   <p className="text-sm text-muted-foreground">
                     {item.available
-                      ? `Đã yêu cầu in ${item.attempts} lần`
+                      ? item.kind === 'LATTE_ART'
+                        ? `Latte art · Đã yêu cầu xuất ${item.attempts} lần`
+                        : `Đã yêu cầu in ${item.attempts} lần`
                       : 'Ảnh đã hết hạn lưu trữ'}
                   </p>
                 </div>
                 <Button disabled={!item.available} onClick={() => setSelected({ order, item })}>
-                  Xem & in tem
+                  {item.kind === 'LATTE_ART' ? 'Xem & xuất latte art' : 'Xem & in tem'}
                 </Button>
               </li>
             ))}
@@ -91,14 +94,25 @@ export function CupPrintPage({ admin = false }: { admin?: boolean }): JSX.Elemen
           </Button>
         </div>
       )}
-      {selected && (
-        <PrintPreview
+      {selected?.item.kind === 'LATTE_ART' ? (
+        <LatteArtExport
           key={`${selected.order.id}:${selected.item.index}`}
-          selected={selected}
+          order={selected.order}
+          item={selected.item}
           prefix={prefix}
           onClose={() => setSelected(null)}
           onRefresh={refresh}
         />
+      ) : (
+        selected && (
+          <PrintPreview
+            key={`${selected.order.id}:${selected.item.index}`}
+            selected={selected}
+            prefix={prefix}
+            onClose={() => setSelected(null)}
+            onRefresh={refresh}
+          />
+        )
       )}
     </div>
   );

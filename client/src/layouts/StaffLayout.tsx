@@ -22,6 +22,9 @@ import { InternalShell } from '../components/layout/InternalShell';
 import { useToast } from '../components/ui/useToast';
 import { api, unwrap } from '../lib/api';
 import { useNewOrderAlerts } from '../features/staff/useNewOrderAlerts';
+import { PersistentJukebox } from '../features/jukebox/PersistentJukebox';
+import { useCancellationAlerts } from '../features/staff/useCancellationAlerts';
+import { useRecentCancellations } from '../features/staff/useRecentCancellations';
 import {
   isSoundEnabled,
   notifyBrowser,
@@ -47,7 +50,7 @@ interface ServiceReqRow {
 }
 
 const NAV = [
-  { to: '/staff/cup-prints', label: 'In tem ảnh', icon: <Printer className="h-4 w-4" /> },
+  { to: '/staff/cup-prints', label: 'Ảnh cốc & latte art', icon: <Printer className="h-4 w-4" /> },
   { to: '/staff/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
   {
     to: '/staff/reservations',
@@ -92,6 +95,15 @@ export function StaffLayout(): JSX.Element {
   const [soundOn, setSoundOn] = useState<boolean>(isSoundEnabled());
   const qc = useQueryClient();
   const { toast } = useToast();
+  const cancelledQuery = useRecentCancellations();
+  const cancelRequestsQuery = useQuery({
+    queryKey: ['staff-cancel-requests'],
+    queryFn: async () =>
+      unwrap<{ items: Array<{ _id: string; orderId: { code: string } | null }> }>(
+        await api.get('/staff/cancel-requests'),
+      ),
+    refetchInterval: 8_000,
+  });
 
   const ordersQuery = useQuery({
     queryKey: ['staff-orders'],
@@ -133,8 +145,9 @@ export function StaffLayout(): JSX.Element {
   });
   useCountDelta(reservationsQuery.data?.total, (delta) => {
     playAlert('request');
-    notifyBrowser('Lịch đặt bàn mới', `${delta} lịch mới. Vào Đặt bàn để kiểm tra.`);
-    toast({ title: `Lịch đặt bàn mới (${delta})`, tone: 'info' });
+    const onClick = () => navigate('/staff/reservations');
+    notifyBrowser('Lịch đặt bàn mới', `${delta} lịch mới. Vào Đặt bàn để kiểm tra.`, onClick);
+    toast({ title: `Lịch đặt bàn mới (${delta})`, tone: 'info', onClick });
   });
 
   const pendingCount = useMemo(
@@ -149,6 +162,7 @@ export function StaffLayout(): JSX.Element {
   const refresh = useCallback(() => {
     for (const key of [
       'staff-orders',
+      'staff-cancelled-orders',
       'reservation-alerts',
       'reservations',
       'staff-pickup-alerts',
@@ -169,32 +183,64 @@ export function StaffLayout(): JSX.Element {
       const description = pickup
         ? 'Vào Mang đi & đặt trước để kiểm tra và thu tiền.'
         : 'Vào Bàn & phiên để kiểm tra và thu tiền.';
+      const onClick = () => navigate(pickup ? '/staff/pickups' : '/staff/tables');
       notifyBrowser(
         pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới',
         `${delta} đơn mới. ${description}`,
+        onClick,
       );
       toast({
         title: `${pickup ? 'Đơn mang đi mới' : 'Đơn tại bàn mới'} (${delta})`,
         description,
         tone: 'info',
+        onClick,
       });
     },
-    [toast],
+    [toast, navigate],
   );
   const notifyNewRequest = useCallback(
     (delta: number) => {
       playAlert('request');
-      notifyBrowser('Yêu cầu mới', `${delta} yêu cầu mới từ bàn`);
+      const onClick = () => navigate('/staff/service-requests');
+      notifyBrowser('Yêu cầu mới', `${delta} yêu cầu mới từ bàn`, onClick);
       toast({
         title: `Yêu cầu mới (${delta})`,
         description: 'Khách gọi nhân viên / xin bill.',
         tone: 'info',
+        onClick,
       });
     },
-    [toast],
+    [toast, navigate],
   );
 
   useNewOrderAlerts(user?.id, awaitingQuery.data?.items, pickupsQuery.data?.items, notifyNewOrder);
+  const notifyCancellation = useCallback(
+    (kind: 'cancelled' | 'requested', code?: string) => {
+      const title =
+        kind === 'cancelled'
+          ? code
+            ? `Đơn ${code} đã hủy`
+            : 'Đơn vừa được hủy'
+          : code
+            ? `Khách yêu cầu hủy đơn ${code}`
+            : 'Khách yêu cầu hủy đơn';
+      const description =
+        kind === 'cancelled'
+          ? 'Xem Đơn đã hủy gần đây tại Bàn & phiên hoặc KDS.'
+          : 'Vào KDS để duyệt hoặc từ chối yêu cầu hủy trước khi pha chế.';
+      playAlert('request');
+      const onClick = () => navigate(kind === 'cancelled' ? '/staff/tables' : '/staff/kds');
+      notifyBrowser(title, description, onClick);
+      toast({ title, description, tone: 'info', onClick });
+    },
+    [toast, navigate],
+  );
+  useCancellationAlerts(
+    user?.id,
+    cancelledQuery.data?.items,
+    cancelRequestsQuery.data?.items,
+    notifyCancellation,
+  );
   useCountDelta(requestsQuery.data ? openRequestCount : undefined, notifyNewRequest);
 
   useSocketEvent('connect', () => {
@@ -205,11 +251,17 @@ export function StaffLayout(): JSX.Element {
   useSocketEvent('order.created', refresh);
   useSocketEvent('reservation.changed', refresh);
   useSocketEvent('order.statusChanged', refresh);
+  useSocketEvent('cancelRequest.created', refresh);
+  useSocketEvent('cancelRequest.resolved', refresh);
   useSocketEvent('tableSession.statusChanged', refresh);
   useSocketEvent('payment.confirmed', () => {
     refresh();
     playAlert('payment');
-    toast({ title: 'Đã ghi nhận thanh toán', tone: 'success' });
+    toast({
+      title: 'Đã ghi nhận thanh toán',
+      tone: 'success',
+      onClick: () => navigate('/staff/payments'),
+    });
   });
   useSocketEvent('serviceRequest.created', refresh);
   useSocketEvent('serviceRequest.resolved', refresh);
@@ -246,12 +298,14 @@ export function StaffLayout(): JSX.Element {
     if (key === 'reservations') return reservationsQuery.data?.total || null;
     if (key === 'pickups') return pickupsQuery.data?.total || null;
     if (key === 'awaiting') return awaitingQuery.data?.items.length || null;
-    if (key === 'pending') return pendingCount > 0 ? pendingCount : null;
+    if (key === 'pending')
+      return pendingCount + (cancelRequestsQuery.data?.items.length ?? 0) || null;
     return openRequestCount > 0 ? openRequestCount : null;
   }
 
   return (
     <InternalShell
+      player={<PersistentJukebox />}
       title="Vận hành"
       home="/staff"
       name={user?.name ?? 'Nhân viên'}

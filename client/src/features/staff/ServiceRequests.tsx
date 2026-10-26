@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, getErrorMessage, unwrap } from '../../lib/api';
 import { Card } from '../../components/ui/Card';
 import { Button } from '../../components/ui/Button';
@@ -22,6 +23,7 @@ interface ServiceRequest {
 }
 
 export function StaffServiceRequests(): JSX.Element {
+  const navigate = useNavigate();
   useDocumentTitle('Yêu cầu từ bàn');
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -37,13 +39,13 @@ export function StaffServiceRequests(): JSX.Element {
     if (!socket) return;
     const handler = () => {
       queryClient.invalidateQueries({ queryKey: ['staff-service-requests'] });
-      toast({ title: 'Có yêu cầu mới từ bàn', tone: 'info' });
+      toast({ title: 'Có yêu cầu mới từ bàn', tone: 'info', onClick: () => navigate('/staff/service-requests') });
     };
     socket.on('serviceRequest.created', handler);
     return () => {
       socket.off('serviceRequest.created', handler);
     };
-  }, [queryClient, toast]);
+  }, [queryClient, toast, navigate]);
 
   const resolve = useMutation({
     mutationFn: async (id: string) => unwrap(await api.post(`/staff/service-requests/${id}/resolve`)),

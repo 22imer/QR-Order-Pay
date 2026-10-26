@@ -1,8 +1,65 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { CUP_PHOTO_MAX_BYTES, type CupPhotoView } from '@may-cafe/contracts';
 import { api, generateRequestId, getErrorMessage, unwrap } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
-export function CupPhotoPicker({
+import { LatteArtPicker } from './LatteArtPicker';
+export interface CupPhotoPickerProps {
+  photoId?: string;
+  endpoint?: string;
+  label: string;
+  disabled?: boolean;
+  onChange: (id: string | undefined) => void;
+  onBusyChange: (busy: boolean) => void;
+}
+export function CupPhotoPicker(props: CupPhotoPickerProps): JSX.Element {
+  const [mode, setMode] = useState<'PHOTO' | 'LATTE_ART'>('PHOTO');
+  const name = useId();
+  useEffect(() => {
+    let cancelled = false;
+    if (props.photoId)
+      void api
+        .get(`${props.endpoint ?? '/cup-photos'}/${props.photoId}/details`)
+        .then((response) => {
+          const photo = unwrap<CupPhotoView>(response);
+          if (!cancelled && photo?.kind === 'LATTE_ART') setMode('LATTE_ART');
+        })
+        .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [props.photoId, props.endpoint]);
+  return (
+    <div className="mt-3 space-y-3 rounded-xl border p-3 text-sm">
+      <fieldset disabled={props.disabled} className="flex flex-wrap gap-3">
+        <legend className="mb-2 font-semibold">Ảnh trên cốc (tùy chọn)</legend>
+        {(
+          [
+            { id: 'PHOTO', label: 'Ảnh in tem' },
+            { id: 'LATTE_ART', label: 'Latte art trên bọt' },
+          ] as const
+        ).map((option) => (
+          <label
+            key={option.id}
+            className="flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2"
+          >
+            <input
+              type="radio"
+              name={name}
+              checked={mode === option.id}
+              onChange={() => {
+                setMode(option.id);
+                props.onChange(undefined);
+              }}
+            />
+            {option.label}
+          </label>
+        ))}
+      </fieldset>
+      {mode === 'LATTE_ART' ? <LatteArtPicker {...props} /> : <OriginalPhotoPicker {...props} />}
+    </div>
+  );
+}
+function OriginalPhotoPicker({
   photoId,
   endpoint = '/cup-photos',
   label,

@@ -3,23 +3,29 @@ import { jukeboxSource, type JukeboxStaffFeed } from '@may-cafe/contracts';
 import { api, getAxiosError, getErrorMessage, unwrap } from '../../lib/api';
 import { Button } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { JukeboxCatalog } from './JukeboxCatalog';
 import { jukeboxUuid, useJukeboxQuery } from './useJukebox';
 import { YouTubePlayer, type YouTubeControls } from './YouTubePlayer';
 
-export function JukeboxPlayer({ admin = false }: { admin?: boolean }): JSX.Element {
-  useDocumentTitle('Jukebox');
+export function JukeboxPlayer({
+  admin = false,
+  compact = false,
+}: {
+  admin?: boolean;
+  compact?: boolean;
+}): JSX.Element {
   const { user } = useAuth();
-  return <Player key={user?.id} admin={admin} />;
+  return <Player key={user?.id} admin={admin} compact={compact} />;
 }
-function Player({ admin }: { admin: boolean }): JSX.Element {
+function Player({ admin, compact }: { admin: boolean; compact: boolean }): JSX.Element {
   const [deviceId] = useState(jukeboxUuid),
     prefix = `/${admin ? 'admin' : 'staff'}/jukebox`;
   const feed = useJukeboxQuery<JukeboxStaffFeed>(
     `player:${deviceId}`,
     `${prefix}?deviceId=${deviceId}`,
+    true,
   );
   const audio = useRef<HTMLAudioElement>(null),
     live = useRef(false),
@@ -36,7 +42,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     [error, setError] = useState(''),
     [playing, setPlaying] = useState(false);
   const [pending, setPending] = useState<{
-    kind: 'next' | 'stop';
+    kind: 'next' | 'stop' | 'play';
     body: Record<string, unknown>;
   } | null>(null);
   const [volume, setVolume] = useState(0.5);
@@ -50,7 +56,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     setPlaying(false);
   }
   async function play() {
-    if (!live.current || Date.now() >= expiry.current || document.hidden || !source) return;
+    if (!live.current || Date.now() >= expiry.current || !source) return;
     if (sourceType?.kind === 'youtube') {
       youtube.current?.play();
       return;
@@ -96,12 +102,19 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
       void api.post(`${prefix}/release`, { deviceId }).catch(() => {});
     };
     const visibility = () => {
-      if (document.hidden) release();
+      // Switching tabs keeps playback. On return, enforce the deadline even if
+      // the browser suspended timers while this tab was in the background.
+      if (!document.hidden && live.current && Date.now() >= expiry.current) {
+        halt();
+        setError('Quyền phát đã hết hạn. Bấm Bật phát trên máy này để kết nối lại.');
+        feed.refresh();
+      }
     };
     const deadline = window.setInterval(() => {
       if (live.current && Date.now() >= expiry.current) {
         halt();
         setError('Quyền phát đã hết hạn. Bấm Bật phát trên máy này để kết nối lại.');
+        feed.refresh();
       }
     }, 500);
     const heartbeat = window.setInterval(() => {
@@ -146,7 +159,7 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     setError('');
     try {
       const result = unwrap<JukeboxStaffFeed>(await api.post(`${prefix}/claim`, { deviceId }));
-      if (!mounted.current || document.hidden) {
+      if (!mounted.current) {
         void api.post(`${prefix}/release`, { deviceId }).catch(() => {});
         return;
       }
@@ -162,14 +175,25 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
       setBusy(false);
     }
   }
-  async function control(kind: 'next' | 'stop', retry = false) {
+  async function control(kind: 'next' | 'stop' | 'play', retry = false, trackId?: string) {
     if (flight.current || !live.current || !data || (!retry && pending)) return;
+    if (Date.now() >= expiry.current) {
+      halt();
+      setError('Quyền phát đã hết hạn. Bấm Bật phát trên máy này để kết nối lại.');
+      feed.refresh();
+      return;
+    }
     const command =
       retry && pending
         ? pending
         : {
             kind,
-            body: { deviceId, requestId: jukeboxUuid(), playbackVersion: data.playbackVersion },
+            body: {
+              deviceId,
+              requestId: jukeboxUuid(),
+              playbackVersion: data.playbackVersion,
+              ...(kind === 'play' ? { trackId } : {}),
+            },
           };
     flight.current = true;
     setBusy(true);
@@ -203,14 +227,30 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
     }
   }
   return (
-    <div className="space-y-6">
-      <header>
+    <div
+      aria-label="Trình phát nhạc của quán"
+      hidden={compact && !active && !error}
+      className={compact ? 'mb-6 space-y-3' : 'space-y-6'}
+    >
+      <header hidden={compact}>
         <h1 className="text-3xl font-semibold">Jukebox</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Máy tính này có thể phát nhạc qua loa của máy hoặc loa ngoài. Bấm Bật phát trên máy này,
-          rồi Bài tiếp theo khi có bình chọn. Giữ trang hiển thị; mỗi lần chỉ một máy phát.
+          rồi Bài tiếp theo khi có bình chọn. Nhạc tiếp tục khi chuyển chức năng hoặc đổi tab; mỗi
+          lần chỉ một máy phát.
         </p>
       </header>
+      <div hidden={!compact}>
+        <Link
+          className="font-semibold text-primary underline"
+          to={`/${admin ? 'admin' : 'staff'}/jukebox`}
+        >
+          Mở Jukebox
+        </Link>
+        <span className="ml-3 text-sm text-muted-foreground">
+          Trình phát vẫn hoạt động khi chuyển chức năng.
+        </span>
+      </div>
       {feed.isError && <p role="alert">{getErrorMessage(feed.error)}</p>}
       {error && <p role="alert">{error}</p>}
       <audio
@@ -229,62 +269,94 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
             void control('next');
         }}
       />
-      <Card className="space-y-4 p-5">
-        <p role="status">
-          {active
-            ? playing
-              ? 'Đang phát trên thiết bị này'
-              : 'Thiết bị này giữ quyền phát · đang dừng'
-            : data?.lease.busy
-              ? 'Có thiết bị đang giữ quyền phát'
-              : 'Chưa bật thiết bị phát'}
-        </p>
-        <h2 className="text-2xl font-semibold">{data?.current?.title ?? 'Chưa chọn bài'}</h2>
-        {data?.current && <p>{data.current.artist}</p>}
-        <div className="flex flex-wrap gap-2">
-          {!active ? (
-            <Button
-              disabled={busy || !data || feed.isError || !!data.lease.busy}
-              onClick={() => void claim()}
-            >
-              Bật phát trên máy này
-            </Button>
-          ) : (
-            <>
+      <Card
+        className={
+          compact && active && sourceType?.kind === 'youtube'
+            ? 'space-y-4 p-4 lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:gap-4 lg:space-y-0'
+            : compact
+              ? 'space-y-3 p-4'
+              : 'space-y-4 p-5'
+        }
+      >
+        <div className="space-y-4">
+          <p role="status">
+            {active
+              ? playing
+                ? 'Đang phát trên thiết bị này'
+                : 'Thiết bị này giữ quyền phát · đang dừng'
+              : data?.lease.busy
+                ? 'Có thiết bị đang giữ quyền phát'
+                : 'Chưa bật thiết bị phát'}
+          </p>
+          <h2 className={compact ? 'text-lg font-semibold' : 'text-2xl font-semibold'}>
+            {data?.current?.title ?? 'Chưa chọn bài'}
+          </h2>
+          {data?.current && <p>{data.current.artist}</p>}
+          <div className="flex flex-wrap gap-2">
+            {!active ? (
               <Button
-                disabled={busy || !!pending || !source}
-                onClick={() => {
-                  setError('');
-                  if (playing) pausePlayback();
-                  else void play();
-                }}
+                disabled={busy || !data || feed.isError || !!data.lease.busy}
+                onClick={() => void claim()}
               >
-                {playing ? 'Tạm dừng' : 'Phát / thử lại'}
+                Bật phát trên máy này
               </Button>
-              <Button disabled={busy || !!pending} onClick={() => void control('next')}>
-                Bài tiếp theo
+            ) : (
+              <>
+                <Button
+                  disabled={busy || !!pending || !source}
+                  onClick={() => {
+                    setError('');
+                    if (playing) pausePlayback();
+                    else void play();
+                  }}
+                >
+                  {playing ? 'Tạm dừng' : 'Phát / thử lại'}
+                </Button>
+                <Button disabled={busy || !!pending} onClick={() => void control('next')}>
+                  Bài tiếp theo
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={busy || !!pending || !data?.current}
+                  onClick={() => void control('stop')}
+                >
+                  Dừng chọn phát
+                </Button>
+                <Button variant="outline" disabled={busy} onClick={() => void release()}>
+                  Nhả thiết bị
+                </Button>
+              </>
+            )}
+          </div>
+          {pending && (
+            <div>
+              <p>Chưa xác nhận thao tác. Thử lại trước khi chuyển bài khác.</p>
+              <Button disabled={busy || !active} onClick={() => void control(pending.kind, true)}>
+                Thử lại thao tác
               </Button>
-              <Button
-                variant="outline"
-                disabled={busy || !!pending || !data?.current}
-                onClick={() => void control('stop')}
-              >
-                Dừng chọn phát
-              </Button>
-              <Button variant="outline" disabled={busy} onClick={() => void release()}>
-                Nhả thiết bị
-              </Button>
-            </>
+            </div>
           )}
+          <label className="flex items-center gap-3">
+            Âm lượng
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+            />
+          </label>
         </div>
         {active && sourceType?.kind === 'youtube' && (
           <YouTubePlayer
             key={generation}
             ref={youtube}
+            compact={compact}
             videoId={sourceType.videoId}
             volume={volume}
             onPlaying={(value) => {
-              if (!live.current || document.hidden || Date.now() >= expiry.current) {
+              if (!live.current || Date.now() >= expiry.current) {
                 youtube.current?.pause();
                 return;
               }
@@ -298,27 +370,8 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
             }}
           />
         )}
-        {pending && (
-          <div>
-            <p>Chưa xác nhận thao tác. Thử lại trước khi chuyển bài khác.</p>
-            <Button disabled={busy || !active} onClick={() => void control(pending.kind, true)}>
-              Thử lại thao tác
-            </Button>
-          </div>
-        )}
-        <label className="flex items-center gap-3">
-          Âm lượng
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-          />
-        </label>
       </Card>
-      <section aria-label="Hàng đợi" className="space-y-3">
+      <section hidden={compact} aria-label="Hàng đợi" className="space-y-3">
         <h2 className="text-xl font-semibold">Hàng đợi theo vote</h2>
         <p className="text-sm text-muted-foreground">
           Nhiều vote trước; bằng nhau ưu tiên lượt chọn sớm nhất. Hết bài thì chờ quầy chọn tiếp.
@@ -333,7 +386,34 @@ function Player({ admin }: { admin: boolean }): JSX.Element {
           ))}
         </ol>
       </section>
-      {admin && <JukeboxCatalog />}
+      <section hidden={compact} aria-label="Nhân viên chọn bài" className="space-y-3">
+        <h2 className="text-xl font-semibold">Tự chọn bài để phát</h2>
+        <p className="text-sm text-muted-foreground">
+          Chọn bất kỳ bài đang mở trong danh sách của quán, không cần có bình chọn. Bật phát trên
+          máy này trước khi chọn. Nếu bài đã có bình chọn, lượt đó được dùng như khi phát từ hàng
+          đợi.
+        </p>
+        {!data?.tracks.length && <p>Chưa có bài hát trong danh sách.</p>}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {data?.tracks.map((track) => (
+            <Card key={track.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+              <div className="min-w-0">
+                <h3 className="break-words font-semibold">{track.title}</h3>
+                <p className="text-sm text-muted-foreground">{track.artist}</p>
+              </div>
+              <Button
+                size="sm"
+                disabled={!active || busy || !!pending || data.current?.id === track.id}
+                aria-label={`Phát ${track.title}`}
+                onClick={() => void control('play', false, track.id)}
+              >
+                {data.current?.id === track.id ? 'Đang chọn phát' : 'Phát bài này'}
+              </Button>
+            </Card>
+          ))}
+        </div>
+      </section>
+      {admin && !compact && <JukeboxCatalog />}
     </div>
   );
 }

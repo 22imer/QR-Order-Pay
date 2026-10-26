@@ -120,7 +120,7 @@ describe('checkout interfaces', () => {
 
   it('shows empty tables waiting for a guest QR instead of letting staff open a session', async () => {
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
       if (url === '/staff/tables')
         return response({ tables: [{ _id: 't1', name: 'Bàn 01', capacity: 4, isActive: true }] });
       return response({ items: [] });
@@ -135,7 +135,7 @@ describe('checkout interfaces', () => {
 
   it('requires explicit confirmation and sends the actual bill amount and payment method', async () => {
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
       if (url === '/staff/tables')
         return response({ tables: [{ _id: 't1', name: 'Bàn 01', isActive: true }] });
       if (url === '/staff/table-sessions')

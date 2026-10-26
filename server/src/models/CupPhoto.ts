@@ -8,6 +8,9 @@ const photoSchema = new Schema(
     width: { type: Number, required: true },
     height: { type: Number, required: true },
     expiresAt: { type: Date, required: true },
+    kind: { type: String, enum: ['PHOTO', 'LATTE_ART'], default: 'PHOTO' },
+    latteStyle: { type: String, enum: ['SOFT', 'BOLD', 'DOTS'], default: null },
+    sourcePhotoId: { type: Schema.Types.ObjectId, default: null },
   },
   { timestamps: true },
 );

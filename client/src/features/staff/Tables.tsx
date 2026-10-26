@@ -18,6 +18,7 @@ import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { useDocumentTitle } from '../../components/ui/useDocumentTitle';
 import { PaidBillModal } from './PaidBillModal';
 import { AwaitingPayments } from './AwaitingPayments';
+import { RecentCancellations } from './RecentCancellations';
 import { TableDisplaySetup } from './TableDisplaySetup';
 import { Table2 } from 'lucide-react';
 import { usePaymentClaim } from './usePaymentClaim';
@@ -94,6 +95,7 @@ export function StaffTables(): JSX.Element {
         ) : null}
       </div>
       <AwaitingPayments />
+      <RecentCancellations />
       <section>
         <h2 className="font-semibold mb-3">Bàn đang phục vụ ({active.length})</h2>
         {active.length === 0 ? (

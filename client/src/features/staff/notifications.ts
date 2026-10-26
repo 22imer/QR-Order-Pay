@@ -59,11 +59,12 @@ export function playAlert(kind: 'order' | 'request' | 'payment' = 'order'): void
   }
 }
 
-export function notifyBrowser(title: string, body: string): void {
+export function notifyBrowser(title: string, body: string, onClick?: () => void): void {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   if (Notification.permission !== 'granted') return;
   try {
-    new Notification(title, { body, silent: !isSoundEnabled() });
+    const notice = new Notification(title, { body, silent: !isSoundEnabled() });
+    notice.onclick = () => { window.focus(); onClick?.(); notice.close(); };
   } catch {
     /* ignore */
   }

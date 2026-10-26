@@ -8,6 +8,7 @@ import {
   jukeboxVoteSchema,
   jukeboxDeviceSchema,
   jukeboxControlSchema,
+  jukeboxPlaySchema,
   type JukeboxFeed,
   type JukeboxStaffFeed,
 } from '@may-cafe/contracts';
@@ -268,8 +269,12 @@ export async function leaseJukebox(
   });
   return staffJukeboxFeed(userId, { deviceId });
 }
-export async function controlJukebox(userId: string, kind: 'next' | 'stop', input: unknown) {
-  const body = jukeboxControlSchema.parse(input),
+export async function controlJukebox(
+  userId: string,
+  kind: 'next' | 'stop' | 'play',
+  input: unknown,
+) {
+  const body = kind === 'play' ? jukeboxPlaySchema.parse(input) : jukeboxControlSchema.parse(input),
     data = { kind, ...body },
     who = `user:${userId}`;
   await unitOfWork.withTransaction(async (session) => {
@@ -280,7 +285,7 @@ export async function controlJukebox(userId: string, kind: 'next' | 'stop', inpu
     if (state.playbackVersion !== body.playbackVersion)
       throw new ConflictError('JUKEBOX_CONFLICT', 'Bài phát đã đổi. Hãy tải lại.');
     state.current = null;
-    if (kind === 'next') {
+    if (kind === 'next' || kind === 'play') {
       const voters = await JukeboxVoteModel.distinct('tableSessionId', {
         trackId: { $ne: null },
       }).session(session);
@@ -290,7 +295,11 @@ export async function controlJukebox(userId: string, kind: 'next' | 'stop', inpu
         { session },
       );
       const q = await queue(session),
-        next = q.ranked[0];
+        next =
+          kind === 'play' && 'trackId' in body
+            ? q.tracks.find((track) => track.id === body.trackId)
+            : q.ranked[0];
+      if (kind === 'play' && !next) throw new NotFoundError('Bài hát không tồn tại hoặc đã tắt.');
       if (next) {
         state.current = {
           trackId: next.id,

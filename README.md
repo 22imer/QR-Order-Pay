@@ -8,6 +8,8 @@ Một hệ thống MERN (MongoDB + Express + React + Node.js) đặt đồ uốn
 
 ## Tính năng chính
 
+- **Latte art từ ảnh**: khách tạo/chọn3 kiểu tông cà phê, lưu đúng bản theo dòng món; Staff xuấtPNG cho máy in đồ uống sau thanh toán. Hiện chưa kết nối máy in thực phẩm. [Hướng dẫn và14ca](docs/latte-art.md).
+
 - **Smart Insights (#12)**: Admin xem giờ đông, món bán nhiều, cặp món và lãi gộp nguyên liệu dự kiến khi nhập đủ giá vốn; giỏ tại bàn/mang đi gợi ý món thường gọi kèm khi đủ mẫu, khách xác nhận mới thêm. [Hướng dẫn và 12 ca thử](docs/smart-insights.md).
 - **AI Barista Freestyle (#8)**: phối nền/vị đã duyệt thành món ngoài thực đơn, một giá/size do Admin đặt, kiểm tồn và lưu công thức vào đơn/KDS; dùng tại bàn, member mang đi và quà. Cần Admin cấu hình rồi bật bán. [Hướng dẫn và 12 ca thử](docs/freestyle.md).
 - **Ảnh in tem dán cốc (#9)**: tải JPEG/PNG/WebP riêng cho từng dòng món ở giỏ tại bàn, mang đi hoặc quà; xem trước ảnh đã chuẩn hóa, Staff/Admin in tem60×80mm trên A4/giấy tem sau thanh toán. [Hướng dẫn và 14 ca thử](docs/cup-photos.md).

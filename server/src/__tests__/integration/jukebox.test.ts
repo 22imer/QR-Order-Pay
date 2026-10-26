@@ -448,6 +448,104 @@ describe('jukebox table ballots and exclusive counter player', () => {
     for (const model of [OrderModel, PaymentModel, BillModel])
       expect(await model.countDocuments()).toBe(0);
   });
+  it('allows the lease owner to select an enabled song without votes and replays the exact command', async () => {
+    await leaseJukebox(user, 'claim', { deviceId: device });
+    const body = { deviceId: device, requestId: randomUUID(), playbackVersion: 0, trackId: t2 };
+    const results = await Promise.all([
+      controlJukebox(user, 'play', body),
+      controlJukebox(user, 'play', body),
+    ]);
+    expect(results[0]!.current?.id).toBe(t2);
+    expect(results[1]!.current?.id).toBe(t2);
+    expect((await jukeboxFeed()).playbackVersion).toBe(1);
+    expect(await JukeboxVoteModel.countDocuments()).toBe(0);
+    expect(
+      await JukeboxActionModel.countDocuments({ actor: `user:${user}`, requestId: body.requestId }),
+    ).toBe(1);
+    await expect(controlJukebox(user, 'play', { ...body, trackId: t1 })).rejects.toMatchObject({
+      status: 409,
+    });
+    await expect(
+      controlJukebox(user, 'play', { ...body, requestId: randomUUID() }),
+    ).rejects.toMatchObject({ status: 409 });
+    for (const model of [OrderModel, PaymentModel, BillModel])
+      expect(await model.countDocuments()).toBe(0);
+  });
+  it('consumes only matching votes for a manually selected song and keeps other requested songs queued', async () => {
+    await choose(a, t1);
+    await choose(c, t2);
+    await leaseJukebox(user, 'claim', { deviceId: device });
+    const selected = await controlJukebox(user, 'play', {
+      deviceId: device,
+      requestId: randomUUID(),
+      playbackVersion: 0,
+      trackId: t2,
+    });
+    expect(selected.current?.id).toBe(t2);
+    expect((await jukeboxFeed(c)).vote).toMatchObject({ remaining: 4, trackId: null });
+    expect((await jukeboxFeed(a)).vote).toMatchObject({ remaining: 5, trackId: t1 });
+    expect(selected.queue.map((track) => track.id)).toEqual([t1]);
+    expect((await command('next')).current?.id).toBe(t1);
+  });
+  it('rejects manual selection without authority or with a disabled/missing song, and rolls back failed publication', async () => {
+    const body = { deviceId: device, requestId: randomUUID(), playbackVersion: 0, trackId: t1 };
+    await expect(controlJukebox(user, 'play', body)).rejects.toMatchObject({ status: 409 });
+    await leaseJukebox(user, 'claim', { deviceId: device });
+    await expect(
+      controlJukebox(user, 'play', { ...body, deviceId: randomUUID() }),
+    ).rejects.toMatchObject({ status: 409 });
+    await JukeboxTrackModel.updateOne({ _id: t1 }, { enabled: false });
+    await expect(controlJukebox(user, 'play', body)).rejects.toMatchObject({ status: 404 });
+    await expect(
+      controlJukebox(user, 'play', { ...body, trackId: new mongoose.Types.ObjectId().toString() }),
+    ).rejects.toMatchObject({ status: 404 });
+    await JukeboxTrackModel.updateOne({ _id: t1 }, { enabled: true });
+    const before = await JukeboxStateModel.findById('main').lean();
+    const records = await JukeboxActionModel.countDocuments();
+    vi.spyOn(outboxRepository, 'createRealtimeEvents').mockRejectedValueOnce(
+      new Error('manual outbox failed'),
+    );
+    await expect(controlJukebox(user, 'play', body)).rejects.toThrow('manual outbox failed');
+    expect(await JukeboxStateModel.findById('main').lean()).toEqual(before);
+    expect(await JukeboxActionModel.countDocuments()).toBe(records);
+  });
+  it('exposes manual playback on staff/admin routes with strict bodies and existing portal/role guards', async () => {
+    const path = '/api/v1/staff/jukebox/play';
+    const body = { deviceId: device, requestId: randomUUID(), playbackVersion: 0, trackId: t1 };
+    expect((await request(app).post(path).send(body)).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/admin/jukebox/play')
+          .set('Authorization', `Bearer ${staffToken}`)
+          .send(body)
+      ).status,
+    ).toBe(403);
+    const admin = await UserModel.findOne({ role: 'ADMIN' }).orFail();
+    await leaseJukebox(admin.id, 'claim', { deviceId: device });
+    for (const invalid of [
+      { ...body, audioUrl: 'https://audio.example.test/other.mp3' },
+      { ...body, trackId: 'invalid' },
+      { ...body, trackId: undefined },
+    ])
+      expect(
+        (await request(app).post(path).set('Authorization', `Bearer ${adminToken}`).send(invalid))
+          .status,
+      ).toBe(422);
+    const played = await request(app)
+      .post('/api/v1/admin/jukebox/play')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body);
+    expect(played.status).toBe(200);
+    expect(played.body.data.current.id).toBe(t1);
+    const replayed = await request(app)
+      .post(path)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(body);
+    expect(replayed.status).toBe(200);
+    expect(replayed.body.data.playbackVersion).toBe(1);
+  });
+
   it('boots safely from an empty jukebox store without writing anything on read', async () => {
     await JukeboxStateModel.deleteMany({});
     expect((await jukeboxFeed(a)).playbackVersion).toBe(0);

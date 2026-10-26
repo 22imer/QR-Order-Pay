@@ -2,11 +2,14 @@
 import { beforeEach, afterEach, describe, it, expect, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { lazy } from 'react';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { JukeboxFeed, JukeboxStaffFeed, JukeboxCatalogTrack } from '@may-cafe/contracts';
 import { JukeboxPage } from '../features/jukebox/JukeboxPage';
 import { JukeboxPlayer } from '../features/jukebox/JukeboxPlayer';
 import { JukeboxCatalog } from '../features/jukebox/JukeboxCatalog';
+import { PersistentJukebox, JukeboxRoute } from '../features/jukebox/PersistentJukebox';
+import { InternalShell } from '../components/layout/InternalShell';
 const mock = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -41,8 +44,51 @@ function mount(page = <JukeboxPage />) {
     </QueryClientProvider>,
   );
 }
+function mountPersistent(other: JSX.Element = <h1>Trang bàn</h1>) {
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={['/staff/jukebox']}>
+        <Routes>
+          <Route
+            element={
+              <InternalShell
+                title="Vận hành"
+                home="/staff"
+                nav={[]}
+                name="Lan"
+                role="STAFF"
+                onLogout={vi.fn()}
+                player={<PersistentJukebox />}
+              />
+            }
+          >
+            <Route
+              path="/staff/jukebox"
+              element={
+                <>
+                  <JukeboxRoute />
+                  <Link to="/staff/tables">Đổi chức năng</Link>
+                </>
+              }
+            />
+            <Route
+              path="/staff/tables"
+              element={
+                <>
+                  {other}
+                  <Link to="/staff/jukebox">Về chọn nhạc</Link>
+                </>
+              }
+            />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
 beforeEach(() => {
   vi.restoreAllMocks();
+  delete (window as Window & { YT?: unknown }).YT;
   hidden = false;
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden });
   play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (
@@ -234,11 +280,38 @@ describe('jukebox guest and admin', () => {
   });
 });
 describe('counter audio authority and recovery', () => {
+  it('lets the owner explicitly choose a song with no votes and preserves a manual selection on exact retry', async () => {
+    mount(<JukeboxPlayer />);
+    const button = await screen.findByRole('button', { name: 'Phát Nắng' });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Bật phát trên máy này' }));
+    await screen.findByRole('button', { name: 'Nhả thiết bị' });
+    mock.post.mockRejectedValueOnce(new Error('lost manual response'));
+    fireEvent.click(screen.getByRole('button', { name: 'Phát Nắng' }));
+    await screen.findByRole('button', { name: 'Thử lại thao tác' });
+    const call = mock.post.mock.calls.at(-1)!;
+    expect(call[0]).toBe('/staff/jukebox/play');
+    expect(call[1]).toMatchObject({ trackId: tid, playbackVersion: 0 });
+    expect(screen.getByRole('button', { name: 'Phát Nắng' }).hasAttribute('disabled')).toBe(true);
+    mock.player = { ...mock.player!, playbackVersion: 1, current: { ...song, audioUrl: 'https://music.example.test/one.mp3' } };
+    mock.post.mockResolvedValue(response(mock.player));
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại thao tác' }));
+    await waitFor(() => expect(mock.post.mock.calls.at(-1)).toEqual(call));
+    await screen.findByText('Đang phát trên thiết bị này');
+    expect(mock.post.mock.calls.some((c) => c[0].endsWith('/next'))).toBe(false);
+  });
   it('never starts audio on page entry and disables claims while another device owns playback', async () => {
     mock.player!.lease.busy = true;
     mount(<JukeboxPlayer />);
     expect(
-      (await screen.findByRole('button', { name: 'Bật phát trên máy này' })).hasAttribute('disabled'),
+      (await screen.findByRole('button', { name: 'Bật phát trên máy này' })).hasAttribute(
+        'disabled',
+      ),
     ).toBe(true);
     expect(play).not.toHaveBeenCalled();
     expect(mock.post).not.toHaveBeenCalled();
@@ -267,6 +340,8 @@ describe('counter audio authority and recovery', () => {
     await claimCurrent();
     await waitFor(() => expect(play).toHaveBeenCalled());
     const old = document.querySelector('audio')!;
+    hidden = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
     mock.post.mockImplementation(async (url: string) => {
       if (url.endsWith('/next')) {
         mock.player = {
@@ -287,17 +362,32 @@ describe('counter audio authority and recovery', () => {
     });
     expect(document.querySelector('audio')!.volume).toBe(0.5);
   });
-  it('pauses and releases on hidden/unmount and prevents late claims from resurrecting a closed page', async () => {
+  it('keeps the same audio playing and renews its lease while the tab is hidden, then releases on unmount', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
     const view = await claimCurrent();
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    const element = document.querySelector('audio')!;
+    element.currentTime = 23;
+    pause.mockClear();
     hidden = true;
     act(() => document.dispatchEvent(new Event('visibilitychange')));
-    await waitFor(() =>
-      expect(mock.post.mock.calls.some((c) => c[0].endsWith('/release'))).toBe(true),
-    );
-    expect(pause).toHaveBeenCalled();
-    view.unmount();
-    qc.clear();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_001);
+    });
+    expect(mock.post.mock.calls.filter((c) => c[0].endsWith('/heartbeat'))).toHaveLength(2);
+    expect(mock.post.mock.calls.some((c) => c[0].endsWith('/release'))).toBe(false);
+    expect(document.querySelector('audio')).toBe(element);
+    expect(element.currentTime).toBe(23);
+    expect(pause).not.toHaveBeenCalled();
     hidden = false;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    expect(screen.getByRole('button', { name: 'Nhả thiết bị' })).toBeTruthy();
+    view.unmount();
+    expect(mock.post.mock.calls.filter((c) => c[0].endsWith('/release'))).toHaveLength(1);
+    expect(pause).toHaveBeenCalled();
+  });
+  it('prevents late claims from resurrecting an unmounted player', async () => {
+    qc.clear();
     let resolve!: (value: unknown) => void;
     mock.player!.lease.busy = false;
     mock.post.mockImplementation((url: string) =>
@@ -325,6 +415,146 @@ describe('counter audio authority and recovery', () => {
       );
     });
     expect(play.mock.calls.length).toBe(before);
+    expect(mock.post.mock.calls.at(-1)![0]).toBe('/staff/jukebox/release');
+  });
+  it('keeps audio, position, volume and device ownership across navigation and a suspending destination', async () => {
+    let resolve!: (module: { default: () => JSX.Element }) => void;
+    const Destination = lazy(
+      () =>
+        new Promise<{ default: () => JSX.Element }>((r) => {
+          resolve = r;
+        }),
+    );
+    mock.player!.current = { ...song, audioUrl: 'https://music.example.test/one.mp3' };
+    mountPersistent(<Destination />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Bật phát trên máy này' }));
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    const element = document.querySelector('audio')!;
+    element.currentTime = 42;
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '0.7' } });
+    const plays = play.mock.calls.length;
+    const pauses = pause.mock.calls.length;
+    fireEvent.click(screen.getByRole('link', { name: 'Đổi chức năng' }));
+    await waitFor(() => expect(resolve).toBeTypeOf('function'));
+    expect(document.querySelector('audio')).toBe(element);
+    await act(async () => {
+      resolve({ default: () => <h1>Trang bàn</h1> });
+    });
+    await screen.findByRole('heading', { name: 'Trang bàn' });
+    expect(screen.getByRole('link', { name: 'Mở Jukebox' })).toBeTruthy();
+    expect(element.currentTime).toBe(42);
+    expect(element.volume).toBe(0.7);
+    expect(mock.post.mock.calls.filter((c) => c[0].endsWith('/claim'))).toHaveLength(1);
+    expect(mock.post.mock.calls.some((c) => c[0].endsWith('/release'))).toBe(false);
+    fireEvent.click(screen.getByRole('link', { name: 'Về chọn nhạc' }));
+    await screen.findByRole('heading', { name: 'Jukebox' });
+    expect(document.querySelector('audio')).toBe(element);
+    expect(play).toHaveBeenCalledTimes(plays);
+    expect(pause).toHaveBeenCalledTimes(pauses);
+    fireEvent.click(screen.getByRole('button', { name: 'Tạm dừng' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Đổi chức năng' }));
+    await screen.findByRole('heading', { name: 'Trang bàn' });
+    expect(screen.getByRole('button', { name: 'Phát / thử lại' })).toBeTruthy();
+    expect(play).toHaveBeenCalledTimes(plays);
+  });
+  it('preserves the visible YouTube instance when navigating or hiding the browser tab', async () => {
+    const commands = {
+      playVideo: vi.fn(),
+      pauseVideo: vi.fn(),
+      setVolume: vi.fn(),
+      destroy: vi.fn(),
+    };
+    const create = vi.fn(function (
+      element: HTMLElement,
+      options: {
+        events: {
+          onReady(event: { target: typeof commands }): void;
+          onStateChange(event: { data: number }): void;
+        };
+      },
+    ) {
+      const iframe = document.createElement('iframe');
+      iframe.title = 'Bài YouTube';
+      element.replaceWith(iframe);
+      commands.playVideo.mockImplementation(() => options.events.onStateChange({ data: 1 }));
+      queueMicrotask(() => options.events.onReady({ target: commands }));
+      return commands;
+    });
+    Object.assign(window, { YT: { Player: create } });
+    mock.player!.current = { ...song, audioUrl: 'https://youtu.be/dQw4w9WgXcQ' };
+    const view = mountPersistent();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Bật phát trên máy này' }));
+    await screen.findByText('Đang phát trên thiết bị này');
+    const iframe = document.querySelector('iframe')!;
+    const pauseCount = commands.pauseVideo.mock.calls.length;
+    hidden = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    fireEvent.click(screen.getByRole('link', { name: 'Đổi chức năng' }));
+    await screen.findByRole('heading', { name: 'Trang bàn' });
+    expect(document.querySelector('iframe')).toBe(iframe);
+    expect(iframe.closest('[hidden]')).toBeNull();
+    expect(create).toHaveBeenCalledOnce();
+    expect(commands.pauseVideo).toHaveBeenCalledTimes(pauseCount);
+    expect(commands.destroy).not.toHaveBeenCalled();
+    expect(mock.post.mock.calls.some((c) => c[0].endsWith('/release'))).toBe(false);
+    view.unmount();
+    expect(commands.destroy).toHaveBeenCalledOnce();
+  });
+  it('retains an uncertain next command across navigation and retries the exact request', async () => {
+    mock.player!.current = { ...song, audioUrl: 'https://music.example.test/one.mp3' };
+    mountPersistent();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Bật phát trên máy này' }));
+    await screen.findByRole('button', { name: 'Nhả thiết bị' });
+    mock.post.mockRejectedValueOnce(new Error('lost response'));
+    fireEvent.click(screen.getByRole('button', { name: 'Bài tiếp theo' }));
+    await screen.findByRole('button', { name: 'Thử lại thao tác' });
+    const request = mock.post.mock.calls.at(-1)!;
+    fireEvent.click(screen.getByRole('link', { name: 'Đổi chức năng' }));
+    await screen.findByRole('heading', { name: 'Trang bàn' });
+    expect(screen.getByRole('button', { name: 'Bài tiếp theo' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+    mock.post.mockResolvedValue(response(mock.player));
+    fireEvent.click(screen.getByRole('button', { name: 'Thử lại thao tác' }));
+    await waitFor(() => expect(mock.post.mock.calls.at(-1)).toEqual(request));
+    expect(mock.post.mock.calls.filter((c) => c[0].endsWith('/next'))).toHaveLength(2);
+    expect(mock.post.mock.calls.some((c) => c[0].endsWith('/release'))).toBe(false);
+  });
+  it('halts on return after a suspended tab outlives its lease and releases on pagehide', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    await claimCurrent();
+    hidden = true;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    vi.setSystemTime(Date.now() + 31_000);
+    mock.player!.lease = { owned: false, busy: false, until: 0 };
+    hidden = false;
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await screen.findByText('Quyền phát đã hết hạn. Bấm Bật phát trên máy này để kết nối lại.');
+    expect(screen.queryByRole('button', { name: 'Nhả thiết bị' })).toBeNull();
+    expect(pause).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Bật phát trên máy này' }).hasAttribute('disabled'),
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Bật phát trên máy này' }));
+    await screen.findByRole('button', { name: 'Nhả thiết bị' });
+    act(() => window.dispatchEvent(new Event('pagehide')));
     expect(mock.post.mock.calls.at(-1)![0]).toBe('/staff/jukebox/release');
   });
   it('shows a failed URL and allows recovery without automatic repeated skips', async () => {

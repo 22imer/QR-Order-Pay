@@ -1,0 +1,28 @@
+.latte-foam-preview {
+  position: relative;
+  aspect-ratio: 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 50%;
+  border: 6px solid #f2ece0;
+  background: radial-gradient(
+    circle at 42% 35%,
+    #fff8e5 0%,
+    #f1dfb9 62%,
+    #c8904e 85%,
+    #82502a 100%
+  );
+  box-shadow:
+    inset 0 0 16px #8e542b55,
+    0 5px 14px #0002;
+}
+.latte-foam-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+}
+.latte-choice {
+  min-width: 0;
+}

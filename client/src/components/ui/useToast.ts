@@ -5,6 +5,7 @@ export interface ToastItem {
   title: string;
   description?: string;
   tone?: 'success' | 'danger' | 'info';
+  onClick?: () => void;
 }
 
 export interface ToastApi {

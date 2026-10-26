@@ -68,6 +68,7 @@ export const YouTubePlayer = forwardRef<
   YouTubeControls,
   {
     videoId: string;
+    compact?: boolean;
     volume: number;
     onPlaying(playing: boolean): void;
     onEnded(): void;
@@ -174,7 +175,11 @@ export const YouTubePlayer = forwardRef<
     <div
       aria-label="Trình phát YouTube"
       ref={container}
-      className="aspect-video min-h-[200px] w-full overflow-hidden rounded-xl bg-black"
+      className={
+        props.compact
+          ? 'aspect-video min-h-[200px] w-full max-w-[360px] overflow-hidden rounded-xl bg-black'
+          : 'aspect-video min-h-[200px] w-full overflow-hidden rounded-xl bg-black'
+      }
     />
   );
 });

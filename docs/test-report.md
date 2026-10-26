@@ -1,5 +1,43 @@
 # Test report — cập nhật 23/10/2026
 
+## Thông báo điều hướng, mang đi sau thu tiền và chọn bài Jukebox — 26/10/2026
+
+- **644 tests PASS =106unit +332integration +206client**, `.cache/actions-{unit,integration,client-final}.log`. Manual play4integration mới bao phủ quyền/strict/lease/no-vote/replay/race/version/disabled/quota/queue/rollback/no-finance.7client mới bao phủ toast button/dismiss/browser onclick, mapping Staff destinations, full/partial pickup collection và manual song retry.1 mock frontend đầu đã sửa để GET giữ snapshot sau play. Typecheck/lint/boundaries/build/Docker/OpenAPI2paths/schema PASS.
+- Lightpanda DB tạm/shell thật PASS manual YouTube không vote và cùng iframe qua điều hướng; UI khách đặt mang đi → thông báo → đúng Staff pickups; payment một lần 30000 → PAID badge/next action/no re-collection → xác nhận bước pha; gọi nhân viên/đơn tại bàn/hủy → notice tới đúng chức năng. `.cache/actions-lightpanda-final-3.log`,0 JS exception/5xx. **Native pointer capture/swipe không có trong Lightpanda**: lượt cuối dùng Enter trên button thông báo; pointer click/close được unit kiểm. Chưa nghiệm thu click chuột/cảm ứng trên trình duyệt thật, notification OS, bố cục hoặc âm thanh/autoplay; không coi DOM là bằng chứng trực quan.
+- Local **PWA37**, cả stack healthy/migrate skip; Lightpanda read-only 3portal/QR/Jukebox manual-list/latte/reservation/pickup/workforce/logout PASS. Hash/count35collection nghiệp vụ không đổi, không tạo giao dịch thử trên quán. `.cache/actions-{docker,deploy,local-smoke}.log`.
+- Test tay sau Ctrl+F5: khách đặt/gọi nhân viên → bấm body thông báo để tới màn hình tương ứng, X chỉ đóng; Staff xử lý mang đi/nhận tiền → thẻ có nhãn Đã nhận đủ tiền, nút Xác nhận đơn, không thu lại; thu một phần vẫn còn thiếu. Jukebox bật quyền → Tự chọn bài để phát → chọn bài không có vote → bài phát trên máy, chuyển màn hình qua thông báo vẫn giữ trình phát.
+
+## Jukebox giữ trình phát khi điều hướng và cho phép tab nền — 26/10/2026
+
+- Client **199/199 PASS**; lint và TypeScript/Vite build PASS. Mới 5 ca: audio/vị trí/volume/pause qua route lazy suspend, YouTube instance không thay/ẩn, pending retry qua điều hướng, heartbeat khi hidden và expiry/pagehide; giữ late-claim/ownership/ended/autoplay recovery cũ. `.cache/jukebox-background-{client-final-2,lint-final-2,build-final-2}.log`. Fixture đầu được sửa để đợi feed trước claim, cập nhật expired lease mock và không đòi Suspense phải hiển thị fallback trong Router transition.
+- Lightpanda với Mongo tạm/shell thật PASS chỉ lazy-load player sau vào Jukebox, explicit claim/next, cùng audio DOM/device qua Bàn/Khoản thu và heartbeat server thật, official YouTube iframe cùng node qua Hết món/Jukebox và không bị hidden, release/logout teardown; 0 JS exceptions/5xx/Order/Payment. `.cache/jukebox-background-lightpanda-final-2.log`. **Audio synthetic chỉ kiểm lifecycle. Native tab thứ hai không được Lightpanda hỗ trợ (TargetAlreadyLoaded), nên chưa nghiệm thu tab nền thật, âm loa/codec/autoplay/YouTube nền/sleep hoặc bố cục trực quan.** Unit test mô phỏng visibility/heartbeat để xác nhận web không chủ động dừng.
+- Docker web build/deploy PWA36 healthy, không rebuild backend/migration. Local Lightpanda Staff/Admin navigation/no auto audio và no business writes PASS; 35 collection nghiệp vụ hash/count không đổi. `.cache/jukebox-background-{docker-final,deploy-final,local-smoke}.log`.
+- Test tay: Ctrl+F5 → Staff/Admin Jukebox → Bật phát trên máy này → có vote thì Bài tiếp theo → chuyển Bàn/KDS/Khoản thu và đổi tab trình duyệt. Nhạc phải tiếp tục ở vị trí hiện tại; quay về không phát từ đầu, tạm dừng/volume/next vẫn dùng được ở bộ điều khiển. Tạm dừng rồi chuyển trang phải giữ dừng. Logout/nhả/đóng/reload phải dừng; mất quyền hoặc sleep/freeze cần bật lại, không tự giành quyền máy khác.
+
+## Menu nội bộ trên cửa sổ nhỏ — 26/10/2026
+
+- Thay hàng cuộn ngang ẩn scrollbar bằng **Tất cả chức năng**, mở lưới cuộn dọc giới hạn chiều cao viewport cho Staff/Admin. Có nhãn trang hiện tại, badge, tự đóng khi chọn/chuyển trang, Escape trả focus; desktop sidebar giữ nguyên.
+- Client 194/194 PASS, lint + TypeScript/Vite build PASS. 3 test mới kiểm đầy đủ link/mục cuối, điều hướng/active/badge và keyboard focus. Docker rebuild/recreate riêng web healthy/PWA35.
+- Lightpanda local PASS 11 mục Staff/20 mục Admin, chọn Khoản thu và Bàn, đổi viewport 320/375/500/768/1280, mở lại/chọn/tự đóng và Escape; 0 JS exceptions/5xx/business API writes. `.cache/navigation-lightpanda.log`. Đây là DOM/hành vi; **chưa nghiệm thu trực quan bố cục/CSS/che khuất hoặc cuộn bằng cảm ứng**. User cần Ctrl+F5 rồi thu nhỏ cửa sổ → Tất cả chức năng → chọn KDS/Bàn & phiên/Ca thu ngân/Khoản thu.
+
+## Thông báo hủy đơn cho nhân viên — 26/10/2026
+
+- Client 191/191 PASS; integration 328 ca khác nhau đạt sau sửa fixture pickup (lượt full 327 PASS/1 FAIL, focused orderFlow cuối 49/49 PASS). Typecheck/lint/boundaries/build/Docker server-web PASS. Logs `.cache/cancellation-{client-final,order-flow,order-flow-final,typecheck-final,lint-final,build,docker-build}.log`.
+- Test mới bao phủ hủy UNPAID thực qua API/socket, giữ lịch sử khi phiên CLOSED, không sinh Payment, auth/DTO, giới hạn 24 giờ/50 dòng/mang đi/hoàn tiền; client kiểm realtime + polling không báo trùng, không báo lịch sử lúc mở trang, catch-up qua refetch, request badge/resolved, lịch sử reload và retry lỗi tải. Các mock thu tiền đã thêm GET feed hủy riêng.
+- Lightpanda hai browser với Mongo tạm PASS hủy trước thu → Staff toast/mã/bàn/lý do → bỏ khỏi chờ thu → lịch sử vẫn có khi reload/KDS; đơn đã thu → khách yêu cầu hủy → Staff nhận ngay ở trang bàn → KDS lý do/nút xử lý → từ chối giữ nguyên đơn. `.cache/cancellation-lightpanda-final-3.log`, 0 exception/5xx; lượt cuối browser sạch, không giả lập event UI. DOM/hành vi, chưa chứng minh bố cục/âm thanh loa/thông báo OS.
+- Local PWA34/3portal healthy, Lightpanda read-only kiểm feed hủy/yêu cầu và regression QR/Jukebox/latte/reservation/pickup/workforce PASS. `.cache/cancellation-local-smoke.log`. Hash/count 35 collection nghiệp vụ không đổi, không tạo đơn hoặc thanh toán thử trên dữ liệu quán. Không migration/index/backfill.
+- Test tay: mở Staff → Bàn & phiên, khách đặt một đơn chưa thu rồi bấm **Huỷ đơn**. Staff phải có thông báo và thẻ trong **Đơn đã hủy gần đây**; tải lại vẫn còn. Với đơn đã thu/chưa pha, khách bấm **Yêu cầu nhân viên hủy** và nhập lý do; Staff nhận thông báo, vào **KDS → Yêu cầu hủy đang chờ** để xử lý theo quy tắc hoàn tiền hiện có.
+
+## Latte art từ ảnh và xuất PNG — 26/10/2026
+
+- Đã chạy local PWA33:3kiểu tông cà phê từ pixelgốc/giữ khung, khách chọn mới gắn món; Staff xuấtPNG1024 nền trắng sau thu tiền, ảnh tem cũ giữ riêng. User chưa có máy in thực phẩm, không kết nối hoặc xác nhận in thật.
+- **620testsPASS =106unit+326integration+188client**; `.cache/latte-{unit,integration-all,client-final}.log`. Bao phủ owner/auth/CSRF/portal,3effects/sourceunchanged, atomic/replay/race/rollback, chosenID/retention, paid/expiry/cancel/refund/outputkind/retry, exactPNGpixels/không tiền, UIselect/reload/lateowner/cancel/multiline/exportnoPrint. Sửa fieldset cha khóa lựa chọn khi chờ chọn; test Cart dùng matches(':disabled') bắt cả inheriteddisabled.
+- Typecheck/lint/boundaries/build/Docker server-web/OpenAPI10paths/diff-check PASS; Linux render3style1024 nativeSharp trong memoryPASS. Không migration/index/backfill hoặc seed/reset. Backup SHA256 `79d33536c31a6dbfcd65419fda682016280de076ecaea4a128fc5e312986b609`;35collection nghiệp vụhash/count không đổi qua deploy+smoke.
+- Lightpanda2browser/DBtạm PASS upload thật→3bản→chọnBOLD→reload→đặt2cốc60000→thu đủ APIfixture→Staffxem/xuấtPNG1024/1journal/không in tem/không đổi tiền/KDSlink.0exception/5xx. `.cache/latte-lightpanda-5.log`; lượtcuối không mô phỏng load (lượtđầu phát hiệnfieldsetcha vàđãsửa). Spy anchor chỉ kiểm downloadintent, PNGHTTPbytes đượcdecode.
+- Localread-onlyPASS health/PWA33/isolation/QR/Jukebox/cup-lattepaidfeed/reservation/pickup/workforce/logout; không businessmutation. `.cache/latte-local-smoke-final-2.log`. Stack giữhealthy, browser/relay tạm dọn, tunnel tắt.
+- **Chưa xác minh visual layout/ảnh trên trình duyệt thật/mobile, OS file save, thẩm mỹ và chất lượng in lên bọt/driver/mực/vùng in/căn tâm.** Chưa có máy nên in trực tiếp chưa nghiệm thu. Hướng dẫn và14ca tại [latte-art.md](latte-art.md).
+
+
 ## Feedback QR tĩnh, thành viên, giao diện, game và YouTube — 26/10/2026
 
 - Đã triển khai và chạy local PWA v32: QR tĩnh/download, không nhớ member qua lần vào bàn mới, header hai hàng/scroll, host thêm/xóa tên trong vòng quay một máy, YouTube IFrame API cạnh audio cũ và nhãn Bật phát trên máy này. Không migration/backfill/seed/reset hoặc tạo giao dịch thử trên dữ liệu quán.

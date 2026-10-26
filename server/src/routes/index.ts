@@ -226,6 +226,10 @@ apiRouter.post('/table-sessions/leave', loadGuest, guestCsrfGuard, tableSession.
 // guest orders
 const gameLimiter = rateLimitOrPassthrough(40, 'table-game', tableKey);
 const photoLimiter = rateLimitOrPassthrough(5, 'cup-photo-upload', tableKey);
+apiRouter.get('/cup-photos/:id/details', loadGuest, requireGuest, cupPhotos.authorize('guest'), cupPhotos.details);
+apiRouter.post('/cup-photos/:id/latte-art', loadGuest, requireGuest, guestCsrfGuard, photoLimiter, cupPhotos.authorize('guest'), cupPhotos.latteArt);
+apiRouter.get('/pickup/cup-photos/:id/details', cupPhotos.authorize('member'), cupPhotos.details);
+apiRouter.post('/pickup/cup-photos/:id/latte-art', guestCsrfGuard, photoLimiter, cupPhotos.authorize('member'), cupPhotos.latteArt);
 apiRouter.post(
   '/cup-photos',
   loadGuest,
@@ -268,6 +272,8 @@ for (const prefix of ['/staff/cup-photos', '/admin/cup-photos']) {
     cupPhotos.upload,
   );
   apiRouter.get(`${prefix}/:id`, cupPhotos.authorize('staff'), cupPhotos.own);
+  apiRouter.get(`${prefix}/:id/details`, cupPhotos.authorize('staff'), cupPhotos.details);
+  apiRouter.post(`${prefix}/:id/latte-art`, photoLimiter, cupPhotos.authorize('staff'), cupPhotos.latteArt);
 }
 for (const prefix of ['/staff/cup-prints', '/admin/cup-prints']) {
   apiRouter.use(
@@ -280,6 +286,7 @@ for (const prefix of ['/staff/cup-prints', '/admin/cup-prints']) {
   apiRouter.get(prefix, cupPhotos.feed);
   apiRouter.get(`${prefix}/:id/:index/image`, cupPhotos.image);
   apiRouter.post(prefix, cupPhotos.print);
+  apiRouter.post(`${prefix}/latte-art/exports`, cupPhotos.exportLatteArt);
 }
 const jukeboxLimiter = rateLimitOrPassthrough(20, 'table-jukebox', tableKey);
 apiRouter.get('/jukebox', loadGuest, requireGuest, jukebox.feed);
@@ -302,7 +309,7 @@ for (const prefix of ['/staff/jukebox', '/admin/jukebox']) {
   apiRouter.get(prefix, jukebox.staffFeed);
   for (const kind of ['claim', 'heartbeat', 'release'] as const)
     apiRouter.post(`${prefix}/${kind}`, jukebox.lease(kind));
-  for (const kind of ['next', 'stop'] as const)
+  for (const kind of ['next', 'stop', 'play'] as const)
     apiRouter.post(`${prefix}/${kind}`, jukebox.control(kind));
 }
 apiRouter.get('/admin/jukebox/tracks', jukebox.catalog);

@@ -213,7 +213,7 @@ describe('table QR display and manual prepayment', () => {
   it('does not offer closure while a prepaid order is still being prepared', async () => {
     const table = { _id: 't1', name: 'Bàn 01', code: 'B01', capacity: 4, isActive: true };
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
       if (url === '/staff/tables') return response({ tables: [table] });
       if (url === '/staff/table-sessions')
         return response({
@@ -246,7 +246,7 @@ describe('table QR display and manual prepayment', () => {
       },
     ];
     mock.get.mockImplementation(async (url: string) => {
-      if (url === '/staff/awaiting-payments') return response({ items: [] });
+      if (url === '/staff/awaiting-payments' || url === '/staff/orders') return response({ items: [] });
       if (url === '/staff/tables') return response({ tables: [table] });
       if (url === '/staff/table-sessions')
         return response({

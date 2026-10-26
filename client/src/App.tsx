@@ -10,6 +10,7 @@ import { AdminLayout } from './layouts/AdminLayout';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { getPortalMode, portalHome } from './lib/portals';
 import { useGuestTheme } from './features/guest/useGuestTheme';
+import { JukeboxRoute } from './features/jukebox/PersistentJukebox';
 
 const JoinPage = lazy(() =>
   import('./features/guest/JoinPage').then((module) => ({ default: module.JoinPage })),
@@ -57,9 +58,6 @@ const CupPrintPage = lazy(() =>
 );
 const JukeboxPage = lazy(() =>
   import('./features/jukebox/JukeboxPage').then((m) => ({ default: m.JukeboxPage })),
-);
-const JukeboxPlayer = lazy(() =>
-  import('./features/jukebox/JukeboxPlayer').then((m) => ({ default: m.JukeboxPlayer })),
 );
 const OrdersPage = lazy(() =>
   import('./features/guest/OrdersPage').then((module) => ({ default: module.OrdersPage })),
@@ -185,7 +183,7 @@ export function App(): JSX.Element {
                 <Route path="/staff" element={<Navigate to="/staff/kds" replace />} />
                 <Route path="/staff/kds" element={<StaffKDS />} />
                 <Route path="/staff/cup-prints" element={<CupPrintPage />} />
-                <Route path="/staff/jukebox" element={<JukeboxPlayer />} />
+                <Route path="/staff/jukebox" element={<JukeboxRoute />} />
                 <Route path="/staff/tables" element={<StaffTables />} />
                 <Route path="/staff/service-requests" element={<StaffServiceRequests />} />
                 <Route path="/staff/availability" element={<StaffAvailability />} />
@@ -207,7 +205,7 @@ export function App(): JSX.Element {
                 <Route path="/admin/freestyle" element={<FreestyleAdmin />} />
                 <Route path="/admin/insights" element={<SmartInsights />} />
                 <Route path="/admin/cup-prints" element={<CupPrintPage admin />} />
-                <Route path="/admin/jukebox" element={<JukeboxPlayer admin />} />
+                <Route path="/admin/jukebox" element={<JukeboxRoute />} />
                 <Route path="/admin/operations" element={<AdminOperations />} />
                 <Route path="/admin/bills" element={<AdminBills />} />
                 <Route path="/admin/payments" element={<PaymentAccounting admin />} />

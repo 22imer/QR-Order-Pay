@@ -78,6 +78,9 @@ export const jukeboxControlSchema = jukeboxDeviceSchema
     playbackVersion: z.number().int().nonnegative(),
   })
   .strict();
+export const jukeboxPlaySchema = jukeboxControlSchema
+  .extend({ trackId: z.string().regex(/^[a-f\d]{24}$/i) })
+  .strict();
 export interface JukeboxTrack {
   id: string;
   title: string;

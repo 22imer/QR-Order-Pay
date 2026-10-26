@@ -379,7 +379,12 @@ export function orderRealtimeEvents(
         aggregateType: 'Order',
         aggregateId: order.id,
         aggregateVersion: order.version,
-        payload: { orderId: order.id, status: order.status, version: order.version },
+        payload: {
+          orderId: order.id,
+          orderCode: order.code,
+          status: order.status,
+          version: order.version,
+        },
         target: { scope: 'staff' },
       },
     ];
@@ -415,7 +420,7 @@ export function orderRealtimeEvents(
           },
         ]
       : []),
-    { ...base, target: { scope: 'staff' } },
+    { ...base, payload: { ...payload, orderCode: order.code }, target: { scope: 'staff' } },
     { ...base, target: { scope: 'guest', tableSessionId, participantId: order.participantId } },
   ];
 }
@@ -438,6 +443,7 @@ export async function getOrderForGuest(orderId: string, participantId: string): 
 }
 
 export async function listOrdersForStaff(status?: OrderStatus): Promise<OrderDoc[]> {
+  if (status === 'CANCELLED') return orderRepository.listRecentCancellations();
   const activeSessions = await tableSessionRepository.listOpen();
   return orderRepository.listForStaff({
     tableSessionIds: activeSessions.map((session) => session._id.toString()),

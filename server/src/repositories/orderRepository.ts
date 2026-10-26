@@ -80,13 +80,30 @@ export const orderRepository = {
     ]);
     return { items, total };
   },
+  /** Lưu dấu hủy để đối chiếu, kể cả chưa thu tiền hoặc phiên đã đóng. */
+  async listRecentCancellations(): Promise<OrderDoc[]> {
+    const since = new Date(Date.now() - 24 * 60 * 60_000);
+    return OrderModel.find({
+      status: 'CANCELLED',
+      updatedAt: { $gte: since },
+      statusHistory: { $elemMatch: { to: 'CANCELLED', at: { $gte: since } } },
+    })
+      .sort({ updatedAt: -1, _id: -1 })
+      .limit(50);
+  },
   /** Feed KDS: chỉ đơn của các phiên đang hoạt động, nên không phình theo lịch sử. */
   async listForStaff(filters: StaffOrderFeedFilters): Promise<OrderDoc[]> {
     return OrderModel.find({
       $or: [
         { tableSessionId: { $in: filters.tableSessionIds } },
-        { fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] }, 'pickup.outcome': 'ACTIVE',
-          $or: [{ 'pickup.scheduledAt': null }, { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } }] },
+        {
+          fulfillmentType: { $in: ['TAKEAWAY', 'PICKUP'] },
+          'pickup.outcome': 'ACTIVE',
+          $or: [
+            { 'pickup.scheduledAt': null },
+            { 'pickup.scheduledAt': { $lte: new Date(Date.now() + 15 * 60000) } },
+          ],
+        },
       ],
       paymentStatus: 'PAID',
       status: filters.status ?? { $in: UNFINISHED_ORDER_STATUSES },

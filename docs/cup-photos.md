@@ -2,13 +2,17 @@
 
 User chốt ngày 23/10/2026: **in ảnh thành tem dán cốc**, có xem trước và trang in. #7 Telegram để lại sau.
 
+## Latte art trên bọt — 26/10/2026
+
+Đã có lựa chọn **Latte art trên bọt** bên cạnh ảnh tem: tạo3 bản từ ảnh gốc, khách chọn, Staff xuấtPNG sau thanh toán. User chưa có máy in thực phẩm, chưa gửi lệnh in trực tiếp. Xem [hướng dẫn và14ca](latte-art.md). Các bước in tem dưới đây tiếp tục áp dụng riêng cho ảnh tem.
+
 ## Dùng thử
 
 1. Khách QR chọn món, vào **Giỏ hàng**, chọn **Ảnh in tem** ở từng dòng món. Mang đi/đặt trước và quà gửi bàn khác cũng có lựa chọn này. Tạo đơn không ảnh vẫn như cũ; ảnh không thay giá.
 2. Chỉ nhận JPEG/PNG/WebP tĩnh, tối đa **4 MB**, mỗi chiều ít nhất64px, tối đa16triệu điểm ảnh. Khuyên dùng ảnh ít nhất600px để in rõ. Ảnh cùng dòng dùng chung cho mọi cốc; muốn mỗi cốc một ảnh thì thêm thành các dòng riêng.
 3. Xem ảnh chuẩn hóa trước khi đặt. Giữ trọn ảnh, không tự cắt; xoay theo EXIF, nền trong suốt thành trắng. Có Bỏ ảnh và Thử lại tải ảnh khi mất mạng. Không thể gửi đơn khi ảnh đang tải.
 4. Đặt/nhận quà/xác nhận giá/thanh toán như bình thường. Người nhận quà chỉ thấy “Có ảnh in tem”; không thấy ID ảnh hoặc ảnh gốc trước khi nhận. KDS có liên kết **Có ảnh · Mở in tem**.
-5. Staff/Admin mở **In tem ảnh** (`/staff/cup-prints`, `/admin/cup-prints`). Chỉ đơn đã thanh toán, không hủy/hoàn, mới có trong danh sách. Chọn **Xem & in tem**, đối chiếu mã đơn, dòng món, tên/size và số cốc.
+5. Staff/Admin mở **Ảnh cốc & latte art** (`/staff/cup-prints`, `/admin/cup-prints`). Chỉ đơn đã thanh toán, không hủy/hoàn, mới có trong danh sách. Chọn **Xem & in tem**, đối chiếu mã đơn, dòng món, tên/size và số cốc.
 6. Tem **60×80mm**, ảnh50×50mm giữ tỷ lệ. Chọn A4 để cắt tem hoặc giấy tem60×80mm. Số tem từ1 đến số cốc trong dòng, tối đa50; bản in đánh số từ1. In lại một phần cần kiểm tra các số cốc trùng.
 7. Bấm **In tem**, chọn máy/khổ giấy, **100% / kích thước thật**, tắt header/footer trong hộp thoại. App không tự tìm/cài driver, không in trực tiếp lên cà phê/cốc và không điều khiển máy in mạng/USB.
 

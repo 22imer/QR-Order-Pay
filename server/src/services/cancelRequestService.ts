@@ -69,7 +69,7 @@ export async function createCancelRequest(orderId: string, participantId: string
           participantId,
           'cancelRequest.created',
           created.version,
-          { status: created.status, reason },
+          { status: created.status, reason, orderCode: order.code },
         ),
         session,
       );

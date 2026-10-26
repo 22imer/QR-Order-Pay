@@ -7,6 +7,7 @@ import express, {
 import { AppError } from '../errors/AppError.js';
 import { MEMBER_COOKIE, requireMember } from '../services/memberService.js';
 import * as photos from '../services/cupPhotoService.js';
+import { generateLatteArt } from '../services/latteArtService.js';
 type Kind = 'guest' | 'member' | 'staff';
 export const authorize =
   (kind: Kind): RequestHandler =>
@@ -74,3 +75,20 @@ export const image = handle(
   true,
 );
 export const print = handle((req) => photos.requestCupPrint(req.user!.id, req.body));
+export const details = handle((req, res) =>
+  photos.ownCupPhotoDetails(res.locals.photoActor as photos.PhotoActor, req.params['id']),
+);
+export const latteArt = handle((req, res) =>
+  generateLatteArt(res.locals.photoActor as photos.PhotoActor, req.params['id'], req.body),
+);
+export async function exportLatteArt(req: Request, res: Response, next: NextFunction) {
+  try {
+    const output = await photos.exportCupLatteArt(req.user!.id, req.body);
+    res.set('Cache-Control', 'no-store');
+    res.set('Content-Type', 'image/png');
+    res.set('Content-Disposition', `attachment; filename="${output.filename}"`);
+    res.send(output.data);
+  } catch (error) {
+    next(error);
+  }
+}

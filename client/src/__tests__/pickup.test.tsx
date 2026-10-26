@@ -237,7 +237,9 @@ describe('pickup ordering and counter UI', () => {
   it('asks anonymous customers to sign in without exposing any pickup list', () => {
     mock.member = null;
     mount();
-    expect(screen.getByRole('link', { name: /Đăng nhập/ }).getAttribute('href')).toBe('/pickup/member');
+    expect(screen.getByRole('link', { name: /Đăng nhập/ }).getAttribute('href')).toBe(
+      '/pickup/member',
+    );
     expect(mock.get).not.toHaveBeenCalled();
   });
   it('creates a quoted standalone order with its own basket and does not send a client member identity', async () => {
@@ -356,6 +358,50 @@ describe('pickup ordering and counter UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Thử lại cùng yêu cầu' }));
     await waitFor(() => expect(mock.post).toHaveBeenCalledTimes(2));
     expect(mock.post.mock.calls[1]).toEqual(first);
+  });
+  it('clearly marks successful full collection and replaces the next action after authoritative refetch', async () => {
+    let row = order();
+    mock.get.mockImplementation(async () => response({ items: [row], total: 1 }));
+    mock.post.mockImplementation(async () => {
+      row = order({
+        status: 'PENDING',
+        paymentStatus: 'PAID',
+        paidAmount: 30000,
+        balanceDue: 0,
+        version: 5,
+      });
+      return response({ replayed: false });
+    });
+    mount(true);
+    await screen.findByText('Chưa nhận tiền');
+    fireEvent.click(screen.getByRole('button', { name: 'Xử lý đơn' }));
+    fireEvent.click(screen.getByLabelText(/Tôi đã kiểm tra/));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận thu tiền' }));
+    await screen.findByText('Đã nhận đủ tiền');
+    expect(screen.getByRole('button', { name: 'Xác nhận đơn' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Xử lý đơn' })).toBeNull();
+    expect(screen.getByText('Bước tiếp theo: xác nhận đơn rồi chuyển pha chế.')).toBeTruthy();
+    await screen.findByText('Đã ghi nhận thu tiền · MDTEST1');
+    expect(mock.post).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận đơn' }));
+    expect(screen.queryByRole('button', { name: 'Xác nhận thu tiền' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Chuyển: Đã nhận đơn' })).toBeTruthy();
+  });
+  it('keeps a partial payment visibly unpaid and keeps the remaining collection action', async () => {
+    let row = order();
+    mock.get.mockImplementation(async () => response({ items: [row], total: 1 }));
+    mock.post.mockImplementation(async () => {
+      row = order({ paidAmount: 10000, balanceDue: 20000, version: 5 });
+      return response({ replayed: false });
+    });
+    mount(true);
+    fireEvent.click(await screen.findByRole('button', { name: 'Xử lý đơn' }));
+    fireEvent.change(screen.getByLabelText('Số tiền thực nhận'), { target: { value: '10000' } });
+    fireEvent.click(screen.getByLabelText(/Tôi đã kiểm tra/));
+    fireEvent.click(screen.getByRole('button', { name: 'Xác nhận thu tiền' }));
+    await screen.findByText('Đã nhận một phần · Còn thiếu');
+    expect(screen.queryByText('Đã nhận đủ tiền')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Xử lý đơn' })).toBeTruthy();
   });
   it('requires refund confirmation/reason and does not offer unpaid cancellation for collected money', async () => {
     mock.get.mockResolvedValue(

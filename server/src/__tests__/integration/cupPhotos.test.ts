@@ -25,8 +25,10 @@ import {
   cupPrintFeed,
   requestCupPrint,
   staffCupPhoto,
+  exportCupLatteArt,
   type PhotoActor,
 } from '../../services/cupPhotoService.js';
+import { generateLatteArt, renderLatteArtVariants } from '../../services/latteArtService.js';
 import { createOrderQuote } from '../../services/orderPricingService.js';
 import { placeOrder, type PlaceOrderItemInput } from '../../services/orderService.js';
 import { quotePickup, createPickup } from '../../services/pickupService.js';
@@ -160,6 +162,178 @@ afterAll(async () => {
   await repl.stop();
 });
 describe('private cup photo upload, binding and printable labels', () => {
+  it('renders three deterministic coffee styles inside a white square without changing the source', async () => {
+    const original = await sharp(
+      Buffer.from(
+        '<svg width="300" height="180"><rect width="150" height="180" fill="#222"/><rect x="150" width="150" height="180" fill="#ddd"/><circle cx="150" cy="90" r="35" fill="#777"/></svg>',
+      ),
+    )
+      .png()
+      .toBuffer();
+    const copy = Buffer.from(original);
+    const variants = await renderLatteArtVariants(original);
+    expect(original.equals(copy)).toBe(true);
+    expect(variants.map((variant) => variant.style)).toEqual(['SOFT', 'BOLD', 'DOTS']);
+    expect(new Set(variants.map((variant) => sha256(variant.data.toString('base64')))).size).toBe(
+      3,
+    );
+    for (const variant of variants) {
+      const image = await sharp(variant.data).raw().toBuffer({ resolveWithObject: true });
+      expect(image.info).toMatchObject({ width: 1024, height: 1024, channels: 3 });
+      expect([...image.data.subarray(0, 3)]).toEqual([255, 255, 255]);
+      const at = (x: number, y: number) => image.data[(y * 1024 + x) * 3]!;
+      expect(at(280, 512)).toBeLessThan(at(730, 512));
+    }
+    expect((await renderLatteArtVariants(original)).map((v) => v.data)).toEqual(
+      variants.map((v) => v.data),
+    );
+  });
+  it('generates private variants once under concurrent retry, validates owner/body and rejects recursive effects', async () => {
+    const source = await upload();
+    const before = await ownCupPhoto(actor, source.id);
+    const [one, two] = await Promise.all([
+      generateLatteArt(actor, source.id, {}),
+      generateLatteArt(actor, source.id, {}),
+    ]);
+    expect(one).toEqual(two);
+    expect(one.variants).toHaveLength(3);
+    expect(one.variants.every((v) => v.kind === 'LATTE_ART' && v.id !== source.id)).toBe(true);
+    expect(await CupPhotoModel.countDocuments()).toBe(4);
+    expect((await ownCupPhoto(actor, source.id)).equals(before)).toBe(true);
+    await expect(
+      generateLatteArt({ ...actor, owner: photoOwner(sid, 'guest-b') }, source.id, {}),
+    ).rejects.toThrow();
+    await expect(generateLatteArt(actor, source.id, { style: 'invented' })).rejects.toThrow();
+    await expect(generateLatteArt(actor, one.variants[0]!.id, {})).rejects.toThrow();
+    expect(await OrderModel.countDocuments()).toBe(0);
+    expect(await PaymentModel.countDocuments()).toBe(0);
+    expect(await BillModel.countDocuments()).toBe(0);
+  });
+  it('rolls back all generated images if the audit fails and refuses generation when the table is not open', async () => {
+    const source = await upload();
+    vi.spyOn(auditRepository, 'log').mockRejectedValueOnce(new Error('audit rollback'));
+    await expect(generateLatteArt(actor, source.id, {})).rejects.toThrow('audit rollback');
+    expect(await CupPhotoModel.countDocuments()).toBe(1);
+    await TableSessionModel.updateOne({ _id: sid }, { status: 'CHECKOUT' });
+    await expect(generateLatteArt(actor, source.id, {})).rejects.toThrow();
+    expect(await CupPhotoModel.countDocuments()).toBe(1);
+  });
+  it('binds the selected latte design to one order and exports exact pixels only after payment, with replay and no financial changes', async () => {
+    const source = await upload();
+    const chosen = (await generateLatteArt(actor, source.id, {})).variants[1]!;
+    const items = [item({ cupPhotoId: chosen.id })];
+    const quote = await createOrderQuote({ tableSessionId: sid, participantId: 'guest-a', items });
+    const placed = await placeOrder({
+      tableSessionId: sid,
+      participantId: 'guest-a',
+      items,
+      idempotencyKey: randomUUID(),
+      quoteToken: quote.quoteToken,
+    });
+    const order = placed.order;
+    const input = { requestId: randomUUID(), orderId: order.id, itemIndex: 0 };
+    await expect(exportCupLatteArt(staff, input)).rejects.toThrow();
+    expect(await CupPrintAttemptModel.countDocuments()).toBe(0);
+    await OrderModel.updateOne(
+      { _id: order.id },
+      { status: 'PENDING', paymentStatus: 'PAID', paidAmount: order.total },
+    );
+    const before = await OrderModel.findById(order.id).orFail();
+    const first = await exportCupLatteArt(staff, input),
+      again = await exportCupLatteArt(staff, input);
+    expect(first.data.equals(again.data)).toBe(true);
+    expect(await sharp(first.data).metadata()).toMatchObject({
+      format: 'png',
+      width: 1024,
+      height: 1024,
+    });
+    expect(await sharp(first.data).raw().toBuffer()).toEqual(
+      await sharp(await ownCupPhoto(actor, chosen.id))
+        .raw()
+        .toBuffer(),
+    );
+    expect(first.filename).toContain('line-1.png');
+    expect(await CupPrintAttemptModel.countDocuments()).toBe(1);
+    expect((await cupPrintFeed(1)).items[0]!.items[0]).toMatchObject({
+      kind: 'LATTE_ART',
+      latteStyle: 'BOLD',
+      attempts: 1,
+    });
+    const after = await OrderModel.findById(order.id).orFail();
+    expect(after.toObject().items).toEqual(before.toObject().items);
+    expect([after.total, after.paidAmount, after.status, after.paymentStatus]).toEqual([
+      before.total,
+      before.paidAmount,
+      before.status,
+      before.paymentStatus,
+    ]);
+    expect(await PaymentModel.countDocuments()).toBe(0);
+    expect(await BillModel.countDocuments()).toBe(0);
+    await expect(requestCupPrint(staff, command(order.id))).rejects.toThrow();
+    await OrderModel.updateOne(
+      { _id: order.id },
+      { paymentStatus: 'REFUNDED', status: 'CANCELLED' },
+    );
+    await expect(exportCupLatteArt(staff, input)).rejects.toThrow();
+  });
+  it('guards latte HTTP generation, metadata and export with existing portal, owner, CSRF and paid-order rules', async () => {
+    const source = await upload();
+    const path = `/api/v1/cup-photos/${source.id}/latte-art`;
+    expect((await request(app).post(path).send({})).status).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post(path)
+          .set('Cookie', 'mc_guest=photo-guest-a')
+          .set('Origin', 'https://evil.test')
+          .send({})
+      ).status,
+    ).toBe(403);
+    expect(
+      (await request(app).post(path).set('Cookie', 'mc_guest=photo-guest-b').send({})).status,
+    ).toBe(404);
+    const generated = await request(app)
+      .post(path)
+      .set('Cookie', 'mc_guest=photo-guest-a')
+      .send({});
+    expect(generated.status).toBe(200);
+    expect(generated.headers['cache-control']).toBe('no-store');
+    const id = generated.body.data.variants[0].id;
+    const details = await request(app)
+      .get(`/api/v1/cup-photos/${id}/details`)
+      .set('Cookie', 'mc_guest=photo-guest-a');
+    expect(details.body.data).toMatchObject({ kind: 'LATTE_ART', latteStyle: 'SOFT' });
+    expect(JSON.stringify(details.body)).not.toMatch(
+      /sourcePhotoId|sourceHash|requestId|owner|data:image/,
+    );
+    expect(
+      (
+        await request(app)
+          .get(`/api/v1/cup-photos/${id}/details`)
+          .set('Cookie', 'mc_guest=photo-guest-b')
+      ).status,
+    ).toBe(404);
+    expect(
+      (await request(app).post('/api/v1/staff/cup-prints/latte-art/exports').send({})).status,
+    ).toBe(401);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/admin/cup-prints/latte-art/exports')
+          .auth(staffToken, { type: 'bearer' })
+          .send({})
+      ).status,
+    ).toBe(403);
+    const ordinary = await orderWithPhoto(true);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/staff/cup-prints/latte-art/exports')
+          .auth(staffToken, { type: 'bearer' })
+          .send({ requestId: randomUUID(), orderId: ordinary.order.id, itemIndex: 0 })
+      ).status,
+    ).toBe(422);
+  });
   it('requires QR/member/staff, protects CSRF and portal/role separation before upload parsing', async () => {
     expect(
       (await request(app).post('/api/v1/cup-photos').set('Content-Type', 'image/png').send(png))

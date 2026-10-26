@@ -17,6 +17,7 @@ import { GiftLabel } from '../../components/GiftLabel';
 import type { GiftDelivery } from '@may-cafe/contracts';
 import type { FreestyleView } from '@may-cafe/contracts';
 import { FreestyleRecipe } from '../../components/FreestyleRecipe';
+import { RecentCancellations } from './RecentCancellations';
 
 interface OrderItem {
   freestyle?: FreestyleView;
@@ -235,6 +236,13 @@ export function StaffKDS(): JSX.Element {
           {awaiting.data ? <Badge tone="warning">{awaiting.data.items.length}</Badge> : null}
         </Link>
       </div>
+      <RecentCancellations />
+      {cancelRequests.isError ? (
+        <ErrorState
+          message={getErrorMessage(cancelRequests.error)}
+          onRetry={() => cancelRequests.refetch()}
+        />
+      ) : null}
       {(cancelRequests.data?.items.length ?? 0) > 0 ? (
         <Card className="border-warning/50 p-3">
           <h2 className="font-display font-semibold">Yêu cầu hủy đang chờ</h2>
@@ -369,7 +377,7 @@ function OrderCard({
           <GiftLabel gift={order.gift} />
           {order.items.some((i) => i.hasCupPhoto) && (
             <Link to="/staff/cup-prints" className="text-sm font-semibold underline">
-              Có ảnh · Mở in tem
+              Có ảnh · Mở thiết kế cốc
             </Link>
           )}
           {order.scheduledAt ? (

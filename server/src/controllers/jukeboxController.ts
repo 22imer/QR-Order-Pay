@@ -23,5 +23,5 @@ export const saveTrack = handle((req) =>
 export const staffFeed = handle((req) => jukebox.staffJukeboxFeed(req.user!.id, req.query));
 export const lease = (kind: 'claim' | 'heartbeat' | 'release') =>
   handle((req) => jukebox.leaseJukebox(req.user!.id, kind, req.body));
-export const control = (kind: 'next' | 'stop') =>
+export const control = (kind: 'next' | 'stop' | 'play') =>
   handle((req) => jukebox.controlJukebox(req.user!.id, kind, req.body));

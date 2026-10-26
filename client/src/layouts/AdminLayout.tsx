@@ -17,12 +17,13 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../features/auth/useAuth';
 import { InternalShell } from '../components/layout/InternalShell';
+import { PersistentJukebox } from '../features/jukebox/PersistentJukebox';
 import { connectStaffSocket, disconnectSocket } from '../lib/socket';
 
 const NAV = [
   { to: '/admin/insights', label: 'Smart Insights', icon: <Activity className="h-4 w-4" /> },
   { to: '/admin/freestyle', label: 'AI Freestyle', icon: <Sparkles className="h-4 w-4" /> },
-  { to: '/admin/cup-prints', label: 'In tem ảnh', icon: <Printer className="h-4 w-4" /> },
+  { to: '/admin/cup-prints', label: 'Ảnh cốc & latte art', icon: <Printer className="h-4 w-4" /> },
   { to: '/admin/jukebox', label: 'Jukebox', icon: <Music2 className="h-4 w-4" /> },
   { to: '/admin/reservations', label: 'Đặt bàn', icon: <CalendarDays className="h-4 w-4" /> },
   { to: '/admin/pickups', label: 'Mang đi & đặt trước', icon: <Package className="h-4 w-4" /> },
@@ -83,6 +84,7 @@ export function AdminLayout(): JSX.Element {
   ].map((path) => NAV.find((item) => item.to === path)!);
   return (
     <InternalShell
+      player={<PersistentJukebox admin />}
       title="Quản trị"
       home="/admin"
       name={user?.name ?? 'Quản trị'}

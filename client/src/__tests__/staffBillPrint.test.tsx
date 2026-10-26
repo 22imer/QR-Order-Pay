@@ -34,6 +34,7 @@ describe('staff printing after payment', () => {
         items: [{ nameSnapshot: name, quantity: 1, lineTotal: 35000 }],
       }));
       mock.get.mockImplementation(async (url: string) => {
+        if (url === '/staff/orders') return response({ items: [] });
         if (url === '/staff/awaiting-payments') return response({ items: [] });
         if (url === '/staff/tables') return response({ tables: [table] });
         if (url === '/staff/table-sessions')

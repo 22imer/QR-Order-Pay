@@ -187,7 +187,7 @@ export function OrdersPage(): JSX.Element {
                     </div>
                     <p className="text-sm text-muted-foreground">
                       Đường {it.sugarLevel}, {iceLabel(it.iceLevel)}
-                      {it.hasCupPhoto ? ' · Có ảnh in tem' : ''}
+                      {it.hasCupPhoto ? ' · Có ảnh tùy chỉnh' : ''}
                     </p>
                     <FreestyleRecipe value={it.freestyle} />
                   </li>

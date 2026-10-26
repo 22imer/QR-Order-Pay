@@ -36,9 +36,19 @@ components:
         sizeMl: { type: integer, minimum: 250, maximum: 700 }
         bases: { type: array, maxItems: 6, items: { type: object } }
         flavors: { type: array, maxItems: 12, items: { type: object } }
+    LatteArtExportInput:
+      type: object
+      additionalProperties: false
+      required: [requestId, orderId, itemIndex]
+      properties:
+        requestId: { type: string, format: uuid }
+        orderId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+        itemIndex: { type: integer, minimum: 0, maximum: 9999 }
     CupPhotoMetadata:
       type: object
       properties:
+        kind: { type: string, enum: [PHOTO, LATTE_ART] }
+        latteStyle: { type: string, enum: [SOFT, BOLD, DOTS] }
         id: { type: string }
         width: { type: integer }
         height: { type: integer }
@@ -67,6 +77,15 @@ components:
         deviceId: { type: string, format: uuid }
         requestId: { type: string, format: uuid }
         playbackVersion: { type: integer, minimum: 0 }
+    JukeboxPlayInput:
+      type: object
+      additionalProperties: false
+      required: [deviceId, requestId, playbackVersion, trackId]
+      properties:
+        deviceId: { type: string, format: uuid }
+        requestId: { type: string, format: uuid }
+        playbackVersion: { type: integer, minimum: 0 }
+        trackId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
     JukeboxVoteInput:
       type: object
       additionalProperties: false
@@ -98,6 +117,154 @@ info:
 servers:
   - url: http://localhost:4000/api/v1
 paths:
+  /cup-photos/{id}/details:
+    get:
+      summary: Metadata ảnh riêng của chính chủ, gồm loại ảnh và kiểu latte art
+      description: No-store; quyền QR/member/counter và portal giống endpoint upload. Không trả owner/hash/bytes hoặc sourcePhotoId.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Envelope CupPhotoMetadata }
+        '401': { description: Chưa xác thực }
+        '404': { description: Ảnh hết hạn hoặc không thuộc chủ thể }
+  /cup-photos/{id}/latte-art:
+    post:
+      summary: Tạo đúng ba kiểu latte art từ ảnh gốc chính chủ
+      description: 'Strict body rỗng, no-store; CSRF/limiter/owner/portal như upload, QR cần OPEN. Resource-idempotent theo source/version/style, transaction owner-lock + audit. Giữ pixel/bố cục, không AI hoặc provider ngoài. Ba biến thể 1024x1024, nguồn gốc/đầu ra chưa gắn hạn24h, bản chọn gắn đơn gia hạn30ngày. Không tạo Order/Payment hoặc tự chọn bản.'
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { description: 'Envelope sourceId và variants đúng3 CupPhotoMetadata có kind LATTE_ART/latteStyle SOFT BOLD DOTS' }
+        '403': { description: Phiên không OPEN hoặc CSRF }
+        '404': { description: Không phải ảnh gốc chính chủ còn hạn }
+        '422': { description: Body không hợp lệ hoặc nguồn đã là latte art }
+        '429': { description: Giới hạn tác vụ hoặc limiter }
+  /pickup/cup-photos/{id}/details:
+    get:
+      summary: Metadata ảnh riêng của chính chủ, gồm loại ảnh và kiểu latte art
+      description: No-store; quyền QR/member/counter và portal giống endpoint upload. Không trả owner/hash/bytes hoặc sourcePhotoId.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Envelope CupPhotoMetadata }
+        '401': { description: Chưa xác thực }
+        '404': { description: Ảnh hết hạn hoặc không thuộc chủ thể }
+  /pickup/cup-photos/{id}/latte-art:
+    post:
+      summary: Tạo đúng ba kiểu latte art từ ảnh gốc chính chủ
+      description: 'Strict body rỗng, no-store; CSRF/limiter/owner/portal như upload, QR cần OPEN. Resource-idempotent theo source/version/style, transaction owner-lock + audit. Giữ pixel/bố cục, không AI hoặc provider ngoài. Ba biến thể 1024x1024, nguồn gốc/đầu ra chưa gắn hạn24h, bản chọn gắn đơn gia hạn30ngày. Không tạo Order/Payment hoặc tự chọn bản.'
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { description: 'Envelope sourceId và variants đúng3 CupPhotoMetadata có kind LATTE_ART/latteStyle SOFT BOLD DOTS' }
+        '403': { description: Phiên không OPEN hoặc CSRF }
+        '404': { description: Không phải ảnh gốc chính chủ còn hạn }
+        '422': { description: Body không hợp lệ hoặc nguồn đã là latte art }
+        '429': { description: Giới hạn tác vụ hoặc limiter }
+  /staff/cup-photos/{id}/details:
+    get:
+      summary: Metadata ảnh riêng của chính chủ, gồm loại ảnh và kiểu latte art
+      description: No-store; quyền QR/member/counter và portal giống endpoint upload. Không trả owner/hash/bytes hoặc sourcePhotoId.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Envelope CupPhotoMetadata }
+        '401': { description: Chưa xác thực }
+        '404': { description: Ảnh hết hạn hoặc không thuộc chủ thể }
+  /staff/cup-photos/{id}/latte-art:
+    post:
+      summary: Tạo đúng ba kiểu latte art từ ảnh gốc chính chủ
+      description: 'Strict body rỗng, no-store; CSRF/limiter/owner/portal như upload, QR cần OPEN. Resource-idempotent theo source/version/style, transaction owner-lock + audit. Giữ pixel/bố cục, không AI hoặc provider ngoài. Ba biến thể 1024x1024, nguồn gốc/đầu ra chưa gắn hạn24h, bản chọn gắn đơn gia hạn30ngày. Không tạo Order/Payment hoặc tự chọn bản.'
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { description: 'Envelope sourceId và variants đúng3 CupPhotoMetadata có kind LATTE_ART/latteStyle SOFT BOLD DOTS' }
+        '403': { description: Phiên không OPEN hoặc CSRF }
+        '404': { description: Không phải ảnh gốc chính chủ còn hạn }
+        '422': { description: Body không hợp lệ hoặc nguồn đã là latte art }
+        '429': { description: Giới hạn tác vụ hoặc limiter }
+  /admin/cup-photos/{id}/details:
+    get:
+      summary: Metadata ảnh riêng của chính chủ, gồm loại ảnh và kiểu latte art
+      description: No-store; quyền QR/member/counter và portal giống endpoint upload. Không trả owner/hash/bytes hoặc sourcePhotoId.
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        '200': { description: Envelope CupPhotoMetadata }
+        '401': { description: Chưa xác thực }
+        '404': { description: Ảnh hết hạn hoặc không thuộc chủ thể }
+  /admin/cup-photos/{id}/latte-art:
+    post:
+      summary: Tạo đúng ba kiểu latte art từ ảnh gốc chính chủ
+      description: 'Strict body rỗng, no-store; CSRF/limiter/owner/portal như upload, QR cần OPEN. Resource-idempotent theo source/version/style, transaction owner-lock + audit. Giữ pixel/bố cục, không AI hoặc provider ngoài. Ba biến thể 1024x1024, nguồn gốc/đầu ra chưa gắn hạn24h, bản chọn gắn đơn gia hạn30ngày. Không tạo Order/Payment hoặc tự chọn bản.'
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false }
+      responses:
+        '200': { description: 'Envelope sourceId và variants đúng3 CupPhotoMetadata có kind LATTE_ART/latteStyle SOFT BOLD DOTS' }
+        '403': { description: Phiên không OPEN hoặc CSRF }
+        '404': { description: Không phải ảnh gốc chính chủ còn hạn }
+        '422': { description: Body không hợp lệ hoặc nguồn đã là latte art }
+        '429': { description: Giới hạn tác vụ hoặc limiter }
+  /staff/cup-prints/latte-art/exports:
+    post:
+      summary: Xuất PNG latte art đã chọn trong đơn PAID
+      description: 'JWT/role nội bộ, no-store. UUID/hash replay, paid/order-version/ảnh còn hạn/kind LATTE_ART. Ghi EXPORT_READY/CupPrintAttempt paper LATTE_PNG và audit yêu cầu xuất file; không gửi lệnh phần cứng, không ghi đã in, không đổi tiền/trạng thái phục vụ. File RGB trắng1024x1024 đúng pixel thiết kế, không chữ hoặc foam mockup.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LatteArtExportInput' }
+      responses:
+        '200':
+          description: File PNG attachment cho phần mềm máy in đồ uống
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Không đủ quyền }
+        '404': { description: Đơn chưa trả/hủy/hoàn hoặc ảnh hết hạn }
+        '409': { description: Key trùng khác payload }
+        '422': { description: Sai dòng hoặc ảnh thuộc loại in tem }
+  /admin/cup-prints/latte-art/exports:
+    post:
+      summary: Xuất PNG latte art đã chọn trong đơn PAID
+      description: 'JWT/role nội bộ, no-store. UUID/hash replay, paid/order-version/ảnh còn hạn/kind LATTE_ART. Ghi EXPORT_READY/CupPrintAttempt paper LATTE_PNG và audit yêu cầu xuất file; không gửi lệnh phần cứng, không ghi đã in, không đổi tiền/trạng thái phục vụ. File RGB trắng1024x1024 đúng pixel thiết kế, không chữ hoặc foam mockup.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LatteArtExportInput' }
+      responses:
+        '200':
+          description: File PNG attachment cho phần mềm máy in đồ uống
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '401': { description: Chưa đăng nhập }
+        '403': { description: Không đủ quyền }
+        '404': { description: Đơn chưa trả/hủy/hoàn hoặc ảnh hết hạn }
+        '409': { description: Key trùng khác payload }
+        '422': { description: Sai dòng hoặc ảnh thuộc loại in tem }
   /staff/tables/{id}/qr:
     get:
       summary: Xem QR tĩnh của bàn (STAFF hoặc ADMIN)
@@ -408,6 +575,20 @@ paths:
         '422': { description: Input không hợp lệ }
   /admin/jukebox/next:
     post: *jukeboxNext
+  /staff/jukebox/play:
+    post: &jukeboxPlay
+      summary: Nhân viên chọn trực tiếp một bài đang mở, không cần vote
+      description: Đúng JWT role và lease user/device. UUID/hash/playbackVersion chống phát trùng hoặc lệnh cũ; chốt snapshot nguồn từ catalog. Nếu bài có vote hợp lệ, tiêu thụ lượt của các phiên OPEN vote bài đó như next, giữ các bài khác trong hàng đợi. Không nhận URL tùy ý từ body, không sửa danh sách nhạc.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/JukeboxPlayInput' } } } }
+      responses:
+        '200': { description: JukeboxStaffFeed hoặc replay }
+        '401': { description: Cần đăng nhập }
+        '403': { description: Sai role }
+        '404': { description: Bài không tồn tại hoặc đã tắt }
+        '409': { description: Lease/version/key conflict }
+        '422': { description: Input không hợp lệ }
+  /admin/jukebox/play:
+    post: *jukeboxPlay
   /staff/jukebox/stop:
     post: &jukeboxStop
       summary: Bỏ bài đang chọn phát và giữ hàng đợi
@@ -2127,7 +2308,9 @@ paths:
       summary: Đơn cho KDS
       description: >-
         Chỉ gồm đơn PAID của phiên OPEN/CHECKOUT. Mặc định lọc PENDING, CONFIRMED, PREPARING, READY;
-        truyền status để lấy một trạng thái cụ thể (vẫn giới hạn trong phiên đang hoạt động).
+          truyền status để lấy một trạng thái cụ thể (vẫn giới hạn trong phiên đang hoạt động).
+          Riêng status=CANCELLED trả tối đa 50 đơn đã hủy trong 24 giờ gần nhất, mới nhất trước,
+          gồm mọi trạng thái thanh toán, đơn mang đi và cả phiên đã đóng để nhân viên đối chiếu.
         Mỗi phần tử theo staffOrderSchema, không có idempotencyKey/requestHash/__v.
       parameters:
         - in: query

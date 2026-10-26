@@ -7,6 +7,9 @@ import {
   CUP_PHOTO_MAX_PIXELS,
   cupPhotoIdSchema,
   cupPrintInputSchema,
+  cupPhotoViewSchema,
+  latteArtExportSchema,
+  type LatteStyle,
   type CupPrintOrder,
 } from '@may-cafe/contracts';
 import { CupPhotoModel, CupPhotoOwnerModel, CupPrintAttemptModel } from '../models/CupPhoto.js';
@@ -27,6 +30,38 @@ export interface PhotoActor {
   userId?: string;
 }
 const DAY = 86400000;
+export function cupPhotoView(photo: {
+  id?: string;
+  width: number;
+  height: number;
+  expiresAt: Date;
+  kind?: string;
+  latteStyle?: string | null;
+}) {
+  return cupPhotoViewSchema.parse({
+    id: photo.id,
+    width: photo.width,
+    height: photo.height,
+    expiresAt: photo.expiresAt.toISOString(),
+    ...(photo.kind === 'LATTE_ART' ? { kind: 'LATTE_ART', latteStyle: photo.latteStyle } : {}),
+  });
+}
+export async function lockPhotoOwner(actor: PhotoActor, session: ClientSession) {
+  if (
+    actor.tableSessionId &&
+    !(await TableSessionModel.findOneAndUpdate(
+      { _id: actor.tableSessionId, status: 'OPEN' },
+      { $inc: { version: 1 } },
+      { session },
+    ))
+  )
+    throw new ForbiddenError('Chỉ xử lý ảnh khi phiên bàn đang mở.');
+  await CupPhotoOwnerModel.findOneAndUpdate(
+    { _id: actor.owner },
+    { $inc: { version: 1 }, $set: { expiresAt: new Date(Date.now() + 31 * DAY) } },
+    { upsert: true, session },
+  );
+}
 let processing = 0;
 const formats: Record<string, string> = {
   'image/jpeg': 'jpeg',
@@ -123,6 +158,7 @@ export async function uploadCupPhoto(
     if (
       (await CupPhotoModel.countDocuments({
         owner: actor.owner,
+        kind: { $ne: 'LATTE_ART' },
         createdAt: { $gt: new Date(Date.now() - DAY) },
       }).session(session)) >= 20
     )
@@ -165,6 +201,15 @@ export async function ownCupPhoto(actor: PhotoActor, id: unknown) {
   }).select('+data');
   if (!photo) throw new NotFoundError('Ảnh không còn hoặc không thuộc bạn.');
   return photo.data;
+}
+export async function ownCupPhotoDetails(actor: PhotoActor, id: unknown) {
+  const photo = await CupPhotoModel.findOne({
+    _id: cupPhotoIdSchema.parse(id),
+    owner: actor.owner,
+    expiresAt: { $gt: new Date() },
+  });
+  if (!photo) throw new NotFoundError('Ảnh không còn hoặc không thuộc bạn.');
+  return cupPhotoView(photo);
 }
 export async function assertCupPhotos(
   items: { cupPhotoId?: string }[],
@@ -224,13 +269,8 @@ export async function cupPrintFeed(rawPage: unknown) {
   const result: CupPrintOrder[] = [];
   for (const order of orders) {
     const ids = order.items.flatMap((i) => (i.cupPhotoId ? [i.cupPhotoId] : []));
-    const available = new Set(
-      (
-        await CupPhotoModel.find({ _id: { $in: ids }, expiresAt: { $gt: new Date() } }).select(
-          '_id',
-        )
-      ).map((p) => p.id),
-    );
+    const photos = await CupPhotoModel.find({ _id: { $in: ids }, expiresAt: { $gt: new Date() } });
+    const available = new Map(photos.map((photo) => [photo.id, photo]));
     const counts = await CupPrintAttemptModel.find({ orderId: order._id });
     result.push({
       id: order.id,
@@ -252,6 +292,12 @@ export async function cupPrintFeed(rawPage: unknown) {
                 quantity: i.quantity,
                 available: available.has(String(i.cupPhotoId)),
                 attempts: counts.filter((p) => p.itemIndex === index).length,
+                ...(available.get(String(i.cupPhotoId))?.kind === 'LATTE_ART'
+                  ? {
+                      kind: 'LATTE_ART' as const,
+                      latteStyle: available.get(String(i.cupPhotoId))!.latteStyle as LatteStyle,
+                    }
+                  : {}),
               },
             ]
           : [],
@@ -261,8 +307,19 @@ export async function cupPrintFeed(rawPage: unknown) {
   return { items: result, page, total, pages: Math.ceil(total / 20) };
 }
 export async function requestCupPrint(userId: string, input: unknown) {
-  const body = cupPrintInputSchema.parse(input),
-    hash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
+  return requestCupOutput(userId, cupPrintInputSchema.parse(input));
+}
+function assertOutputKind(kind: string, paper: string) {
+  if ((kind === 'LATTE_ART') !== (paper === 'LATTE_PNG'))
+    throw new ValidationError(
+      'Latte art dùng xuất file cho máy in đồ uống; ảnh tem dùng chức năng in tem.',
+    );
+}
+async function requestCupOutput(
+  userId: string,
+  body: { requestId: string; orderId: string; itemIndex: number; copies: number; paper: string },
+) {
+  const hash = crypto.createHash('sha256').update(JSON.stringify(body)).digest('hex');
   // Unique journal also serializes replay; order write conflicts with cancellation/refund.
   const replay = async () => {
     const old = await CupPrintAttemptModel.findOne({ userId, requestId: body.requestId });
@@ -272,12 +329,14 @@ export async function requestCupPrint(userId: string, input: unknown) {
   };
   const old = await replay();
   if (old) {
-    await printItem(body.orderId, body.itemIndex);
-    return { id: old.id, state: 'REQUESTED' };
+    const { photo } = await printItem(body.orderId, body.itemIndex);
+    assertOutputKind(photo.kind, body.paper);
+    return { id: old.id, state: body.paper === 'LATTE_PNG' ? 'EXPORT_READY' : 'REQUESTED' };
   }
   try {
     return await unitOfWork.withTransaction(async (session) => {
-      const { order, item } = await printItem(body.orderId, body.itemIndex, session);
+      const { order, item, photo } = await printItem(body.orderId, body.itemIndex, session);
+      assertOutputKind(photo.kind, body.paper);
       if (body.copies > item.quantity)
         throw new ValidationError('Số tem không vượt số cốc của dòng món.');
       await OrderModel.updateOne({ _id: order._id }, { $inc: { version: 1 } }, { session });
@@ -286,21 +345,33 @@ export async function requestCupPrint(userId: string, input: unknown) {
         {
           actorType: 'USER',
           actorId: userId,
-          action: 'cupPhoto.printRequested',
+          action:
+            body.paper === 'LATTE_PNG' ? 'latteArt.exportRequested' : 'cupPhoto.printRequested',
           entityType: 'Order',
           entityId: order.id,
           metadata: { itemIndex: body.itemIndex, copies: body.copies, paper: body.paper },
         },
         session,
       );
-      return { id: attempt!.id, state: 'REQUESTED' };
+      return { id: attempt!.id, state: body.paper === 'LATTE_PNG' ? 'EXPORT_READY' : 'REQUESTED' };
     });
   } catch (error) {
     const raced = await replay();
     if (raced) {
-      await printItem(body.orderId, body.itemIndex);
-      return { id: raced.id, state: 'REQUESTED' };
+      const { photo } = await printItem(body.orderId, body.itemIndex);
+      assertOutputKind(photo.kind, body.paper);
+      return { id: raced.id, state: body.paper === 'LATTE_PNG' ? 'EXPORT_READY' : 'REQUESTED' };
     }
     throw error;
   }
+}
+export async function exportCupLatteArt(userId: string, input: unknown) {
+  const body = latteArtExportSchema.parse(input);
+  await requestCupOutput(userId, { ...body, copies: 1, paper: 'LATTE_PNG' });
+  const { order, photo } = await printItem(body.orderId, body.itemIndex);
+  assertOutputKind(photo.kind, 'LATTE_PNG');
+  return {
+    data: await sharp(photo.data).png().toBuffer(),
+    filename: `latte-${order.code.replace(/[^a-zA-Z0-9_-]/g, '')}-line-${body.itemIndex + 1}.png`,
+  };
 }
