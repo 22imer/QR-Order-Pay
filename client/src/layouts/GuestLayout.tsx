@@ -11,6 +11,7 @@ import {
   Gift,
   Dices,
   Music2,
+  MessageCircle,
 } from 'lucide-react';
 import { useCart, cartTotals } from '../store/cart';
 import { api, unwrap, vnd, getErrorMessage } from '../lib/api';
@@ -24,6 +25,9 @@ import { CloudMark } from '../features/guest/CloudMark';
 import type { GuestContext } from '../features/guest/guestContext';
 import type { CurrentTableSessionResponse } from '@may-cafe/contracts';
 import { useGifts } from '../features/gifts/useGifts';
+import { getSupportTelegramUrl } from '../lib/support';
+
+const supportUrl = getSupportTelegramUrl();
 
 const dockItem =
   'relative flex min-w-0 flex-1 flex-col items-center gap-1 rounded-2xl px-1 pb-2 pt-3 text-center text-xs leading-tight transition focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:opacity-50';
@@ -153,6 +157,7 @@ export function GuestLayout(): JSX.Element {
   });
 
   const showCartPill = count > 0 && !!activeSession && location.pathname !== '/cart';
+  const supportHref = activeSession || receiptAvailable ? supportUrl : null;
   const context: GuestContext = { tableName: activeSession?.table?.name ?? null };
 
   return (
@@ -234,6 +239,16 @@ export function GuestLayout(): JSX.Element {
               >
                 <BellRing className="h-4 w-4" /> Gọi nhân viên
               </Button>
+            ) : null}
+            {supportHref ? (
+              <a
+                href={supportHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full px-4 py-2.5 text-sm font-semibold text-muted-foreground transition hover:bg-card hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              >
+                <MessageCircle className="h-4 w-4" /> Hỗ trợ CSKH
+              </a>
             ) : null}
           </nav>
           <NavLink
@@ -345,6 +360,17 @@ export function GuestLayout(): JSX.Element {
                 )
               }
             />
+            {supportHref ? (
+              <a
+                href={supportHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(dockItem, 'text-muted-foreground hover:text-foreground')}
+              >
+                <MessageCircle className="h-5 w-5" />
+                Hỗ trợ CSKH
+              </a>
+            ) : null}
             {activeSession ? (
               <button
                 type="button"

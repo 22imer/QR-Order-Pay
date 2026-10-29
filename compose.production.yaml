@@ -258,6 +258,7 @@ services:
         VITE_GUEST_APP_URL: ${PUBLIC_APP_URL:-http://localhost:8080}
         VITE_STAFF_APP_URL: ${STAFF_APP_URL:-http://localhost:8081}
         VITE_ADMIN_APP_URL: ${ADMIN_APP_URL:-http://localhost:8082}
+        VITE_SUPPORT_TELEGRAM_URL: ${VITE_SUPPORT_TELEGRAM_URL-https://t.me/cafe_sky_cskh_bot}
     restart: unless-stopped
     ports:
       - '${WEB_PORT:-8080}:8080'
